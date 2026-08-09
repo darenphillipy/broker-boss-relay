@@ -1,0 +1,993 @@
+{
+  "A1": {
+    "catalogId": "A1",
+    "name": "RubyMae Adams",
+    "title": "The Organizer",
+    "culture": 3,
+    "training": 2,
+    "technology": 2,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 3,
+    "isStarter": true,
+    "image": "RubyMae.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A2": {
+    "catalogId": "A2",
+    "name": "Terri Baker",
+    "title": "The Specialist",
+    "culture": 2,
+    "training": 6,
+    "technology": 2,
+    "recognition": 4,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "Teri Olson.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A3": {
+    "catalogId": "A3",
+    "name": "Rick Brawnson",
+    "title": "The Innovator",
+    "culture": -1,
+    "training": 7,
+    "technology": 5,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 7,
+    "isStarter": false,
+    "image": "Rick Brenkus.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A4": {
+    "catalogId": "A4",
+    "name": "Teri Brawnson",
+    "title": "The Closer",
+    "culture": -1,
+    "training": 7,
+    "technology": 2,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "Teri Brenkus.jpg",
+    "network": {
+      "role": "follower",
+      "color": "Red",
+      "influencerCatalogId": "A46"
+    }
+  },
+  "A5": {
+    "catalogId": "A5",
+    "name": "Maya Brown",
+    "title": "The Operator",
+    "culture": -1,
+    "training": 2,
+    "technology": 2,
+    "recognition": 10,
+    "overhead": 5,
+    "totalProfit": 7,
+    "isStarter": false,
+    "image": "Maya.jpg",
+    "network": {
+      "role": "follower",
+      "color": "Grey",
+      "influencerCatalogId": "A53"
+    }
+  },
+  "A6": {
+    "catalogId": "A6",
+    "name": "Brooke Campbell",
+    "title": "The Mage Ag",
+    "culture": 2,
+    "training": 3,
+    "technology": 5,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 7,
+    "isStarter": false,
+    "image": "Brooke.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A7": {
+    "catalogId": "A7",
+    "name": "Megg Carter",
+    "title": "The Closer",
+    "culture": -1,
+    "training": 1,
+    "technology": 7,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "Megg for game v3.png",
+    "network": {
+      "role": "influencer",
+      "color": "Green",
+      "influencerCatalogId": null,
+      "followerCatalogIds": [
+        "A50"
+      ]
+    }
+  },
+  "A8": {
+    "catalogId": "A8",
+    "name": "JC Chips",
+    "title": "The Troubleshooter",
+    "culture": -1,
+    "training": 2,
+    "technology": 1,
+    "recognition": 7,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "JC.jpg",
+    "network": {
+      "role": "influencer",
+      "color": "Blue",
+      "influencerCatalogId": null,
+      "followerCatalogIds": [
+        "A33"
+      ]
+    }
+  },
+  "A9": {
+    "catalogId": "A9",
+    "name": "Dan Chen",
+    "title": "The Hobby",
+    "culture": -1,
+    "training": 3,
+    "technology": 1,
+    "recognition": 5,
+    "overhead": 5,
+    "totalProfit": 7,
+    "isStarter": false,
+    "image": "Dan.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A10": {
+    "catalogId": "A10",
+    "name": "Ed Cheeks",
+    "title": "The Deal Maker",
+    "culture": 2,
+    "training": 1,
+    "technology": 5,
+    "recognition": 5,
+    "overhead": 5,
+    "totalProfit": 6,
+    "isStarter": false,
+    "image": "Ed.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A11": {
+    "catalogId": "A11",
+    "name": "Ka'ilea Clark",
+    "title": "The Innovator",
+    "culture": -4,
+    "training": 8,
+    "technology": 6,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 10,
+    "isStarter": false,
+    "image": "Kailea.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A12": {
+    "catalogId": "A12",
+    "name": "Bahe Davidson",
+    "title": "The Newcomer",
+    "culture": -2,
+    "training": 10,
+    "technology": 4,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 9,
+    "isStarter": false,
+    "image": "bahe.jpg",
+    "network": {
+      "role": "follower",
+      "color": "Purple",
+      "influencerCatalogId": "A54"
+    }
+  },
+  "A13": {
+    "catalogId": "A13",
+    "name": "Max Davis",
+    "title": "The Recruiter",
+    "culture": -2,
+    "training": 2,
+    "technology": 10,
+    "recognition": 4,
+    "overhead": 5,
+    "totalProfit": 9,
+    "isStarter": false,
+    "image": "max.png",
+    "network": {
+      "role": "follower",
+      "color": "Yellow",
+      "influencerCatalogId": "A21"
+    }
+  },
+  "A14": {
+    "catalogId": "A14",
+    "name": "Naz Diaz",
+    "title": "The Little",
+    "culture": -1,
+    "training": 5,
+    "technology": 7,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "Nas.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A15": {
+    "catalogId": "A15",
+    "name": "Jay Early",
+    "title": "The Negotiator",
+    "culture": 2,
+    "training": 3,
+    "technology": 5,
+    "recognition": 4,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "Jay.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A16": {
+    "catalogId": "A16",
+    "name": "Lynn Emerson",
+    "title": "The Networker",
+    "culture": 0,
+    "training": 4,
+    "technology": 5,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "Lynn.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A17": {
+    "catalogId": "A17",
+    "name": "Kiara Evans",
+    "title": "The Mediator",
+    "culture": -2,
+    "training": 4,
+    "technology": 9,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 9,
+    "isStarter": false,
+    "image": "Kiara.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A18": {
+    "catalogId": "A18",
+    "name": "Sam Foster",
+    "title": "The Visionary",
+    "culture": -4,
+    "training": 6,
+    "technology": 8,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 10,
+    "isStarter": false,
+    "image": "sam.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A19": {
+    "catalogId": "A19",
+    "name": "Ronnie Garcia",
+    "title": "The Closer",
+    "culture": 1,
+    "training": 1,
+    "technology": 1,
+    "recognition": 7,
+    "overhead": 5,
+    "totalProfit": 6,
+    "isStarter": false,
+    "image": "Ronnie.jpg",
+    "network": {
+      "role": "follower",
+      "color": "Grey",
+      "influencerCatalogId": "A53"
+    }
+  },
+  "A20": {
+    "catalogId": "A20",
+    "name": "Iola Gracie",
+    "title": "The Guru",
+    "culture": 1,
+    "training": 4,
+    "technology": 7,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 6,
+    "isStarter": false,
+    "image": "Iola.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A21": {
+    "catalogId": "A21",
+    "name": "Jim Green",
+    "title": "The Optimizer",
+    "culture": 2,
+    "training": 2,
+    "technology": 4,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 6,
+    "isStarter": false,
+    "image": "jim.png",
+    "network": {
+      "role": "influencer",
+      "color": "Yellow",
+      "influencerCatalogId": null,
+      "followerCatalogIds": [
+        "A13"
+      ]
+    }
+  },
+  "A22": {
+    "catalogId": "A22",
+    "name": "Jonathan Hall",
+    "title": "The Mentor",
+    "culture": 0,
+    "training": 4,
+    "technology": 3,
+    "recognition": 7,
+    "overhead": 5,
+    "totalProfit": 6,
+    "isStarter": false,
+    "image": "Jonathan2.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A23": {
+    "catalogId": "A23",
+    "name": "Tyson Hill",
+    "title": "The Networker",
+    "culture": -5,
+    "training": 5,
+    "technology": 10,
+    "recognition": 7,
+    "overhead": 5,
+    "totalProfit": 15,
+    "isStarter": false,
+    "image": "tyson.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A24": {
+    "catalogId": "A24",
+    "name": "Creed Harris",
+    "title": "The Maverick",
+    "culture": 5,
+    "training": 2,
+    "technology": 1,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 3,
+    "isStarter": true,
+    "image": "Creed.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A25": {
+    "catalogId": "A25",
+    "name": "Larry Johnson",
+    "title": "The Rainmaker",
+    "culture": 1,
+    "training": 4,
+    "technology": 7,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "dad.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A26": {
+    "catalogId": "A26",
+    "name": "Brent Jones",
+    "title": "The Part-Time",
+    "culture": 2,
+    "training": 4,
+    "technology": 6,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 8,
+    "isStarter": false,
+    "image": "Brent pic.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A27": {
+    "catalogId": "A27",
+    "name": "Julie Juddson",
+    "title": "The Builder",
+    "culture": -3,
+    "training": 5,
+    "technology": 10,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 10,
+    "isStarter": false,
+    "image": "Julie1.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A28": {
+    "catalogId": "A28",
+    "name": "Miah Kessler",
+    "title": "The Team Builder",
+    "culture": -4,
+    "training": 1,
+    "technology": 6,
+    "recognition": 8,
+    "overhead": 5,
+    "totalProfit": 10,
+    "isStarter": false,
+    "image": "miah.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A29": {
+    "catalogId": "A29",
+    "name": "Trish King",
+    "title": "The Analyst",
+    "culture": 5,
+    "training": 2,
+    "technology": 3,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 4,
+    "isStarter": false,
+    "image": "Trish.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A30": {
+    "catalogId": "A30",
+    "name": "Kris Lee",
+    "title": "The Socialite",
+    "culture": 3,
+    "training": 1,
+    "technology": 3,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 4,
+    "isStarter": false,
+    "image": "Kris pic.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A31": {
+    "catalogId": "A31",
+    "name": "Toa Lopez",
+    "title": "The Charmer",
+    "culture": 4,
+    "training": 3,
+    "technology": 1,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 5,
+    "isStarter": false,
+    "image": "Toa.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A32": {
+    "catalogId": "A32",
+    "name": "Hayden & Danielle Martin",
+    "title": "The Power Couple",
+    "culture": 4,
+    "training": 2,
+    "technology": 2,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 3,
+    "isStarter": true,
+    "image": "Hayden and Danielle2.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A33": {
+    "catalogId": "A33",
+    "name": "Bryce Meets",
+    "title": "The Powerhouse",
+    "culture": 1,
+    "training": 1,
+    "technology": 1,
+    "recognition": 5,
+    "overhead": 5,
+    "totalProfit": 7,
+    "isStarter": false,
+    "image": "Bryce pic.png",
+    "network": {
+      "role": "follower",
+      "color": "Blue",
+      "influencerCatalogId": "A8"
+    }
+  },
+  "A34": {
+    "catalogId": "A34",
+    "name": "Dawn Diamond",
+    "title": "The Charmer",
+    "culture": 4,
+    "training": 1,
+    "technology": 2,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 5,
+    "isStarter": false,
+    "image": "Dawn Diamond bb pic.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A35": {
+    "catalogId": "A35",
+    "name": "Marquese Mitchell",
+    "title": "The Strategist",
+    "culture": -2,
+    "training": 9,
+    "technology": 4,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 9,
+    "isStarter": false,
+    "image": "Marquese.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A36": {
+    "catalogId": "A36",
+    "name": "Sarah Moore",
+    "title": "The Specialist",
+    "culture": -2,
+    "training": 3,
+    "technology": 4,
+    "recognition": 9,
+    "overhead": 5,
+    "totalProfit": 9,
+    "isStarter": false,
+    "image": "Soto.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A37": {
+    "catalogId": "A37",
+    "name": "Soto Parker",
+    "title": "The Strategist",
+    "culture": -3,
+    "training": 10,
+    "technology": 5,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 10,
+    "isStarter": false,
+    "image": "Mark pic 3.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A38": {
+    "catalogId": "A38",
+    "name": "Bryce Perez",
+    "title": "The Go-Getter",
+    "culture": 4,
+    "training": 2,
+    "technology": 1,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 5,
+    "isStarter": false,
+    "image": "brycecreed.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A39": {
+    "catalogId": "A39",
+    "name": "Honey Reed",
+    "title": "The Expert",
+    "culture": -5,
+    "training": 7,
+    "technology": 5,
+    "recognition": 10,
+    "overhead": 5,
+    "totalProfit": 15,
+    "isStarter": false,
+    "image": "honey.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A40": {
+    "catalogId": "A40",
+    "name": "Cole Roberts",
+    "title": "The Dynamo",
+    "culture": 5,
+    "training": 2,
+    "technology": 2,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 3,
+    "isStarter": true,
+    "image": "Cole.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A41": {
+    "catalogId": "A41",
+    "name": "Alec Robertson",
+    "title": "The Closer",
+    "culture": 5,
+    "training": 2,
+    "technology": 1,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 3,
+    "isStarter": true,
+    "image": "Alec updated pic charicature.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A42": {
+    "catalogId": "A42",
+    "name": "Theo Rodriguez",
+    "title": "The Hustler",
+    "culture": 3,
+    "training": 1,
+    "technology": 3,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 4,
+    "isStarter": false,
+    "image": "theo.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A43": {
+    "catalogId": "A43",
+    "name": "Elda Scout",
+    "title": "The Veteran",
+    "culture": 4,
+    "training": 3,
+    "technology": 3,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 4,
+    "isStarter": false,
+    "image": "Elda.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A44": {
+    "catalogId": "A44",
+    "name": "McKenna Scott",
+    "title": "The Connector",
+    "culture": 4,
+    "training": 3,
+    "technology": 3,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 4,
+    "isStarter": false,
+    "image": "McKenna.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A45": {
+    "catalogId": "A45",
+    "name": "Ivy Smith",
+    "title": "The Networker",
+    "culture": 3,
+    "training": 2,
+    "technology": 1,
+    "recognition": 4,
+    "overhead": 5,
+    "totalProfit": 5,
+    "isStarter": false,
+    "image": "Ivy.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A54": {
+    "catalogId": "A54",
+    "name": "Duane Frankford",
+    "title": "The Influencer",
+    "culture": 2,
+    "training": 4,
+    "technology": 2,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 6,
+    "isStarter": false,
+    "image": "Duane Pic for bb.png",
+    "network": {
+      "role": "influencer",
+      "color": "Purple",
+      "influencerCatalogId": null,
+      "followerCatalogIds": [
+        "A12"
+      ]
+    }
+  },
+  "A47": {
+    "catalogId": "A47",
+    "name": "Shanelle Thompson",
+    "title": "The Go-Getter",
+    "culture": 3,
+    "training": 1,
+    "technology": 4,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 5,
+    "isStarter": false,
+    "image": "Shanelle.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A48": {
+    "catalogId": "A48",
+    "name": "Lynn Turner",
+    "title": "The Veteran",
+    "culture": -3,
+    "training": 10,
+    "technology": 2,
+    "recognition": 2,
+    "overhead": 5,
+    "totalProfit": 9,
+    "isStarter": false,
+    "image": "mom.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A49": {
+    "catalogId": "A49",
+    "name": "Kim White",
+    "title": "The Innovator",
+    "culture": -3,
+    "training": 2,
+    "technology": 5,
+    "recognition": 10,
+    "overhead": 5,
+    "totalProfit": 10,
+    "isStarter": false,
+    "image": "Kim.jpg",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A50": {
+    "catalogId": "A50",
+    "name": "Julie Wilson",
+    "title": "The Firestarter",
+    "culture": 1,
+    "training": 1,
+    "technology": 5,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 7,
+    "isStarter": false,
+    "image": "Julie.png",
+    "network": {
+      "role": "follower",
+      "color": "Green",
+      "influencerCatalogId": "A7"
+    }
+  },
+  "A51": {
+    "catalogId": "A51",
+    "name": "Sophie Wright",
+    "title": "The Architect",
+    "culture": 4,
+    "training": 1,
+    "technology": 1,
+    "recognition": 3,
+    "overhead": 5,
+    "totalProfit": 4,
+    "isStarter": false,
+    "image": "sophie.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A52": {
+    "catalogId": "A52",
+    "name": "Brogan Wrigley",
+    "title": "The Strategist",
+    "culture": -5,
+    "training": 10,
+    "technology": 7,
+    "recognition": 5,
+    "overhead": 5,
+    "totalProfit": 15,
+    "isStarter": false,
+    "image": "Brogan.png",
+    "network": {
+      "role": "independent",
+      "color": null,
+      "influencerCatalogId": null
+    }
+  },
+  "A53": {
+    "catalogId": "A53",
+    "name": "Ty Hanson",
+    "title": "The Dealmaker",
+    "culture": 2,
+    "training": 1,
+    "technology": 1,
+    "recognition": 5,
+    "overhead": 5,
+    "totalProfit": 5,
+    "isStarter": false,
+    "image": "Ty for game v2.png",
+    "network": {
+      "role": "influencer",
+      "color": "Grey",
+      "influencerCatalogId": null,
+      "followerCatalogIds": [
+        "A5",
+        "A19"
+      ]
+    }
+  },
+  "A46": {
+    "catalogId": "A46",
+    "name": "Anthony Taylor",
+    "title": "The Influencer",
+    "culture": 1,
+    "training": 5,
+    "technology": 1,
+    "recognition": 1,
+    "overhead": 5,
+    "totalProfit": 7,
+    "isStarter": false,
+    "image": "Robert.jpg",
+    "network": {
+      "role": "influencer",
+      "color": "Red",
+      "influencerCatalogId": null,
+      "followerCatalogIds": [
+        "A4"
+      ]
+    }
+  }
+}
