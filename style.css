@@ -1,0 +1,2920 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap');
+
+:root {
+  --bg-dark: #1b2430;
+  --bg-panel: #232f3f;
+  --bg-panel-light: #2c3b4f;
+  --accent: #e8b64c;
+  --text-main: #eef2f6;
+  --text-dim: #a3b1c2;
+  --border: #3a4a5e;
+  --font-display: 'Cinzel', 'Segoe UI', serif;
+
+  /* Stage 1: per-hub accent identity, all sharing the same navy/gold base */
+  --hub-growth: #3fae7a;
+  --hub-growth-dim: #234a37;
+  --hub-operations: #c8863a;
+  --hub-operations-dim: #4a3820;
+  --hub-leadership: #5a8fc7;
+  --hub-leadership-dim: #253c53;
+  --hub-decisions: #e8b64c;
+  --hub-decisions-dim: #4a3c1f;
+  --hub-search: #9370c9;
+  --hub-search-dim: #362a4d;
+
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg-dark);
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+#game-header {
+  background: var(--bg-panel);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 2px solid var(--accent);
+  flex-wrap: wrap;
+}
+
+.header-title {
+  font-size: 1.4em;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+.header-subtitle { font-weight: 300; color: var(--text-dim); }
+
+.header-info {
+  display: flex;
+  gap: 16px;
+  font-size: 0.9em;
+  color: var(--text-dim);
+}
+.header-info strong { color: var(--text-main); }
+
+.leaderboard {
+  width: 100%;
+  background: var(--accent);
+  color: #201a0a;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 6px;
+  display: none;
+}
+
+.game-over-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-over-box {
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow: auto;
+  border: 2px solid var(--hub-decisions, #e8b64c);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset, 0 8px 30px rgba(0, 0, 0, 0.6);
+  animation: game-over-entrance 0.35s ease-out;
+}
+
+.game-over-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.btn-primary {
+  padding: 12px 28px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(180deg, #f0d675 0%, var(--hub-decisions, #e8b64c) 100%);
+  color: #201a0a;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(232, 182, 76, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(232, 182, 76, 0.5);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+@keyframes game-over-entrance {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.game-over-box h2 {
+  margin-top: 0;
+  font-family: var(--font-display);
+  letter-spacing: 1px;
+  color: var(--hub-decisions, #e8b64c);
+  text-align: center;
+}
+
+.game-over-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85em;
+}
+
+.game-over-table th,
+.game-over-table td {
+  padding: 6px 10px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.game-over-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.8em;
+}
+
+.game-over-table td:nth-child(2) {
+  text-align: left;
+}
+
+.game-over-winner-row {
+  background: rgba(232, 182, 76, 0.16);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(232, 182, 76, 0.4);
+}
+
+.game-over-total-cell {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.status-line {
+  min-height: 22px;
+  padding: 4px 20px;
+  color: #e8a04c;
+  font-size: 0.85em;
+}
+
+.action-toast {
+  background: #1f3a2a;
+  border-bottom: 2px solid #6fcf97;
+  color: #8fd19e;
+  padding: 8px 20px;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.network-magnet-banner {
+  background: #2a1f3a;
+  border-bottom: 2px solid #b58ae0;
+  color: #d6bdf0;
+  padding: 8px 20px;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.reconnect-convert-banner {
+  background: #3a2a1a;
+  border-bottom: 2px solid var(--accent);
+  color: #f0d9b8;
+  padding: 8px 20px;
+  font-size: 0.85em;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.reconnect-convert-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: 0.9em;
+  font-weight: 700;
+  cursor: pointer;
+}
+.reconnect-convert-btn:hover { background: rgba(255, 255, 255, 0.16); }
+.reconnect-convert-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  font-size: 1em;
+}
+
+.shift-reveal-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.shift-reveal-modal.shift-reveal-visible {
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  opacity: 1;
+}
+.shift-reveal-box {
+  background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-dark) 100%);
+  border: 3px solid #e0708a;
+  border-radius: 14px;
+  padding: 22px 28px;
+  width: 260px;
+  text-align: center;
+  box-shadow: 0 0 40px rgba(224, 112, 138, 0.6), 0 10px 30px rgba(0, 0, 0, 0.7);
+  transform: scale(0.85);
+  opacity: 0;
+  animation: shift-reveal-entrance 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes shift-reveal-entrance {
+  to { transform: scale(1); opacity: 1; }
+}
+.shift-reveal-header {
+  font-family: var(--font-display);
+  color: #e0708a;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 0.85em;
+  margin-bottom: 10px;
+}
+.shift-reveal-box .card-portrait {
+  width: 100%;
+  height: 90px;
+  margin-bottom: 8px;
+}
+.shift-reveal-name {
+  font-weight: 700;
+  font-size: 1.1em;
+  margin-bottom: 6px;
+}
+.shift-reveal-desc {
+  font-size: 0.82em;
+  color: var(--text-dim);
+  line-height: 1.4;
+  margin-bottom: 14px;
+}
+.shift-reveal-dismiss-btn {
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  border: 1px solid #e0708a;
+  border-radius: 6px;
+  padding: 5px 16px;
+  cursor: pointer;
+}
+.shift-reveal-dismiss-btn:hover {
+  background: rgba(224, 112, 138, 0.15);
+}
+
+.pending-choice-banner {
+  background: #4a3a1a;
+  border-bottom: 2px solid var(--accent);
+  color: var(--accent);
+  padding: 8px 20px;
+  font-size: 0.85em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pending-choice-banner button {
+  background: var(--accent);
+  color: #201a0a;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pending-choice-banner button:hover { filter: brightness(1.1); }
+
+#game-main {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* Phase 5: below this width, the board and dashboard side-by-side would
+   otherwise both shrink to an illegible size rather than wrapping,
+   since flex items shrink before wrapping by default. Stack instead —
+   board gets full width (stays readable), dashboard moves below it. */
+@media (max-width: 900px) {
+  #game-main {
+    flex-direction: column;
+  }
+  .board-column {
+    max-width: 100%;
+  }
+  .board-hubs {
+    max-width: 100%;
+  }
+  .player-dashboards {
+    max-width: 100%;
+    width: 100%;
+    max-height: 50vh;
+  }
+  .top-panels-row {
+    flex-wrap: wrap;
+  }
+}
+
+.top-panels-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  align-items: flex-start;
+}
+
+.top-panel-column {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  display: none;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.top-panel-column.has-cards { display: block; }
+.top-panel-column.milestones-column {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  justify-content: space-between;
+  max-height: none;
+  overflow-y: visible;
+}
+
+/* Step 4: shared column so the central board and the Agency Board
+   stack vertically together, side by side with the player dashboards. */
+.board-zoom-viewport {
+  flex: 3;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  /* A fixed viewport height is what makes "zoom out for a macro view"
+     meaningful — without one, the viewport would just grow to fit
+     board-column's natural (scaled) size and there'd be nothing to pan
+     within. */
+  height: min(82vh, 900px);
+  background: rgba(0, 0, 0, 0.15);
+  touch-action: none;
+}
+
+.board-column {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  transform-origin: 0 0;
+  cursor: grab;
+  user-select: none;
+  will-change: transform;
+}
+.board-column.board-panning {
+  cursor: grabbing;
+}
+
+.board-zoom-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 20;
+}
+
+.board-zoom-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--bg-panel-light) 0%, var(--bg-dark) 100%);
+  border: 2px solid var(--hub-decisions, #e8b64c);
+  color: var(--text-main);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+  transition: transform 0.1s ease;
+}
+.board-zoom-btn:hover {
+  transform: scale(1.08);
+}
+.board-zoom-reset-btn {
+  font-size: 0.95rem;
+}
+
+.agency-board {
+  background-image: url('assets/board/agency-board.png');
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  border: 2px solid var(--hub-decisions, #e8b64c);
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+  position: relative;
+  aspect-ratio: 1568 / 588;
+  width: 100%;
+}
+
+.agency-board-title {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 1em;
+  letter-spacing: 1.5px;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--hub-decisions, #e8b64c);
+}
+
+.agency-board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.agency-board-row:last-child { margin-bottom: 0; }
+
+.agency-board-row-label {
+  flex-shrink: 0;
+  width: 90px;
+  font-size: 0.8em;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.agency-board-cards {
+  position: absolute;
+  z-index: 2;
+}
+/* FIX (real overflow bug, confirmed via direct math): height-anchored
+   instead of width-anchored — the bottom row's real available
+   vertical space (27.55% of board height) is short, and a width-
+   anchored portrait ratio computed a height nearly double that,
+   overflowing past the board frame. Landscape ratio (7/5) now
+   derives width FROM that real available height, so the slot
+   genuinely fits within the row without overflow. */
+.agency-slot-agent {
+  height: 34.0%;
+  min-height: 95px;
+  aspect-ratio: 13 / 10;
+  width: auto;
+  top: 63.0%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.agency-slot-agent-0 { left: 6.2%; }
+.agency-slot-agent-1 { left: 24.2%; }
+.agency-slot-agent-2 { left: 42.2%; }
+.agency-slot-agent-3 { left: 60.2%; }
+.agency-slot-agent-4 { left: 78.2%; }
+
+/* Action Cards render in the TOP row position. Width-anchored portrait
+   sizing already fits this row's real available height almost exactly
+   (measured: ~228px computed vs. ~226px available) — no overflow bug
+   here, left unchanged. */
+/* Action slots widened (5/7 -> 4/5) per explicit request; left offsets
+   adjusted to keep even spacing — verified via direct math that the
+   new width (~11.53% of board width) fits safely within the ~18.5%
+   gap between adjacent slots without overlap. */
+.agency-slot-action {
+  height: 38.44%;
+  aspect-ratio: 4 / 5;
+  width: auto;
+  top: 18.71%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+.agency-slot-action-0 { left: 7.2%; }
+.agency-slot-action .full-card-image {
+  object-fit: contain;
+}
+.agency-slot-action-1 { left: 25.6%; }
+.agency-slot-action-2 { left: 44.2%; }
+.agency-slot-action-3 { left: 62.8%; }
+.agency-slot-action-4 { left: 81.4%; }
+
+.agency-slot-agent .agent-card {
+  width: 100%;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agency-slot-action .hand-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Item 3 (explicit context-scoping): the Agency Board context above
+   overrides .agent-card's own max-width/aspect-ratio to fill its
+   slot exactly. The dashboard/tableau context below is the base
+   .agent-card rule's real intended context (fixed max-width,
+   locked aspect-ratio) — stated explicitly here rather than left as
+   an implicit "no override applies" fallback, so a future change to
+   one context can't silently affect the other. */
+.player-dashboards .agent-card,
+.tableau-panel .agent-card,
+.hand-drawer .agent-card {
+  max-width: 152px;
+  width: 100%;
+  height: auto;
+}
+
+.board-hubs {
+  position: relative;
+  width: 100%;
+  max-width: 780px;
+  aspect-ratio: 1 / 1;
+  background-image: url('assets/board/central-board.png');
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  border-radius: 12px;
+  overflow: visible;
+}
+
+/* Defensive fallback for browsers without aspect-ratio support (Safari
+   <15, older Chrome/Firefox): without an explicit height, a
+   background-image-only div with no text content would otherwise
+   collapse toward zero height — exactly matching a "board squeezed
+   into a tiny container" symptom. */
+@supports not (aspect-ratio: 1 / 1) {
+  .board-hubs {
+    height: 0;
+    padding-bottom: 100%;
+  }
+}
+
+.hub-panel {
+  position: absolute;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px;
+  box-shadow: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+/* Phase 4 Sub-stage A: percentages measured directly against the real
+   1092x1092 board artwork (verified via OpenCV gold-border contour
+   detection, cross-checked against an independent edge-sample ratio —
+   89-96% of each rectangle's perimeter lies on a real gold border
+   pixel). Not eyeballed. */
+.hub-panel[data-hub='EXECUTIVE_SEARCH'] { left: 25.18%; top: 6.5%; width: 14.84%; height: 22.07%; --hub-accent: var(--hub-search); --hub-accent-dim: var(--hub-search-dim); }
+.hub-panel[data-hub='GROWTH'] { left: 25.09%; top: 35.44%; width: 34.25%; height: 24.08%; --hub-accent: var(--hub-growth); --hub-accent-dim: var(--hub-growth-dim); }
+.hub-panel[data-hub='OPERATIONS'] { left: 63%; top: 35.53%; width: 34.25%; height: 23.99%; --hub-accent: var(--hub-operations); --hub-accent-dim: var(--hub-operations-dim); }
+.hub-panel[data-hub='LEADERSHIP'] { left: 25.09%; top: 63.37%; width: 34.25%; height: 23.99%; --hub-accent: var(--hub-leadership); --hub-accent-dim: var(--hub-leadership-dim); }
+.hub-panel[data-hub='EXECUTIVE_DECISIONS'] { left: 62.82%; top: 63.37%; width: 34.25%; height: 23.99%; --hub-accent: var(--hub-decisions); --hub-accent-dim: var(--hub-decisions-dim); }
+
+.hub-title {
+  /* Phase 4 Sub-stage A: the real board artwork already renders each
+     hub's name as embossed gold text at this exact position — this CSS
+     title would duplicate it. Visually hidden (not display:none) so it
+     remains available to screen readers. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.board-space-hitbox {
+  position: absolute;
+  border-radius: 999px;
+  cursor: default;
+  pointer-events: auto;
+}
+.board-space-hitbox.space-clickable {
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+.board-space-hitbox.space-clickable:hover {
+  background: rgba(255, 214, 51, 0.18);
+  box-shadow: 0 0 0 2px #ffd633, 0 0 14px 4px rgba(255, 214, 51, 0.75);
+}
+.board-space-hitbox.space-full::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(180, 40, 40, 0.15);
+  border-radius: 999px;
+  pointer-events: none;
+}
+.board-space-hitbox.space-unavailable {
+  cursor: not-allowed;
+  opacity: 0.6;
+  filter: grayscale(45%);
+}
+
+.status-token {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #a33;
+  color: white;
+  font-size: 0.6em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  z-index: 4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.space-lock-tile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4em;
+  z-index: 5;
+  filter: drop-shadow(0 0 3px #000000) drop-shadow(0 0 2px #000000);
+  pointer-events: none;
+}
+
+.staff-in-training-space-badge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  font-size: 0.85em;
+  background: #3a2e1f;
+  border: 1px solid #e0b169;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* These carry genuinely dynamic info not printed on the physical board
+   (the current Market Share sprint bonus claim status, the revealed
+   Specialist Card) — too much text for the small hitbox itself, so
+   they float as a small anchored popover below it instead. */
+.specialist-card-panel {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  z-index: 6;
+  pointer-events: none;
+}
+.specialist-card-panel {
+  width: 140px;
+  aspect-ratio: 562 / 800;
+  height: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--hub-search, var(--accent));
+  border-radius: 6px;
+  padding: 3px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.specialist-card-panel .full-card-image-wrap,
+.specialist-card-panel .full-card-image {
+  width: 100%;
+  height: 100%;
+}
+.specialist-card-panel .card-portrait {
+  height: 34px;
+  margin: 0 0 3px;
+}
+.specialist-card-name {
+  font-size: 0.62em;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text-main);
+}
+/* Item 2: reusable physical "SPENT" tile overlay — a diagonal banner
+   stamp across whatever card/space it's applied to, matching board-
+   game component styling rather than a plain text label. */
+.specialist-card-spent {
+  position: relative;
+}
+.spent-tile-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4;
+  pointer-events: none;
+}
+.spent-tile-overlay::after {
+  content: 'SPENT';
+  display: block;
+  background: repeating-linear-gradient(135deg, #a33 0px, #a33 6px, #7a2626 6px, #7a2626 12px);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.85em;
+  letter-spacing: 2px;
+  padding: 3px 18px;
+  transform: rotate(-18deg);
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.specialist-card-empty {
+  font-size: 0.6em;
+  color: var(--text-dim);
+  padding: 4px;
+}
+
+/* Phase 4 Sub-stage B: absolutely-positioned overlay covering the whole
+   board image — meeple chips render here at their measured circle
+   coordinates rather than inside each space-card's own flex flow.
+   pointer-events:none so it never blocks clicks on the space-cards
+   beneath it. */
+.meeple-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.market-share-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.market-share-tile-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.market-share-bonus-tile {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%, -50%);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #e8b64c, #b8862c);
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 0 0 1px #000000, 0 1px 3px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+}
+.market-share-bonus-tile-claimed {
+  background: linear-gradient(180deg, #555c66, #33383f);
+  opacity: 0.55;
+  filter: grayscale(60%);
+}
+.market-share-bonus-tile-banking {
+  animation: market-share-tile-bank 0.6s ease-out;
+}
+@keyframes market-share-tile-bank {
+  0% { transform: translate(-50%, -50%) scale(1.6); box-shadow: 0 0 12px 4px rgba(232, 182, 76, 0.9); }
+  100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 0 1px #000000, 0 1px 3px rgba(0, 0, 0, 0.6); }
+}
+.market-share-marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1.5px #000000, 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.shift-ladder-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Active Shift slot — positioned near the Shift Track ladder
+   (SHIFT_LADDER_COORDS sits at x=90.2%, y=8-27%). Placed above that
+   range rather than directly beside it, since the exact empty space on
+   the board image can't be visually verified from here — safe to nudge
+   these percentages if it doesn't land quite right against the real
+   artwork. */
+.active-shift-slot {
+  position: absolute;
+  left: 62%;
+  top: 1.5%;
+  width: 27%;
+  z-index: 6;
+  pointer-events: auto;
+}
+.active-shift-label {
+  font-size: 0.62em;
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  text-align: center;
+  margin-bottom: 2px;
+  letter-spacing: 0.5px;
+}
+.active-shift-box {
+  background: rgba(15, 15, 20, 0.82);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: help;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.active-shift-box .card-portrait,
+.active-shift-box .card-portrait-fallback {
+  width: 34px;
+  height: 34px;
+}
+.active-shift-name {
+  font-size: 0.6em;
+  color: var(--text-light);
+  text-align: center;
+  line-height: 1.15;
+}
+.shift-ladder-marker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 14px solid #e05d44;
+  filter: drop-shadow(0 0 0 1.5px #000000) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+}
+.shift-ladder-marker-moved {
+  animation: shift-marker-pulse 0.6s ease-out;
+}
+@keyframes shift-marker-pulse {
+  0% { filter: drop-shadow(0 0 0 1.5px #000000) drop-shadow(0 0 0 rgba(224, 93, 68, 0)); }
+  40% { filter: drop-shadow(0 0 0 1.5px #000000) drop-shadow(0 0 10px 4px rgba(224, 93, 68, 0.9)); }
+  100% { filter: drop-shadow(0 0 0 1.5px #000000) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7)); }
+}
+.board-meeple-chip {
+  position: absolute;
+  width: 15px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+.board-meeple-overflow-chip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bg-dark);
+  border: 1px solid var(--hub-decisions, #e8b64c);
+  color: var(--hub-decisions, #e8b64c);
+  font-size: 0.6em;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 6;
+}
+.board-meeple-chip-placing {
+  animation: board-meeple-placing 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes board-meeple-placing {
+  0% { transform: translate(-50%, -50%) translateY(-14px) scale(0.4); opacity: 0; }
+  70% { transform: translate(-50%, -50%) translateY(1px) scale(1.08); opacity: 1; }
+  100% { transform: translate(-50%, -50%) translateY(0) scale(1); opacity: 1; }
+}
+.board-meeple-chip svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.player-dashboards-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 2;
+  max-width: 360px;
+}
+
+.dashboard-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboard-tab {
+  flex: 1;
+  min-width: 60px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px solid var(--tab-accent, #555);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: #ccc;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-tab:hover {
+  opacity: 0.85;
+}
+
+.dashboard-tab-selected {
+  opacity: 1;
+  background: var(--tab-accent, #555);
+  color: #111;
+}
+
+.dashboard-tab-active-turn:not(.dashboard-tab-selected) {
+  box-shadow: 0 0 0 2px rgba(255, 214, 100, 0.6) inset;
+}
+
+.opponent-condensed-panel {
+  padding: 10px 12px;
+}
+
+.condensed-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 8px 0;
+}
+
+.condensed-track-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+}
+
+.condensed-track-label {
+  width: 68px;
+  flex-shrink: 0;
+  color: #aaa;
+}
+
+.condensed-track-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.condensed-track-fill {
+  height: 100%;
+  background: var(--player-accent, #7ac);
+  border-radius: 3px;
+}
+
+.condensed-track-value {
+  width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-dashboards {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 360px;
+  max-height: min(90vh, 780px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.player-panel {
+  background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-dark) 100%);
+  border: 2px solid var(--player-accent, var(--border));
+  border-radius: 10px;
+  padding: 0 12px 10px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+}
+
+.player-panel-active {
+  box-shadow: 0 0 0 2px var(--hub-decisions, #e8b64c), 0 0 12px 2px rgba(232, 182, 76, 0.55);
+  animation: active-player-pulse 0.6s ease-out;
+}
+
+@keyframes active-player-pulse {
+  0% {
+    box-shadow: 0 0 0 2px var(--hub-decisions, #e8b64c), 0 0 0 rgba(232, 182, 76, 0);
+  }
+  40% {
+    box-shadow: 0 0 0 2px var(--hub-decisions, #e8b64c), 0 0 20px 6px rgba(232, 182, 76, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 2px var(--hub-decisions, #e8b64c), 0 0 12px 2px rgba(232, 182, 76, 0.55);
+  }
+}
+
+.player-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -12px 8px;
+  padding: 6px 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--bg-dark);
+  background: linear-gradient(180deg, var(--player-accent, var(--accent)) 0%, color-mix(in srgb, var(--player-accent, var(--accent)) 70%, black) 100%);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.35);
+}
+
+.player-name {
+  text-transform: uppercase;
+  font-size: 0.92em;
+  letter-spacing: 0.5px;
+}
+
+/* Still used in the scoreboard table, on a neutral background (not the
+   player-header, which is now filled with the player's own accent
+   color, making a same-color dot there redundant and invisible). */
+.player-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255,255,255,0.5);
+}
+
+.wallet-row { font-size: 0.9em; margin-bottom: 6px; color: var(--text-dim); }
+
+.meeples-row { font-size: 0.85em; margin-bottom: 8px; color: var(--text-dim); }
+.draggable-meeple-row {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.draggable-meeple-row-recalled {
+  animation: meeple-row-recalled 0.5s ease-out;
+}
+@keyframes meeple-row-recalled {
+  0% { transform: scale(1.3); filter: drop-shadow(0 0 6px rgba(232, 182, 76, 0.9)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(232, 182, 76, 0)); }
+}
+.draggable-meeple-token {
+  display: inline-block;
+  width: 13px;
+  height: 16px;
+  cursor: grab;
+  transform: translateZ(0);
+  transition: transform 0.1s ease;
+  will-change: transform;
+}
+.draggable-meeple-token:hover {
+  transform: translateZ(0) scale(1.25);
+}
+.draggable-meeple-token-dragging {
+  opacity: 0.35;
+}
+.draggable-meeple-token svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.board-space-hitbox.space-free-action-highlight {
+  box-shadow: 0 0 0 3px #4ade80, 0 0 18px 6px rgba(74, 222, 128, 0.85);
+  animation: free-action-pulse 1.2s ease-in-out infinite;
+}
+@keyframes free-action-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+.board-space-hitbox.space-drag-hover {
+  background: rgba(255, 214, 51, 0.3);
+  box-shadow: 0 0 0 3px #ffd633, 0 0 18px 6px rgba(255, 214, 51, 0.85);
+  transition: background 0.1s ease, box-shadow 0.1s ease;
+  will-change: box-shadow;
+}
+
+.staff-in-training-badge {
+  display: inline-block;
+  background: #3a2e1f;
+  color: #e0b169;
+  border: 1px solid #e0b169;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+  margin-left: 4px;
+}
+
+.hand-summary, .roster-summary { font-size: 0.75em; color: var(--text-dim); margin-top: 6px; }
+.hand-summary { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.mini-chip { padding: 0 6px; font-size: 0.85em; font-weight: 500; }
+
+.hand-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.hand-card {
+  width: 64px;
+  aspect-ratio: 540 / 720;
+  height: auto;
+  background: linear-gradient(180deg, var(--bg-panel-light) 0%, var(--bg-panel) 100%);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 4px;
+  font-size: 0.65em;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.hand-card-placeholder {
+  background: repeating-linear-gradient(45deg, var(--bg-panel-light), var(--bg-panel-light) 6px, var(--bg-dark) 6px, var(--bg-dark) 12px);
+}
+.hand-card-blank { font-size: 1.4em; color: var(--text-dim); }
+
+.hand-card-facedown-group {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.hand-card-facedown {
+  width: 40px;
+  height: 56px;
+  background: linear-gradient(135deg, #2a3a5a, #1a2540);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  position: relative;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+}
+.hand-card-facedown::after {
+  content: '🂠';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.3em;
+  color: var(--accent);
+  opacity: 0.6;
+}
+
+.hand-card-name { font-weight: 600; margin-bottom: 4px; }
+.hand-card-cost {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(232, 182, 76, 0.15);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Phase 3: shared portrait container — real art displays if the file
+   exists (dropped into web/assets/<folder>/), otherwise a styled
+   initials/name fallback keeps the card looking complete. */
+.full-card-image-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  position: relative;
+}
+.full-card-image-wrap .full-card-text-fallback {
+  display: none;
+}
+.full-card-image-wrap .full-card-text-fallback.full-card-text-fallback-visible {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.full-card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  margin: auto;
+  display: block;
+  transition: transform 0.15s ease;
+}
+/* Agent Card image rotation (updated to precise, non-cropping math):
+   the source card art has its stat labels (Training, Technology,
+   Recognition, Culture) printed to read vertically in the un-rotated
+   file. Rotating -90deg makes them read normally, left-to-right.
+   Applied via three real selectors covering every context Agent Cards
+   render in — Agency Board bottom row, all roster/tableau/dashboard
+   cards via the shared .agent-card class, and the hover-zoom overlay
+   (using :has() to detect agent-specific content, since that overlay
+   is shared with Action Cards via the same .card-zoom-vertical class
+   and must not rotate those).
+
+   PRECISE FIT (verified against the real source files, not assumed):
+   every one of the 54 agent images in assets/agents/ is exactly
+   840x1092px (confirmed via direct pixel inspection of all 54 files),
+   giving a natural aspect ratio of 840/1092 = 0.7692 after accounting
+   for the swap a 90deg rotation causes. This container's own
+   aspect-ratio is 1.3/1 (matched in .agent-card and, separately, in
+   the zoom overlay's agent variant below) — 1/1.3 = 0.7692, an exact
+   match. Sizing the pre-rotation image box to width:76.923% /
+   height:130% of its wrap produces a box whose own aspect ratio
+   (0.7692) exactly equals the source image's natural ratio, so
+   object-fit:contain here shows 100% of the card with zero cropping
+   AND zero letterboxing — not an approximation via oversized-cover
+   like the previous 141.5% overscan, an exact geometric match.
+
+   DECOUPLING NOTE (still holds): this sized, rotated image is
+   clipped only by .full-card-image-wrap's OWN dedicated
+   overflow:hidden, not by .agent-card's or .hand-card's own
+   overflow:hidden. The outer card container's aspect-ratio/max-width/
+   sizing can still be changed freely without risking spillover — but
+   if that aspect-ratio ever changes from 1.3/1, the 76.923%/130%
+   figures below must be recomputed to match (they are only exact for
+   a 1.3:1 container sizing an 840x1092 source). */
+.agent-card .full-card-image,
+.agency-slot-agent .full-card-image,
+.card-zoom-overlay:has(.agent-card-token-stack) .full-card-image {
+  width: 76.923%;
+  height: 130%;
+  max-width: none;
+  object-fit: contain;
+  transform: rotate(-90deg);
+}
+.agent-card-clickable .full-card-image,
+.hand-card-playable .full-card-image,
+.hand-card-market .full-card-image {
+  cursor: pointer;
+}
+.agent-card:hover .full-card-image,
+.hand-card:hover .full-card-image {
+  transform: scale(1.04);
+}
+
+.card-portrait {
+  width: 100%;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 3px 0;
+  background: var(--bg-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+}
+.card-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.card-portrait-fallback,
+.card-portrait-fallback-text {
+  color: var(--text-dim);
+  font-size: 0.9em;
+  text-align: center;
+  padding: 2px;
+  line-height: 1.1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+/* Open Market Action Card frames — family-based color identity, echoing
+   the same accent language as the board hubs (Growth=emerald etc.),
+   reusing a scoped modifier so the shared .hand-card base (player's own
+   hand, choice modals) is left untouched. */
+.hand-card-market {
+  width: 92px;
+  aspect-ratio: 540 / 720;
+  height: auto;
+  padding: 6px;
+  border-width: 2px;
+}
+.hand-card-market[data-family='growth'] { border-color: var(--hub-growth, var(--border)); }
+.hand-card-market[data-family='strategy'] { border-color: var(--hub-leadership, var(--border)); }
+.hand-card-market[data-family='influence'] { border-color: var(--hub-search, var(--border)); }
+.hand-card-market[data-family='start'] { border-color: var(--hub-operations, var(--border)); }
+
+.market-card-family-header {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.hand-card-market[data-family='growth'] .market-card-family-header { color: var(--hub-growth); }
+.hand-card-market[data-family='strategy'] .market-card-family-header { color: var(--hub-leadership); }
+.hand-card-market[data-family='influence'] .market-card-family-header { color: var(--hub-search); }
+.hand-card-market[data-family='start'] .market-card-family-header { color: var(--hub-operations); }
+
+
+.hand-card-playable {
+  cursor: pointer;
+  border-color: var(--accent);
+}
+.hand-card-playable:hover {
+  transform: translateY(-4px) scale(1.04);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5), 0 0 0 1.5px var(--accent);
+}
+.hand-card-playable:active {
+  transform: translateY(-1px) scale(1.01);
+}
+
+.hand-card-unaffordable {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(70%);
+  position: relative;
+}
+.hand-card-unaffordable::after {
+  content: '🔒';
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+.hand-card-cant-afford {
+  color: #e05d44;
+  font-size: 0.6em;
+  margin-top: 2px;
+}
+
+.history-ticker {
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  padding: 8px 20px;
+  max-height: 140px;
+  overflow-y: auto;
+  font-size: 0.78em;
+  color: var(--text-dim);
+}
+.ticker-line { padding: 2px 0; }
+.ticker-round {
+  display: inline-block;
+  background: var(--bg-panel-light);
+  color: var(--accent);
+  padding: 0 5px;
+  border-radius: 3px;
+  margin-right: 6px;
+  font-size: 0.85em;
+}
+
+.interrupt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal-box {
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 420px;
+  width: 90%;
+  /* BUGFIX: no height constraint here meant the modal could genuinely
+     grow taller than the viewport once the Acquire section made it
+     realistically hold 10+ cards plus buttons — the top portion (the
+     Play-a-card list) could be pushed off-screen with nothing to scroll
+     it back into view. Real users would see cards that LOOK clickable
+     but sit outside the visible/reachable area entirely. */
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-box h3 { margin-top: 0; color: var(--accent); }
+
+.candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+}
+.candidate-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-panel-light);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#interrupt-confirm-btn {
+  background: var(--accent);
+  color: #201a0a;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#interrupt-confirm-btn:hover { filter: brightness(1.1); }
+
+.modal-hand-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.modal-hide-btn {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+.modal-hide-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.modal-skip-btn {
+  background: var(--accent);
+  color: #201a0a;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.modal-skip-btn:hover { filter: brightness(1.1); }
+
+.modal-cancel-btn {
+  background: transparent;
+  color: #e8a04c;
+  border: 1px solid #e8a04c;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.modal-cancel-btn:hover { background: #e8a04c; color: #201a0a; }
+
+.empty-hand-message {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.roster-full-warning {
+  background: #3a1f1f;
+  border: 1px solid #e0708a;
+  color: #f2a3b3;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 0.85em;
+  margin: 8px 0;
+}
+
+.modal-divider {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.8em;
+  margin: 14px 0;
+  letter-spacing: 1px;
+}
+
+.modal-acquire-label {
+  font-size: 0.8em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.hand-card-acquirable {
+  cursor: pointer;
+  border-color: #7fc8ff;
+}
+.hand-card-acquirable:hover {
+  transform: translateY(-4px) scale(1.04);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5), 0 0 0 1.5px #7fc8ff;
+}
+.hand-card-acquirable:active {
+  transform: translateY(-1px) scale(1.01);
+}
+
+/* ---------------- Agent Cards ---------------- */
+
+.roster-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  padding-bottom: 4px;
+}
+
+/* Phase 3, Item 1: card hover zoom overlay. Fixed-position, cloned
+   content from the real hovered card (see the JS event delegation),
+   scaled up with a smooth transition. pointer-events:none so it can
+   never itself trigger hover/click handling or block the cursor. */
+/* Items 2/3: BGA-style corner drawers (hand + tableau). Stacked
+   vertically on the left side, hand toggle at the very bottom-left
+   per the explicit spec, tableau toggle directly above it. */
+.corner-drawer-toggle {
+  position: fixed;
+  left: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--bg-panel-light) 0%, var(--bg-dark) 100%);
+  border: 2px solid var(--hub-decisions, #e8b64c);
+  color: var(--text-main);
+  font-size: 1.5em;
+  cursor: pointer;
+  z-index: 300;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.corner-drawer-toggle:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 16px rgba(232, 182, 76, 0.5);
+}
+.hand-drawer-toggle {
+  bottom: 16px;
+}
+.tableau-toggle {
+  bottom: 80px;
+}
+.log-drawer-toggle {
+  bottom: 144px;
+}
+.corner-drawer-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--hub-decisions, #e8b64c);
+  color: #201a0a;
+  font-size: 0.4em;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+
+.corner-drawer {
+  position: fixed;
+  left: 16px;
+  bottom: 80px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-dark) 100%);
+  border: 2px solid var(--hub-decisions, #e8b64c);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+  z-index: 290;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Slide-out transition: transform/opacity only, GPU-friendly,
+     matching this project's established animation discipline. */
+  transform: translateY(20px) scale(0.96);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  will-change: transform, opacity;
+}
+.corner-drawer.corner-drawer-open {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.tableau-panel {
+  bottom: 144px;
+}
+.log-drawer {
+  bottom: 208px;
+  max-height: 50vh;
+}
+.log-drawer .history-ticker {
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.corner-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--hub-decisions, #e8b64c);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.corner-drawer-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1em;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.corner-drawer-close-btn:hover {
+  color: var(--text-main);
+}
+.corner-drawer-cards {
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow-y: auto;
+}
+.corner-drawer-cards-agents {
+  flex-direction: column;
+}
+.corner-drawer-empty {
+  color: var(--text-dim);
+  font-size: 0.85em;
+  padding: 8px;
+}
+
+.card-zoom-overlay {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  background: var(--bg-panel-light);
+  border: 2px solid var(--hub-decisions, #e8b64c);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+  font-size: 1.7em;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  will-change: opacity, transform;
+}
+.card-zoom-overlay.card-zoom-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.card-zoom-overlay.card-zoom-pinned {
+  border-color: #ffd633;
+  box-shadow: 0 0 0 2px #ffd633, 0 10px 30px rgba(0, 0, 0, 0.7);
+}
+.card-zoom-overlay.card-zoom-vertical {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  width: 240px;
+  aspect-ratio: 636 / 730;
+  height: auto;
+}
+.card-zoom-overlay.card-zoom-vertical:has(.agent-card-token-stack) {
+  width: 280px;
+  /* Matches .agent-card's own 1.3/1 exactly — this container ratio and
+     the 76.923%/130% pre-rotation image sizing above are only a
+     precise, lossless fit when they agree; keep them in sync if either
+     value ever changes. */
+  aspect-ratio: 1.3 / 1;
+  height: auto;
+}
+.card-zoom-overlay .full-card-image-wrap,
+.card-zoom-overlay .full-card-image {
+  width: 100%;
+  height: 100%;
+}
+.card-zoom-overlay .agent-card-portrait-wrap {
+  width: 120px;
+}
+.card-zoom-overlay .agent-card-portrait-wrap .card-portrait {
+  width: 120px;
+}
+.card-zoom-overlay .agent-card-token-stack {
+  top: -10px;
+  right: -10px;
+}
+
+/* LOCKED RULE: Agent Card frame sizing — do not modify or overwrite
+   in future updates. aspect-ratio 1.3/1 and min-height 105px give the
+   fallback text stack (name/stats/profit, ~4 lines) enough vertical
+   room to avoid clipping, tuned tighter after 1.4/1 + 90px proved too
+   tight in practice. overflow:hidden is INTENTIONALLY preserved here,
+   not a bug: the Agent Card image is rotated -90deg to correct its
+   orientation, sized via precise (non-overscanned) math that exactly
+   matches the real 840x1092 source images — see the .full-card-image
+   rotation rule above for that derivation — and this container is
+   still what bounds it to the card's visible frame. Switching this to
+   overflow:visible would break the rotation fix — if a future report
+   says agent card content looks cut off, check whether it's expected
+   framing (the rotated image is sized to exactly fill this box, not
+   overflow it, so this should no longer be a real source of clipping)
+   or genuine text/content clipping (fix via font-size/line-height/
+   min-height on the text elements below, not by touching overflow)
+   before changing this property. */
+.agent-card {
+  width: 100%;
+  max-width: 152px;
+  aspect-ratio: 1.3 / 1;
+  height: auto;
+  min-height: 105px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  font-size: 0.65em;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.agent-card-portrait-wrap {
+  flex-shrink: 0;
+  width: 48px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agent-card-portrait-wrap .card-portrait {
+  width: 48px;
+  height: 100%;
+  margin: 0;
+}
+.agent-card-info {
+  flex: 1;
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1px;
+}
+/* Physical-token look: a real stacked overlay in the corner, rather
+   than an inline badge row taking up card space — matching "physical
+   tokens stacked on top of" the request's own wording. */
+.agent-card-token-stack {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  max-width: calc(100% - 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  z-index: 3;
+}
+.agent-card-token-stack .agent-badge {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.agent-card-clickable {
+  cursor: pointer;
+  border-color: #7fc8ff;
+}
+.agent-card-clickable:hover { transform: translateY(-3px); }
+.agent-card-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+.agent-card-placeholder {
+  background: repeating-linear-gradient(45deg, var(--bg-panel-light), var(--bg-panel-light) 6px, var(--bg-dark) 6px, var(--bg-dark) 12px);
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-badge {
+  font-size: 0.85em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+.agent-badge-influencer { background: #e8b64c; color: #201a0a; }
+.agent-badge-follower { background: #4a5568; color: #cbd5e0; border: 1px solid transparent; }
+
+/* ITEM 2: network-color-matched badge accents — an Influencer and its
+   Follower(s) always share a network color, so both badge shapes use the
+   SAME accent per color, keeping INF (filled) vs FOL (outlined) as the
+   role distinction rather than color. */
+.agent-badge-influencer.network-color-red { background: #e05a5a; color: #2a0d0d; }
+.agent-badge-follower.network-color-red { border-color: #e05a5a; color: #f2a3a3; background: transparent; }
+
+.agent-badge-influencer.network-color-grey { background: #9aa3ad; color: #1c1f22; }
+.agent-badge-follower.network-color-grey { border-color: #9aa3ad; color: #c7ccd1; background: transparent; }
+
+.agent-badge-influencer.network-color-green { background: #5fbf6f; color: #0d2210; }
+.agent-badge-follower.network-color-green { border-color: #5fbf6f; color: #a7dcae; background: transparent; }
+
+.agent-badge-influencer.network-color-blue { background: #5b9fe0; color: #0a1f33; }
+.agent-badge-follower.network-color-blue { border-color: #5b9fe0; color: #a9cdef; background: transparent; }
+
+.agent-badge-influencer.network-color-purple { background: #a575e0; color: #1f0f33; }
+.agent-badge-follower.network-color-purple { border-color: #a575e0; color: #d0b8ef; background: transparent; }
+
+.agent-badge-influencer.network-color-yellow { background: #e0c94c; color: #2a2408; }
+.agent-badge-follower.network-color-yellow { border-color: #e0c94c; color: #efe3a3; background: transparent; }
+
+.agent-token {
+  font-size: 0.95em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+}
+.agent-token-coached {
+  color: #ffd27a;
+  border-color: #ffd27a;
+}
+.agent-token-loyalty {
+  color: #ff8fa3;
+  border-color: #ff8fa3;
+}
+.agent-token-onboarding {
+  color: #8fc8ff;
+  border-color: #8fc8ff;
+}
+
+/* Phase 3: standardized resource chip — same base treatment for Profit,
+   Priority, and any other headline resource shown outside a card,
+   rather than bare emoji floating in text. */
+.resource-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+.resource-chip-profit { border-color: var(--hub-decisions, #e8b64c); color: var(--hub-decisions, #e8b64c); }
+.resource-chip-priority { border-color: var(--hub-search, #9370c9); color: var(--hub-search, #9370c9); }
+
+.agent-card-name { 
+  font-weight: 600; 
+  line-height: 1.1; 
+  font-size: 0.95em;
+}
+.agent-card-stats { 
+  color: var(--text-dim); 
+  font-size: 0.85em; 
+  line-height: 1.1; 
+}
+.agent-card-profit-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+  font-size: 0.8em;
+  margin-top: 1px;
+}
+.agent-card-net-profit {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(209, 185, 143, 0.15);
+  border: 1px solid #d1b98f;
+  color: #d1b98f;
+  font-weight: 700;
+}
+
+.dual-track-stepper-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.dual-track-stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.dual-track-stepper-label {
+  flex: 1;
+}
+
+.dual-track-stepper-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-dark);
+  color: var(--text-light);
+  cursor: pointer;
+  font-weight: 700;
+}
+.dual-track-stepper-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.dual-track-stepper-btn:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+
+.dual-track-stepper-count {
+  min-width: 20px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.agent-candidate-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 4px 2px;
+}
+
+.agent-candidate-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+}
+
+.agent-owner-label {
+  font-size: 0.65em;
+  color: var(--text-dim);
+}
+
+.lobby-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-dark);
+}
+
+.lobby-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px 40px;
+  max-width: 480px;
+  width: 90vw;
+}
+
+.lobby-box h1 {
+  text-align: center;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.lobby-subtitle {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.9em;
+  margin-bottom: 20px;
+}
+
+.lobby-player-count-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 10px;
+}
+
+.lobby-player-count-row select,
+.lobby-archetype-select {
+  background: var(--bg-dark);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.lobby-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.lobby-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.lobby-slot-human {
+  border-color: var(--accent);
+}
+
+.lobby-slot-fixed {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.lobby-start-btn {
+  width: 100%;
+  background: var(--accent);
+  color: #201a0a;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-weight: 700;
+  font-size: 1em;
+  cursor: pointer;
+}
+.lobby-start-btn:hover { filter: brightness(1.1); }
+.lobby-start-btn:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+.lobby-back-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.85em;
+  margin-bottom: 10px;
+  padding: 0;
+}
+.waiting-leave-btn {
+  display: block;
+  margin: 14px auto 0;
+  text-align: center;
+}
+.lobby-back-btn:hover { color: var(--text-light); }
+
+.lobby-landing-choices {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+.lobby-landing-btn {
+  flex: 1;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 12px;
+  color: var(--text-light);
+  cursor: pointer;
+  text-align: center;
+  font-size: 1em;
+  font-weight: 700;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.lobby-landing-btn:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.lobby-landing-btn-sub {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.72em;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.online-lobby-error {
+  min-height: 18px;
+  color: #e07a5f;
+  font-size: 0.82em;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.lobby-text-input {
+  width: 100%;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 0.95em;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+}
+.lobby-text-input:focus { outline: none; border-color: var(--accent); }
+
+.lobby-online-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.lobby-online-join-row {
+  display: flex;
+  gap: 8px;
+}
+.lobby-room-code-input {
+  margin-bottom: 0;
+  text-align: center;
+  letter-spacing: 2px;
+  font-weight: 700;
+  max-width: 130px;
+}
+.lobby-online-join-row .lobby-start-btn {
+  width: auto;
+  flex: 1;
+}
+
+.waiting-room-box { max-width: 560px; }
+
+.waiting-room-code-banner {
+  text-align: center;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 18px;
+  font-size: 1.1em;
+}
+.waiting-room-code-banner strong {
+  color: var(--accent);
+  font-size: 1.3em;
+  letter-spacing: 3px;
+}
+.waiting-room-code-hint {
+  display: block;
+  font-size: 0.7em;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.waiting-room-seats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.waiting-seat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.waiting-seat-human { border-color: var(--accent); }
+.waiting-seat-open { opacity: 0.6; }
+.waiting-seat-locked { opacity: 0.4; }
+.waiting-seat-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75em;
+  flex-shrink: 0;
+}
+.waiting-seat-name { flex: 1; }
+.waiting-seat-empty { color: var(--text-dim); font-style: italic; }
+.waiting-seat-type {
+  color: var(--text-dim);
+  font-size: 0.78em;
+}
+.waiting-seat-control {
+  background: var(--bg-dark);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8em;
+}
+
+/* Section 6 — Level 5 Branch Choice modal */
+.branch-choice-modal-box {
+  max-width: 720px;
+}
+
+.branch-choice-permanent-warning {
+  background: #3a1f1f;
+  border: 1px solid #e0708a;
+  color: #f2a3b3;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 0.85em;
+  margin: 8px 0;
+}
+
+.branch-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 12px 0;
+}
+
+.branch-choice-card {
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branch-choice-header {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.95em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.branch-choice-level {
+  font-size: 0.8em;
+}
+
+.branch-choice-level p {
+  margin: 2px 0 0 0;
+  color: var(--text-dim);
+}
+
+.branch-level-badge {
+  display: inline-block;
+  background: var(--bg-dark);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.85em;
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.branch-choice-select-btn {
+  margin-top: auto;
+  background: var(--accent);
+  color: #201a0a;
+  border: none;
+  border-radius: 6px;
+  padding: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.branch-choice-select-btn:hover { filter: brightness(1.1); }
+
+/* Section 6 — Level 7/9 targeted milestone modal */
+.milestone-target-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.milestone-target-btn {
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+.milestone-target-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.master-algorithm-card-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+/* Phase 4 Stage 2 — physical player board: the real board artwork as a
+   true background, with track steps, office slots, and staff reservoir
+   counts positioned at coordinates measured directly against that
+   artwork (same OpenCV method as the central board). */
+.player-board-graphic {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1232 / 952;
+  background-image: url('assets/board/player-board.png');
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  border-radius: 8px;
+  margin: 6px 0;
+  overflow: visible;
+}
+@supports not (aspect-ratio: 1232 / 952) {
+  .player-board-graphic {
+    height: 0;
+    padding-bottom: 77.27%;
+  }
+}
+
+.player-board-track-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.player-board-step {
+  position: absolute;
+  width: 5.5%;
+  height: 6.5%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) inset;
+}
+.player-board-step.filled {
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--player-accent, var(--accent)) 85%, white), var(--player-accent, var(--accent)));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.player-board-step.current-position {
+  box-shadow: 0 0 0 2px var(--hub-decisions, #e8b64c), 0 0 6px 2px rgba(232, 182, 76, 0.8);
+}
+.player-board-step.executed-token {
+  background: repeating-linear-gradient(45deg, #6b4423, #6b4423 3px, #8a5a2e 3px, #8a5a2e 6px);
+}
+.player-board-step.vc-bonus-space {
+  box-shadow: 0 0 0 2px var(--hub-decisions, #e8b64c);
+}
+.player-board-step.vc-bonus-space.filled {
+  box-shadow: 0 0 0 2px var(--hub-decisions, #e8b64c), 0 0 6px 1px rgba(232, 182, 76, 0.7);
+}
+/* An unchosen branch lane's steps stay visually quiet (the physical
+   board shows both lanes printed at all times; only the chosen one is
+   ever actually filled) — same "unchosen = de-emphasized" idea the old
+   flex layout used via lane opacity, applied per-step instead. */
+.player-board-step.unchosen-branch-step {
+  opacity: 0.4;
+}
+
+.player-board-reservoir-count {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1em;
+  color: var(--text-main);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--hub-decisions, #e8b64c);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Insolvency deficit choice modal */
+.deficit-choice-track-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+.deficit-choice-track-option:hover { border-color: var(--accent); }
+.deficit-choice-track-option[disabled],
+.deficit-choice-track-option.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+
+
+/* Global Milestones module */
+/* .global-milestones-panel's own layout is now defined directly on
+   .top-panel-column.milestones-column above, avoiding a real specificity
+   conflict where both rules applied to the same element and the
+   2-class selector silently won regardless of source order. */
+
+.milestone-slot {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-align: center;
+  cursor: default;
+  overflow: hidden;
+}
+.milestone-slot.claimed {
+  border-color: var(--accent);
+}
+
+.milestone-slot-name {
+  font-size: 0.52em;
+  font-weight: 700;
+  color: var(--text-light);
+  line-height: 1.1;
+}
+
+.milestone-owner-badge {
+  font-size: 0.58em;
+  font-weight: 700;
+  color: #201a0a;
+  padding: 1px 5px;
+  border-radius: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.milestone-bonus-label {
+  font-size: 0.58em;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Start card choice modal (S1/S2/S3) — click-to-add track picker */
+.track-boost-picker {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+.track-boost-btn {
+  flex: 1;
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+.track-boost-btn:hover { border-color: var(--accent); }
+.track-boost-count {
+  display: inline-block;
+  background: var(--accent);
+  color: #201a0a;
+  border-radius: 10px;
+  padding: 0 6px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* Turn Order Wheel — Phase 4 Sub-stage C: positioned over the real
+   printed wheel graphic, using the exact circle Sub-stage A's own Hough
+   circle detection found (center 132.5,961.5 r=95 in the 1092x1092
+   source image). */
+.turn-order-track {
+  position: absolute;
+  left: 3.44%;
+  top: 79.35%;
+  width: 17.4%;
+  height: 17.4%;
+  z-index: 6;
+  pointer-events: none;
+}
+.turn-wheel-svg {
+  width: 100%;
+  height: 100%;
+}
+.turn-wheel-label {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--bg-dark);
+  pointer-events: none;
+}
+/* Banked Bonus Tokens inventory */
+.banked-tokens-inventory {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.banked-tokens-title {
+  font-size: 0.7em;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.banked-tokens-empty {
+  font-size: 0.7em;
+  color: var(--text-dim);
+  font-style: italic;
+}
+.banked-tokens-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.banked-token-chip {
+  font-size: 0.65em;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.banked-token-chip-clickable {
+  cursor: pointer;
+  opacity: 1;
+}
+.banked-token-chip-clickable:hover {
+  background: var(--accent);
+  color: #201a0a;
+}
+
+/* Report/Feedback button and modal */
+.report-feedback-btn {
+  margin-left: auto;
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+.report-feedback-btn:hover {
+  border-color: var(--accent);
+}
+.player-aid-btn {
+  margin-left: auto;
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  border: 1px solid var(--hub-decisions, #e8b64c);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+.player-aid-btn:hover {
+  background: rgba(232, 182, 76, 0.15);
+}
+
+.player-aid-modal-box {
+  max-width: 720px;
+  width: 92vw;
+}
+.player-aid-intro {
+  font-size: 0.85em;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.player-aid-scroll-area {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.player-aid-track-section {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.player-aid-track-section:last-child {
+  border-bottom: none;
+}
+.player-aid-track-title {
+  font-family: var(--font-display);
+  color: var(--hub-decisions, #e8b64c);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.player-aid-branch-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.player-aid-branch-label {
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+.player-aid-ability-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+  cursor: help;
+}
+.player-aid-level-badge {
+  flex-shrink: 0;
+  background: var(--bg-dark);
+  border: 1px solid var(--hub-decisions, #e8b64c);
+  color: var(--hub-decisions, #e8b64c);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.7em;
+  font-weight: 700;
+}
+.player-aid-ability-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.player-aid-ability-name {
+  font-weight: 700;
+  font-size: 0.78em;
+}
+.player-aid-ability-desc {
+  font-size: 0.72em;
+  color: var(--text-dim);
+  line-height: 1.3;
+}
+
+.feedback-field-label {
+  display: block;
+  font-size: 0.8em;
+  color: var(--text-dim);
+  margin: 10px 0 4px 0;
+}
+.feedback-text-input,
+.feedback-select,
+.feedback-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.85em;
+  font-family: inherit;
+}
+.feedback-textarea {
+  resize: vertical;
+}
+.feedback-existing-count {
+  font-size: 0.7em;
+  color: var(--text-dim);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+/* End-game survey rating buttons */
+.survey-rating-row {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 10px 0;
+}
+.survey-rating-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  cursor: pointer;
+  font-weight: 700;
+}
+.survey-rating-btn:hover {
+  border-color: var(--accent);
+}
+.survey-rating-btn-selected {
+  background: var(--accent);
+  color: #201a0a;
+  border-color: var(--accent);
+}
+/* ==========================================
+   MULTIPLAYER & MOBILE BUG FIXES
+   ========================================== */
+
+/* 1. Waiting Spinner for Spectators (Modal Gate) */
+.waiting-on-player-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 10px;
+}
+
+.waiting-on-player-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #e8b64c;
+  border-radius: 50%;
+  animation: waiting-on-player-spin 0.9s linear infinite;
+}
+
+@keyframes waiting-on-player-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 2. Turn Notification Banner */
+.turn-banner {
+  position: sticky;
+  top: 0;
+  z-index: 150;
+  text-align: center;
+  padding: 10px 16px;
+  font-family: var(--font-display);
+  font-size: 1.15em;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.turn-banner-mine {
+  background: linear-gradient(180deg, #6fe08a 0%, #2f9e52 100%);
+  color: #05230f;
+}
+
+.turn-banner-waiting {
+  background: linear-gradient(180deg, #4a5568 0%, #2b3340 100%);
+  color: #dbe2ea;
+}
+
+.turn-banner-pulse {
+  animation: turn-banner-pulse-anim 0.6s ease-out;
+}
+
+@keyframes turn-banner-pulse-anim {
+  0% { transform: scale(0.97); box-shadow: 0 0 0 rgba(111, 224, 138, 0); }
+  40% { transform: scale(1.02); box-shadow: 0 0 22px 6px rgba(111, 224, 138, 0.65); }
+  100% { transform: scale(1); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); }
+}
+
+/* 3. Mobile & Tablet Layout Adjustments (< 768px) */
+@media (max-width: 768px) {
+  html, body { overflow-x: hidden; }
+
+  #game-main {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    gap: 10px;
+  }
+
+  .board-zoom-viewport {
+    width: 100%;
+    height: 62vh;
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+
+  .board-column { cursor: default; }
+
+  .player-dashboards-wrap,
+  .player-dashboards {
+    width: 100%;
+    max-width: 100%;
+    max-height: 62vh;
+  }
+
+  body.mobile-view-board .mobile-console-pane { display: none !important; }
+  body.mobile-view-console .mobile-board-pane { display: none !important; }
+
+  .mobile-view-toggle {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-view-toggle-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    background: var(--bg-panel-light);
+    color: var(--text-main);
+    font-weight: 700;
+    font-size: 0.9em;
+  }
+
+  .mobile-view-toggle-btn.mobile-view-toggle-active {
+    border-color: var(--hub-decisions, #e8b64c);
+    color: var(--hub-decisions, #e8b64c);
+  }
+
+  .board-zoom-controls { top: 6px; right: 6px; }
+  .board-zoom-btn { width: 42px; height: 42px; font-size: 1.3rem; }
+
+  .corner-drawer {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: calc(100vw - 16px);
+    max-height: 70vh;
+  }
+
+  .corner-drawer-toggle { left: 8px; width: 46px; height: 46px; }
+
+  .modal-box { width: 94vw; max-height: 88vh; }
+
+  .turn-banner { font-size: 0.95em; padding: 8px 10px; }
+}
