@@ -84,11 +84,16 @@ function realShuffle(array) {
   return result;
 }
 
-// Same reserved-starting-deck exclusion + shift-deck population fix
-// already documented in app.js's own startGame() — kept identical here so
-// server-started games behave the same as local offline ones.
-const REAL_STARTING_HAND = ['GRW_001', 'GRW_002', 'GRW_005', 'GRW_009', 'GRW_014'];
-const REAL_STARTING_DRAW_PILE = ['GRW_020', 'GRW_030'];
+// FIX: this was still using the OLD, obsolete GRW_* substitute values
+// from BEFORE a catalog loader bug was fixed in app.js (buildCatalogId
+// was double-prefixing S1-S7 as "START_S1" instead of the bare "S1" the
+// engine expects). app.js's own startGame() was corrected to use the
+// real S1-S7 cards, but this file was never updated to match — meaning
+// every online multiplayer game has been dealing a completely different
+// (and wrong) starting hand/draw pile than offline games this whole
+// time. Now genuinely identical to app.js's real, corrected values.
+const REAL_STARTING_HAND = ['S1', 'S2', 'S3', 'S4', 'S5'];
+const REAL_STARTING_DRAW_PILE = ['S6', 'S7'];
 const RESERVED_STARTING_DECK_CATALOG_IDS = new Set([...REAL_STARTING_HAND, ...REAL_STARTING_DRAW_PILE]);
 
 const BOT_PERSONALITY_REGISTRY = {
@@ -160,7 +165,14 @@ function roomPublicView(room) {
     // owner (in ROOM_CREATED/ROOM_JOINED/RECONNECTED).
     seats: room.seats.map((s) => {
       const { reconnectToken, ...publicSeat } = s;
-      return publicSeat;
+      return {
+        ...publicSeat,
+        // Computed fresh on every broadcast (not a one-time flag the
+        // client has to remember) so the UI's "is this seat still
+        // reconnectable" logic always matches the server's own real
+        // enforcement in handleUpdateSeats/handleConvertDisconnectedSeat.
+        reconnectWindowExpired: s.connectionStatus === 'disconnected' && !!s.disconnectedAt && Date.now() - s.disconnectedAt >= RECONNECT_TIMEOUT_MS,
+      };
     }),
     gameStarted: !!room.state,
   };
@@ -285,6 +297,14 @@ function handleReconnectPlayer(connectionId, ws, msg) {
   seat.connectionId = connectionId;
   seat.connectionStatus = 'connected';
   seat.disconnectedAt = null;
+  // FIX: if the reconnecting seat is the host seat (0), room.hostConnectionId
+  // must move to this new connection too — otherwise every future
+  // requireHost() check (Start Game, seat updates, converting a
+  // disconnected seat) would keep comparing against the old, now-dead
+  // connectionId and silently reject a legitimate host forever.
+  if (seat.seatIndex === 0) {
+    room.hostConnectionId = connectionId;
+  }
   connections.set(connectionId, { ws, roomCode: room.code, seatIndex: seat.seatIndex, playerId: room.state ? `p${seat.seatIndex + 1}` : undefined });
 
   sendTo(connectionId, {
@@ -293,6 +313,7 @@ function handleReconnectPlayer(connectionId, ws, msg) {
     seatIndex: seat.seatIndex,
     reconnectToken: seat.reconnectToken,
     gameStarted: !!room.state,
+    isHost: room.hostConnectionId === connectionId,
   });
   if (room.state) {
     sendTo(connectionId, { type: 'FORCE_STATE_SYNC', state: room.state });
@@ -330,6 +351,14 @@ function handleUpdateSeats(connectionId, msg) {
     msg.seatUpdates.forEach((update) => {
       const seat = room.seats[update.seatIndex];
       if (!seat || seat.seatIndex === 0) return; // host seat isn't reassignable
+      // A seat occupied by a human — whether currently connected, or
+      // disconnected but still within its reconnect window — is not
+      // reassignable through this path. Only once that window has
+      // genuinely elapsed (or the player explicitly leaves) does the
+      // seat become fair game again. Without this, a host could
+      // prematurely kick someone who simply refreshed a moment ago.
+      const withinReconnectWindow = seat.connectionStatus === 'disconnected' && seat.disconnectedAt && Date.now() - seat.disconnectedAt < RECONNECT_TIMEOUT_MS;
+      if (seat.type === 'human' && (seat.connectionStatus === 'connected' || withinReconnectWindow)) return;
       if (update.type === 'bot') {
         seat.type = 'bot';
         seat.connectionId = null;
@@ -457,51 +486,144 @@ function handleDisconnect(connectionId) {
   const seat = room.seats.find((s) => s.connectionId === connectionId);
   if (seat) {
     seat.connectionId = null;
-    // Mid-game, leave the seat's player data in place (the game state
-    // still needs that playerId) — only the connection drops, so a
-    // reconnect flow can re-attach later. Pre-game, free the seat
-    // immediately (no in-progress game to preserve a spot for).
-    if (!room.state) {
-      seat.type = 'open';
-      seat.displayName = null;
-      seat.reconnectToken = null;
-      seat.connectionStatus = 'connected';
-      seat.disconnectedAt = null;
-    } else {
-      seat.connectionStatus = 'disconnected';
-      seat.disconnectedAt = Date.now();
-      const timeoutKey = `${room.code}:${seat.seatIndex}`;
-      if (pendingSeatTimeouts.has(timeoutKey)) clearTimeout(pendingSeatTimeouts.get(timeoutKey));
-      const handle = setTimeout(() => {
-        pendingSeatTimeouts.delete(timeoutKey);
-        // The timeout itself doesn't auto-convert anything — it just
-        // means the seat is now ELIGIBLE for the host to convert, and we
-        // let the room know so the waiting-room/in-game UI can enable
-        // that control. The host still makes the actual call via
-        // CONVERT_DISCONNECTED_SEAT.
-        broadcastToRoom(room.code, { type: 'SEAT_RECONNECT_WINDOW_EXPIRED', seatIndex: seat.seatIndex });
-      }, RECONNECT_TIMEOUT_MS);
-      pendingSeatTimeouts.set(timeoutKey, handle);
-    }
+    // FIX: this used to free the seat immediately for any pre-game
+    // (lobby-stage) disconnect, discarding the reconnectToken — meaning
+    // a player (including the host) who simply refreshed their browser
+    // while still in the waiting room could never reconnect at all; the
+    // stored credential was already worthless by the time the page
+    // reloaded. A raw socket close is ambiguous — it could be a refresh,
+    // a network blip, or someone actually closing the tab — so now it
+    // always preserves the seat and reconnectToken for the same real
+    // reconnect window, whether pre-game or mid-game, host seat or not.
+    // A genuinely deliberate exit goes through handleLeaveRoom instead,
+    // which frees things immediately rather than waiting on a timeout.
+    seat.connectionStatus = 'disconnected';
+    seat.disconnectedAt = Date.now();
+    const timeoutKey = `${room.code}:${seat.seatIndex}`;
+    if (pendingSeatTimeouts.has(timeoutKey)) clearTimeout(pendingSeatTimeouts.get(timeoutKey));
+    const handle = setTimeout(() => {
+      pendingSeatTimeouts.delete(timeoutKey);
+      const stillDisconnected = seat.connectionStatus === 'disconnected';
+      if (!stillDisconnected) return; // reconnected during the window, nothing to do
+
+      if (room.state) {
+        // FIX: mid-game, a disconnected seat used to just sit there
+        // until the host manually clicked "Convert to Bot" — meaning if
+        // the host themselves was mid-turn or simply didn't notice, the
+        // match could freeze indefinitely waiting on a player who never
+        // comes back. Now the window expiring is itself the trigger:
+        // automatically converts to a real bot (same persona/archetype
+        // system every other bot uses) so the remaining players can
+        // keep playing without anyone needing to act.
+        convertSeatToBot(room, seat, 'Random');
+        runBotCascadeAndBroadcast(room);
+        broadcastRoomState(room.code);
+        return;
+      }
+
+      if (seat.seatIndex === 0) {
+        // FIX: the host disconnecting pre-game used to leave the room
+        // open indefinitely, waiting on a "convert" action that makes
+        // no sense for the host seat (there's no host-migration path —
+        // nothing to convert them TO that keeps the room usable).
+        // Once their own reconnect window expires, close the room
+        // outright with a clear, specific reason so everyone still
+        // waiting gets an honest explanation instead of a silent freeze.
+        broadcastToRoom(room.code, { type: 'ROOM_CLOSED', reason: 'HOST_DISCONNECTED' });
+        rooms.delete(room.code);
+        return;
+      }
+
+      // Non-host, pre-game: unchanged from before — the seat becomes
+      // eligible for the host to convert via the waiting-room dropdown
+      // (UPDATE_SEATS), which already reacts to the same
+      // reconnectWindowExpired field computed below.
+      broadcastToRoom(room.code, { type: 'SEAT_RECONNECT_WINDOW_EXPIRED', seatIndex: seat.seatIndex });
+    }, RECONNECT_TIMEOUT_MS);
+    pendingSeatTimeouts.set(timeoutKey, handle);
   }
-  if (connectionId === room.hostConnectionId && !room.state) {
-    // Host left before the game started — close the room rather than
-    // leave it orphaned with no one able to start it.
+  broadcastRoomState(room.code);
+}
+
+/**
+ * handleLeaveRoom — a deliberate, final exit (the Leave Room button),
+ * distinct from handleDisconnect's "might come back" handling above.
+ * Frees the seat immediately (pre-game: reopens it for a new joiner;
+ * mid-game: same immediate-free, since there's no expectation of
+ * returning once you've explicitly chosen to leave). If the host
+ * leaves, the room closes outright — there's no one to hand host
+ * status to, and leaving it open with an unreachable host would just
+ * strand anyone else still in the lobby.
+ */
+function handleLeaveRoom(connectionId) {
+  const conn = connections.get(connectionId);
+  connections.delete(connectionId);
+  if (!conn) return;
+  const room = rooms.get(conn.roomCode);
+  if (!room) return;
+  const timeoutKey = `${conn.roomCode}:${conn.seatIndex}`;
+  if (pendingSeatTimeouts.has(timeoutKey)) {
+    clearTimeout(pendingSeatTimeouts.get(timeoutKey));
+    pendingSeatTimeouts.delete(timeoutKey);
+  }
+  if (connectionId === room.hostConnectionId) {
     broadcastToRoom(room.code, { type: 'ROOM_CLOSED', reason: 'HOST_LEFT' });
     rooms.delete(room.code);
     return;
   }
+  const seat = room.seats.find((s) => s.seatIndex === conn.seatIndex);
+  if (seat) {
+    seat.type = 'open';
+    seat.connectionId = null;
+    seat.displayName = null;
+    seat.reconnectToken = null;
+    seat.connectionStatus = 'connected';
+    seat.disconnectedAt = null;
+    seat.archetype = null;
+  }
   broadcastRoomState(room.code);
+}
+
+/**
+ * convertSeatToBot — the actual game-state + seat-metadata mutation for
+ * turning a disconnected human seat into a bot. Shared by the manual,
+ * host-triggered path (handleConvertDisconnectedSeat) and the automatic
+ * mid-game path (handleDisconnect's own timeout, once the reconnect
+ * window genuinely expires) — same real persona/archetype system every
+ * other bot in this codebase uses, not a special-cased stand-in either
+ * way.
+ */
+function convertSeatToBot(room, seat, archetype) {
+  if (room.state) {
+    const playerId = `p${seat.seatIndex + 1}`;
+    const usedNames = {};
+    room.seats.forEach((s) => {
+      if (s.type === 'bot' && room.state.players[`p${s.seatIndex + 1}`]) {
+        usedNames[room.state.players[`p${s.seatIndex + 1}`].displayName] = 1;
+      }
+    });
+    const resolved = resolveBotPersonality(archetype || 'Random', usedNames);
+    room.state = {
+      ...room.state,
+      players: {
+        ...room.state.players,
+        [playerId]: { ...room.state.players[playerId], isBot: true, archetype: resolved.archetype, displayName: resolved.displayName },
+      },
+    };
+    broadcastToRoom(room.code, { type: 'STATE_UPDATE', state: room.state });
+  }
+  seat.type = 'bot';
+  seat.connectionStatus = 'connected';
+  seat.disconnectedAt = null;
+  seat.reconnectToken = null;
+  seat.archetype = archetype || 'Random';
 }
 
 /**
  * handleConvertDisconnectedSeat — host-only. Only permitted once the
  * seat's own reconnect window has genuinely elapsed (checked here
  * server-side, not just trusted from the client), so a host can't
- * bounce someone who dropped for 3 seconds. Converting to 'bot' also
- * flips that seat's real in-progress player over to bot control so the
- * game keeps moving — same archetype/persona system every other bot in
- * this codebase already uses, not a special-cased stand-in.
+ * bounce someone who dropped for 3 seconds.
  */
 function handleConvertDisconnectedSeat(connectionId, msg) {
   const conn = connections.get(connectionId);
@@ -516,39 +638,23 @@ function handleConvertDisconnectedSeat(connectionId, msg) {
   }
 
   const newType = msg.newType === 'open' ? 'open' : 'bot';
-  if (room.state) {
-    const playerId = `p${seat.seatIndex + 1}`;
-    if (newType === 'bot') {
-      const usedNames = {};
-      room.seats.forEach((s) => {
-        if (s.type === 'bot' && room.state.players[`p${s.seatIndex + 1}`]) {
-          usedNames[room.state.players[`p${s.seatIndex + 1}`].displayName] = 1;
-        }
-      });
-      const resolved = resolveBotPersonality(msg.archetype || 'Random', usedNames);
-      room.state = {
-        ...room.state,
-        players: {
-          ...room.state.players,
-          [playerId]: { ...room.state.players[playerId], isBot: true, archetype: resolved.archetype, displayName: resolved.displayName },
-        },
-      };
-      broadcastToRoom(room.code, { type: 'STATE_UPDATE', state: room.state });
-    }
-    // If converting to 'open' mid-game, the playerId stays exactly as it
-    // is in the real game state (a human seat's data can't just vanish
-    // mid-game the way a pre-game seat can) — only the SEAT metadata
-    // changes, freeing it for a new human to claim via JOIN mechanics in
-    // a future enhancement. The seat's credentials are revoked either
-    // way, so the original disconnected player can no longer reconnect
-    // into it.
+  if (newType === 'bot') {
+    convertSeatToBot(room, seat, msg.archetype);
+  } else {
+    // 'open': mid-game the playerId stays exactly as-is in the real game
+    // state (a human seat's data can't just vanish mid-game the way a
+    // pre-game seat can) — only the SEAT metadata changes, freeing it
+    // for a new human to claim via JOIN mechanics in a future
+    // enhancement. The seat's credentials are revoked either way, so
+    // the original disconnected player can no longer reconnect into it.
+    seat.type = 'open';
+    seat.connectionId = null;
+    seat.displayName = null;
+    seat.reconnectToken = null;
+    seat.connectionStatus = 'connected';
+    seat.disconnectedAt = null;
+    seat.archetype = null;
   }
-  seat.type = newType;
-  seat.connectionStatus = 'connected';
-  seat.disconnectedAt = null;
-  seat.reconnectToken = null;
-  seat.archetype = newType === 'bot' ? msg.archetype || 'Random' : null;
-  if (newType === 'open') seat.displayName = null;
 
   if (room.state) runBotCascadeAndBroadcast(room);
   broadcastRoomState(room.code);
@@ -566,6 +672,16 @@ const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
   const connectionId = newConnectionId();
+  // FIX: sendTo() looks up the ws object via connections.get(connectionId)
+  // — without registering the connection here immediately, any message
+  // sent before a successful CREATE_ROOM/JOIN_ROOM/RECONNECT_PLAYER
+  // (e.g. JOIN_ERROR for a bad room code, RECONNECT_ERROR for a stale
+  // credential, or a malformed-JSON ERROR) would silently never be
+  // delivered — sendTo's own connections.get() would return undefined
+  // and the whole call would just no-op. Confirmed as a real bug by
+  // testing the failure path directly, not assumed. roomCode/seatIndex
+  // start null and get filled in by whichever handler succeeds.
+  connections.set(connectionId, { ws, roomCode: null, seatIndex: null });
 
   ws.on('message', (raw) => {
     let msg;
@@ -600,6 +716,9 @@ wss.on('connection', (ws) => {
           break;
         case 'REQUEST_STATE_SYNC':
           handleRequestStateSync(connectionId);
+          break;
+        case 'LEAVE_ROOM':
+          handleLeaveRoom(connectionId);
           break;
         default:
           sendTo(connectionId, { type: 'ERROR', message: `Unknown message type "${msg.type}".` });
