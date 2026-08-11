@@ -61,6 +61,90 @@ body {
   color: var(--text-dim);
 }
 .header-info strong { color: var(--text-main); }
+.nav-room-code {
+  font-weight: 700;
+  color: #201a0a;
+  background: var(--hub-decisions, #e8b64c);
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.your-turn-banner {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  z-index: 9998;
+  display: flex;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  pointer-events: none;
+  cursor: pointer;
+}
+.your-turn-banner-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.your-turn-banner-text {
+  background: linear-gradient(135deg, var(--hub-decisions, #e8b64c), #ffd777);
+  color: #201a0a;
+  font-weight: 900;
+  font-size: 1.4em;
+  letter-spacing: 1px;
+  padding: 14px 32px;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  border: 2px solid #fff3d6;
+}
+
+.round-summary-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9997;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.round-summary-box {
+  background: var(--bg-panel);
+  border: 2px solid var(--hub-decisions, #e8b64c);
+  border-radius: 12px;
+  padding: 22px;
+  max-width: 520px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+}
+.round-summary-box h3 {
+  margin: 0 0 14px;
+  text-align: center;
+  color: var(--hub-decisions, #e8b64c);
+}
+.round-summary-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.round-summary-step {
+  border-left: 3px solid var(--hub-decisions, #e8b64c);
+  padding-left: 12px;
+}
+.round-summary-step-label {
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 3px;
+}
+.round-summary-step-detail {
+  font-size: 0.9em;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
 
 .leaderboard {
   width: 100%;
@@ -397,7 +481,15 @@ body {
      within. */
   height: min(82vh, 900px);
   background: rgba(0, 0, 0, 0.15);
-  touch-action: none;
+  /* FIX: was touch-action:none, which told the browser this entire
+     region is never natively touch-scrollable, regardless of the JS
+     pan logic's own zoom-aware behavior (see setupBoardZoomPan) — the
+     actual reason a mobile user couldn't scroll past the board to
+     reach the hand drawer/dashboard below it. pan-y allows native
+     vertical scrolling through this region; the JS only takes over
+     with preventDefault() once the board is actually zoomed in, where
+     panning is the only thing that makes sense anyway. */
+  touch-action: pan-y;
 }
 
 .board-column {

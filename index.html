@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Broker Boss Online — Prototype</title>
-  <link rel="stylesheet" href="style.css?v=33" />
+  <link rel="stylesheet" href="style.css?v=36" />
 </head>
 <body>
 
@@ -14,6 +15,7 @@
   <header id="game-header">
     <div class="header-title">BROKER BOSS <span class="header-subtitle">ONLINE</span></div>
     <div class="header-info">
+      <span id="nav-room-code" class="nav-room-code" style="display:none;" title="Your room code — share it, or use it to rejoin if disconnected"></span>
       <span id="round-info">Round — / —</span>
       <span id="phase-info">—</span>
       <span>Active: <strong id="active-player-info">—</strong></span>
@@ -27,6 +29,12 @@
   </header>
 
   <div id="pending-choice-banner" class="pending-choice-banner" style="display:none;"></div>
+
+  <div id="your-turn-banner" class="your-turn-banner" style="display:none;">
+    <div class="your-turn-banner-text">IT'S YOUR TURN!</div>
+  </div>
+
+  <div id="round-summary-modal" class="round-summary-modal" style="display:none;"></div>
 
   <div id="action-toast" class="action-toast" style="display:none;"></div>
 
@@ -84,7 +92,7 @@
 
   </div>
 
-  <script src="engine.bundle.js?v=33"></script>
-  <script src="app.js?v=33"></script>
+  <script src="engine.bundle.js?v=36"></script>
+  <script src="app.js?v=36"></script>
 </body>
 </html>

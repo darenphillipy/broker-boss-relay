@@ -9895,6 +9895,20 @@ var BrokerBossEngine = (() => {
           }
         };
       }
+      function expiredStatusTokenClearSweep(state) {
+        // FIX: confirmed via a direct audit that this was the ONLY
+        // place expiresAt:"end_of_round" tokens were ever created (the
+        // Specialist Hub's EXECUTED token) and NOWHERE in the entire
+        // cleanup sequence ever checked or cleared that field — the hub
+        // was declaring its own token should expire, but nothing ever
+        // honored that. Once claimed in round 1, it stayed permanently
+        // "already spent" for the rest of the game, rejecting every
+        // player who tried it afterward.
+        const statusTokens = state.board.statusTokens || [];
+        const remaining = statusTokens.filter((t) => t.expiresAt !== "end_of_round");
+        if (remaining.length === statusTokens.length) return state;
+        return { ...state, board: { ...state.board, statusTokens: remaining } };
+      }
       function runCleanupSweeps(state) {
         let nextState = endOfRoundHandDiscardSweep(state);
         nextState = endOfRoundHandRedrawSweep(nextState);
@@ -9906,6 +9920,7 @@ var BrokerBossEngine = (() => {
         nextState = meepleReturnSweep(nextState);
         nextState = oncePerRoundAbilitiesResetSweep(nextState);
         nextState = signalJammerLockClearSweep(nextState);
+        nextState = expiredStatusTokenClearSweep(nextState);
         nextState = advanceRoundTracker(nextState);
         return nextState;
       }

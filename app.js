@@ -118,8 +118,22 @@ let clientModalState = null;
 // {stage: 'play'} or {stage: 'keep', playCatalogId: string|null}.
 // Reset whenever a fresh TRACK_MILESTONE_CHOICE interrupt begins.
 let svsStage = null;
+// Turn Order Bidding: module-level so a re-render triggered by any
+// other player's action (a real, confirmed multiplayer bug) doesn't
+// silently wipe the human player's in-progress bid back to 0 before
+// they click Submit. Reset to 0 after a successful submit (see
+// handleSubmitTurnOrderBid) so the next bidding phase starts clean.
+let pendingBidPriority = 0;
+let pendingBidCash = 0;
 let catalog = null;
 let previousShiftPosition = null;
+// Turn notification: tracks whose turn it was on the last render so we
+// can detect the exact moment control switches TO the human player
+// (not every render — only a genuine transition), plus the title-flash
+// interval and the page's real original title to restore once focused.
+let previousActivePlayerId = null;
+let titleFlashInterval = null;
+const ORIGINAL_DOCUMENT_TITLE = document.title;
 let previousBonusClaimState = {};
 let previousBoardMeepleInstanceIds = new Set();
 let previousOnBoardMeepleCountByPlayer = {};
@@ -1106,6 +1120,11 @@ function handleShellCompanySecondRecruit(stashInstanceId) {
 function renderTurnOrderBiddingModal(overlayEl, humanDash) {
   overlayEl.style.display = 'flex';
   const wallet = humanDash.wallet;
+  // FIX: clamp the persisted bid to whatever the player can currently
+  // afford — if a re-render happens after some other effect changed
+  // their wallet mid-bid, don't silently let a stale bid exceed it.
+  pendingBidPriority = Math.max(0, Math.min(pendingBidPriority, wallet.priorityTokens));
+  pendingBidCash = Math.max(0, Math.min(pendingBidCash, wallet.profitTokens));
   overlayEl.innerHTML = `
     <div class="modal-box">
       <h3>Turn Order Bidding</h3>
@@ -1114,13 +1133,13 @@ function renderTurnOrderBiddingModal(overlayEl, humanDash) {
         <div class="dual-track-stepper-row">
           <span class="dual-track-stepper-label">Priority Tokens (have ${wallet.priorityTokens})</span>
           <button type="button" class="dual-track-stepper-btn" id="bid-priority-minus">−</button>
-          <span class="dual-track-stepper-count" id="bid-priority-count">0</span>
+          <span class="dual-track-stepper-count" id="bid-priority-count">${pendingBidPriority}</span>
           <button type="button" class="dual-track-stepper-btn" id="bid-priority-plus">+</button>
         </div>
         <div class="dual-track-stepper-row">
           <span class="dual-track-stepper-label">Profit Tokens (have ${wallet.profitTokens})</span>
           <button type="button" class="dual-track-stepper-btn" id="bid-cash-minus">−</button>
-          <span class="dual-track-stepper-count" id="bid-cash-count">0</span>
+          <span class="dual-track-stepper-count" id="bid-cash-count">${pendingBidCash}</span>
           <button type="button" class="dual-track-stepper-btn" id="bid-cash-plus">+</button>
         </div>
       </div>
@@ -1128,37 +1147,35 @@ function renderTurnOrderBiddingModal(overlayEl, humanDash) {
     </div>
   `;
 
-  let priorityBid = 0;
-  let cashBid = 0;
   const priorityCountEl = overlayEl.querySelector('#bid-priority-count');
   const cashCountEl = overlayEl.querySelector('#bid-cash-count');
 
   overlayEl.querySelector('#bid-priority-plus').addEventListener('click', () => {
-    if (priorityBid < wallet.priorityTokens) {
-      priorityBid += 1;
-      priorityCountEl.textContent = priorityBid;
+    if (pendingBidPriority < wallet.priorityTokens) {
+      pendingBidPriority += 1;
+      priorityCountEl.textContent = pendingBidPriority;
     }
   });
   overlayEl.querySelector('#bid-priority-minus').addEventListener('click', () => {
-    if (priorityBid > 0) {
-      priorityBid -= 1;
-      priorityCountEl.textContent = priorityBid;
+    if (pendingBidPriority > 0) {
+      pendingBidPriority -= 1;
+      priorityCountEl.textContent = pendingBidPriority;
     }
   });
   overlayEl.querySelector('#bid-cash-plus').addEventListener('click', () => {
-    if (cashBid < wallet.profitTokens) {
-      cashBid += 1;
-      cashCountEl.textContent = cashBid;
+    if (pendingBidCash < wallet.profitTokens) {
+      pendingBidCash += 1;
+      cashCountEl.textContent = pendingBidCash;
     }
   });
   overlayEl.querySelector('#bid-cash-minus').addEventListener('click', () => {
-    if (cashBid > 0) {
-      cashBid -= 1;
-      cashCountEl.textContent = cashBid;
+    if (pendingBidCash > 0) {
+      pendingBidCash -= 1;
+      cashCountEl.textContent = pendingBidCash;
     }
   });
   overlayEl.querySelector('#bid-submit-btn').addEventListener('click', () => {
-    handleSubmitTurnOrderBid(priorityBid, cashBid);
+    handleSubmitTurnOrderBid(pendingBidPriority, pendingBidCash);
   });
 }
 
@@ -1177,6 +1194,8 @@ function handleSubmitTurnOrderBid(priorityTokensBid, profitTokensBid) {
     logLine(`Bid rejected: ${result.error}`);
   } else {
     showToast(`Bid submitted — ${priorityTokensBid} Priority, ${profitTokensBid} PT.`);
+    pendingBidPriority = 0;
+    pendingBidCash = 0;
   }
   state = result.state;
   render();
@@ -1485,7 +1504,10 @@ function buildStartCardChoiceBodyHtml(modal, playerDash, vm) {
       <div class="modal-hand-cards">
         ${candidateIds.map((id) => `<label class="master-algorithm-card-option"><input type="checkbox" class="s6-meeple-checkbox" value="${id}" /> Meeple ${escapeAttr(id)}</label>`).join('')}
       </div>
-      <div class="modal-actions"><button type="button" class="modal-skip-btn" id="s6-confirm-btn">Recall Selected</button></div>
+      <div class="modal-actions">
+        <button type="button" class="modal-cancel-btn" id="s6-cancel-btn">Cancel — Recall None</button>
+        <button type="button" class="modal-skip-btn" id="s6-confirm-btn">Recall Selected</button>
+      </div>
     `;
   }
 
@@ -1639,6 +1661,10 @@ function wireStartCardChoiceHandlers(choiceType, requiredCount) {
         const meepleInstanceIds = Array.from(document.querySelectorAll('.s6-meeple-checkbox:checked')).map((el) => el.value);
         handleStartCardChoice({ meepleInstanceIds });
       });
+    }
+    const cancelBtn = document.getElementById('s6-cancel-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => handleStartCardChoice({ meepleInstanceIds: [] }));
     }
   } else if (choiceType === 'S1_DISCARD_FOR_TRACKS') {
     const skipBtn = document.getElementById('start-card-skip-btn');
@@ -2051,6 +2077,7 @@ function showNetworkMagnetBanner(text) {
 // real card resolves, so players see the shift happened before the
 // tracker visually resets to 0.
 let lastAnnouncedShiftLogLength = 0;
+let lastAnnouncedRoundSummaryRound = null;
 
 // Market Share sprint bonus claim banner — same "only announce genuinely
 // new log entries" pattern as the shift trigger / network magnet
@@ -2078,6 +2105,152 @@ function checkForMarketShareBonusClaimEvents(currentState) {
   showToast(`${displayName} claimed Market Share Sprint Bonus: ${tokenLabel}!`);
 }
 
+/**
+ * checkForTurnChangeNotification(vm)
+ * Fires only on a genuine transition — the active player was someone
+ * else last render, and is the human player now. Shows a visual
+ * banner and flashes the tab title so a player who's looked away
+ * (a common real scenario once other players/bots take their turns)
+ * notices control has come back to them.
+ */
+function checkForTurnChangeNotification(vm) {
+  const nowActive = vm.meta.activePlayerId;
+  const wasActive = previousActivePlayerId;
+  previousActivePlayerId = nowActive;
+
+  if (wasActive === nowActive) return; // no transition at all
+  if (nowActive !== HUMAN_PLAYER_ID) return; // turn changed, but not to the human player
+  if (wasActive === null) return; // first render of a fresh game — not a real "it became your turn" moment
+  if (vm.meta.phase !== 'WORKER_PLACEMENT') return; // only the actual turn-taking phase; other phases have their own real prompts
+
+  const banner = document.getElementById('your-turn-banner');
+  banner.style.display = 'flex';
+  banner.classList.add('your-turn-banner-visible');
+  clearTimeout(window.__yourTurnBannerTimer);
+  window.__yourTurnBannerTimer = setTimeout(() => {
+    banner.classList.remove('your-turn-banner-visible');
+    setTimeout(() => { banner.style.display = 'none'; }, 400); // allow the fade-out transition to finish before hiding
+  }, 3000);
+
+  // Tab title flash — stops as soon as the player actually looks,
+  // rather than flashing forever after they've already noticed.
+  if (document.hidden || !document.hasFocus()) {
+    let showingFlash = false;
+    clearInterval(titleFlashInterval);
+    titleFlashInterval = setInterval(() => {
+      document.title = showingFlash ? ORIGINAL_DOCUMENT_TITLE : "🔔 YOUR TURN — Broker Boss";
+      showingFlash = !showingFlash;
+    }, 1000);
+    const stopFlash = () => {
+      clearInterval(titleFlashInterval);
+      document.title = ORIGINAL_DOCUMENT_TITLE;
+      window.removeEventListener('focus', stopFlash);
+    };
+    window.addEventListener('focus', stopFlash);
+    // Safety cap: stop after 30s regardless, in case focus never fires
+    // for some reason (closed tab, browser quirk) — don't flash forever.
+    setTimeout(stopFlash, 30000);
+  }
+}
+
+/**
+ * checkForRoundSummaryEvent(currentState)
+ * Fires only on a genuine round advance. Scans the log for the real
+ * events the just-completed round's cleanup sweeps actually logged
+ * (each stamped with the round it happened in) and builds the summary
+ * entirely from that real data — nothing here is fabricated or
+ * inferred beyond what the engine itself recorded.
+ */
+function checkForRoundSummaryEvent(currentState) {
+  const currentRound = currentState.phase.round;
+  if (lastAnnouncedRoundSummaryRound === null) {
+    lastAnnouncedRoundSummaryRound = currentRound;
+    return;
+  }
+  if (currentRound <= lastAnnouncedRoundSummaryRound) return;
+  const justFinishedRound = currentRound - 1;
+  lastAnnouncedRoundSummaryRound = currentRound;
+
+  const roundEntries = currentState.log.filter((e) => e.round === justFinishedRound);
+  const relevantTypes = new Set([
+    'HAND_DISCARDED_END_OF_ROUND',
+    'HAND_REDRAWN_END_OF_ROUND',
+    'OPEN_MARKET_CHURNED',
+    'BASE_ROUND_DIVIDEND_PAID',
+    'MEEPLE_TAX_PAID',
+    'MEEPLE_TAX_DEFAULTED',
+  ]);
+  const relevant = roundEntries.filter((e) => relevantTypes.has(e.type));
+  if (relevant.length === 0) return; // nothing real to summarize (e.g. first round with no prior cleanup)
+
+  renderRoundSummaryModal(justFinishedRound, relevant, currentState);
+}
+
+function renderRoundSummaryModal(roundNumber, entries, currentState) {
+  const el = document.getElementById('round-summary-modal');
+  if (!el) return;
+  const displayName = (playerId) => (currentState.players[playerId] && currentState.players[playerId].displayName) || playerId;
+
+  const discardEntries = entries.filter((e) => e.type === 'HAND_DISCARDED_END_OF_ROUND');
+  const redrawEntries = entries.filter((e) => e.type === 'HAND_REDRAWN_END_OF_ROUND');
+  const marketEntries = entries.filter((e) => e.type === 'OPEN_MARKET_CHURNED');
+  const dividendEntry = entries.find((e) => e.type === 'BASE_ROUND_DIVIDEND_PAID');
+  const taxPaidEntries = entries.filter((e) => e.type === 'MEEPLE_TAX_PAID');
+  const taxDefaultedEntries = entries.filter((e) => e.type === 'MEEPLE_TAX_DEFAULTED');
+
+  const steps = [];
+
+  // Executive Search Hub — no dedicated log event exists for the clear
+  // itself (it's a silent state cleanup, not a logged action), so this
+  // is shown only as a standing factual note, not claimed as "this
+  // round specifically re-opened it" without real evidence either way.
+  steps.push({ label: '🔍 Executive Search Hub', detail: 'Clears at the start of every round — open for the first player to claim.' });
+
+  if (discardEntries.length > 0 || redrawEntries.length > 0) {
+    const lines = redrawEntries.map((e) => {
+      const discard = discardEntries.find((d) => d.playerId === e.playerId);
+      const discardedCount = discard ? discard.discardedInstanceIds.length : 0;
+      return `${escapeAttr(displayName(e.playerId))}: discarded ${discardedCount}, drew ${e.drawnCount}${e.reshuffleOccurred ? ' (deck reshuffled)' : ''}`;
+    });
+    steps.push({ label: '🗂️ Hand Discard & Redraw', detail: lines.join('<br>') || 'No hand changes this round.' });
+  }
+
+  if (marketEntries.length > 0) {
+    const lines = marketEntries.map((e) => `${e.market === 'actionCards' ? 'Action Card' : 'Agent'} Market: ${e.purgedCount} purged & replaced`);
+    steps.push({ label: '🏪 Market Purge & Refill', detail: lines.join('<br>') });
+  }
+
+  if (dividendEntry) {
+    steps.push({ label: '💰 Base Round Dividend', detail: `Every player received ${dividendEntry.amount} PT.` });
+  }
+
+  if (taxPaidEntries.length > 0 || taxDefaultedEntries.length > 0) {
+    const lines = [
+      ...taxPaidEntries.map((e) => `${escapeAttr(displayName(e.playerId))}: paid ${e.amount} PT Meeple Tax`),
+      ...taxDefaultedEntries.map(
+        (e) => `⚠️ ${escapeAttr(displayName(e.playerId))}: could only pay ${e.partialPaymentMade} PT — ${e.meeplesRepossessed.length} unpaid Meeple(s) repossessed`
+      ),
+    ];
+    steps.push({ label: '👷 Meeple Tax (4 PT × Meeples over 3)', detail: lines.join('<br>') });
+  } else {
+    steps.push({ label: '👷 Meeple Tax', detail: 'No player owed any Meeple Tax this round.' });
+  }
+
+  el.innerHTML = `
+    <div class="round-summary-box">
+      <h3>Round ${roundNumber} Complete</h3>
+      <div class="round-summary-steps">
+        ${steps.map((s) => `<div class="round-summary-step"><div class="round-summary-step-label">${s.label}</div><div class="round-summary-step-detail">${s.detail}</div></div>`).join('')}
+      </div>
+      <div class="modal-actions"><button type="button" class="modal-skip-btn" id="round-summary-dismiss-btn">Continue to Round ${roundNumber + 1}</button></div>
+    </div>
+  `;
+  el.style.display = 'flex';
+  el.querySelector('#round-summary-dismiss-btn').addEventListener('click', () => {
+    el.style.display = 'none';
+  });
+}
+
 function checkForShiftTriggerEvents(currentState) {
   const newEntries = currentState.log.slice(lastAnnouncedShiftLogLength);
   lastAnnouncedShiftLogLength = currentState.log.length;
@@ -2097,7 +2270,17 @@ function checkForShiftTriggerEvents(currentState) {
       (e.type === 'CARD_EFFECT_NOT_IMPLEMENTED' && catalog.shiftCards && catalog.shiftCards[e.catalogId])
   );
   if (relevantEntries.length === 0) {
-    showShiftTriggerBanner(null, null, null);
+    // FIX: this used to unconditionally call showShiftTriggerBanner(null,
+    // ...), which force-hides the banner immediately — even when it was
+    // showing a real, freshly-triggered card whose own 6-second
+    // auto-dismiss timer hadn't expired yet. Since this function runs on
+    // every single render() call (any state update, not just this
+    // card's own), and the log entries that triggered it only exist
+    // once (consumed via lastAnnouncedShiftLogLength above), the very
+    // next unrelated render — a bot's turn, any other player's action —
+    // was wiping the banner almost instantly. Now does nothing here,
+    // letting an already-visible banner run its own lifecycle (timer or
+    // the player's own Dismiss click) instead of being interrupted.
     return;
   }
 
@@ -2262,6 +2445,8 @@ function render() {
   checkForNetworkMagnetEvents(state);
   checkForShiftTriggerEvents(state);
   checkForMarketShareBonusClaimEvents(state);
+  checkForTurnChangeNotification(vm);
+  checkForRoundSummaryEvent(state);
   renderHeader(vm);
   renderBoard(board, vm);
   renderGlobalMilestones(vm);
@@ -2735,6 +2920,19 @@ function renderHeader(vm) {
   document.getElementById('active-player-info').textContent = vm.players[vm.meta.activePlayerId]
     ? vm.players[vm.meta.activePlayerId].displayName
     : '—';
+
+  // Room Code in the nav bar: persists through actual gameplay (not
+  // just the waiting room screen), so a disconnected or refreshed
+  // player can always see it to rejoin — the whole point being it's
+  // visible exactly when a player might need to reconnect, not only
+  // before the game starts.
+  const roomCodeEl = document.getElementById('nav-room-code');
+  if (multiplayerClient.isOnline && multiplayerClient.roomCode) {
+    roomCodeEl.textContent = `Room: ${multiplayerClient.roomCode}`;
+    roomCodeEl.style.display = 'inline';
+  } else {
+    roomCodeEl.style.display = 'none';
+  }
 
   if (vm.meta.phase === 'FINAL_SCORING' && vm.leaderboard) {
     const lines = vm.leaderboard.map((e) => `#${e.rank} ${vm.players[e.playerId].displayName} — ${e.finalScore} pts`);
@@ -5445,7 +5643,8 @@ document.getElementById('log-drawer-close-btn').addEventListener('click', () => 
     { passive: false }
   );
 
-  const NON_PANNABLE_SELECTOR = 'button, [draggable="true"], .space-tile, [data-space-id], .agent-card-clickable, input, select, textarea, a';
+  const NON_PANNABLE_SELECTOR =
+    'button, [draggable="true"], .space-tile, [data-space-id], .agent-card-clickable, input, select, textarea, a, .agent-card, .hand-card, .specialist-card-panel, .active-shift-box';
   let isPanning = false;
   let panStartX = 0;
   let panStartY = 0;
@@ -5489,6 +5688,15 @@ document.getElementById('log-drawer-close-btn').addEventListener('click', () => 
     (e) => {
       if (e.target.closest(NON_PANNABLE_SELECTOR)) return;
       if (e.touches.length !== 1) return;
+      // FIX: only engage touch-pan once the board is actually zoomed in
+      // — at the default zoom (1) or zoomed out, there's nothing
+      // meaningful to pan to, and intercepting every single-finger drag
+      // here was the actual cause of "can't scroll to reach the lower
+      // sections": it always won over the page's own native scroll,
+      // on every touch drag anywhere on the board, regardless of zoom
+      // level. Below/at default zoom, this now lets the touch fall
+      // through to normal page scrolling instead.
+      if (zoom <= 1) return;
       isPanning = true;
       panStartX = e.touches[0].clientX;
       panStartY = e.touches[0].clientY;
@@ -5503,7 +5711,7 @@ document.getElementById('log-drawer-close-btn').addEventListener('click', () => 
     'touchmove',
     (e) => {
       if (!isPanning || e.touches.length !== 1) return;
-      e.preventDefault(); // stop the page itself from scrolling while panning the board
+      e.preventDefault(); // only reached when isPanning is true (zoom > 1), so this never blocks normal page scroll at default zoom
       panX = panOriginX + (e.touches[0].clientX - panStartX);
       panY = panOriginY + (e.touches[0].clientY - panStartY);
       applyTransform();
@@ -5550,6 +5758,13 @@ document.getElementById('export-telemetry-btn').addEventListener('click', () => 
   downloadCsv(`broker-boss-decision-log-${dateStamp}.csv`, decisionRows);
   downloadCsv(`broker-boss-round-timing-${dateStamp}.csv`, timingRows);
   logLine(`Exported ${decisionRows.length} decision-log rows and ${timingRows.length} round-timing rows as CSV.`);
+});
+
+document.getElementById('your-turn-banner').addEventListener('click', () => {
+  const banner = document.getElementById('your-turn-banner');
+  clearTimeout(window.__yourTurnBannerTimer);
+  banner.classList.remove('your-turn-banner-visible');
+  setTimeout(() => { banner.style.display = 'none'; }, 400);
 });
 
 document.getElementById('report-feedback-btn').addEventListener('click', () => {
