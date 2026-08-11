@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Broker Boss Online — Prototype</title>
+  <link rel="stylesheet" href="style.css?v=33" />
+</head>
+<body>
+
+  <div id="lobby-screen" class="lobby-screen"></div>
+
+  <div id="app-shell" style="display:none;">
+
+  <header id="game-header">
+    <div class="header-title">BROKER BOSS <span class="header-subtitle">ONLINE</span></div>
+    <div class="header-info">
+      <span id="round-info">Round — / —</span>
+      <span id="phase-info">—</span>
+      <span>Active: <strong id="active-player-info">—</strong></span>
+      <button type="button" id="player-aid-btn" class="player-aid-btn">📖 Player Aid / Tech Tree</button>
+      <button type="button" id="export-telemetry-btn" class="player-aid-btn" title="Export round-by-round decision log and timing data as CSV">📊 Export Telemetry CSV</button>
+      <button type="button" id="report-feedback-btn" class="report-feedback-btn">🐞 Report / Feedback</button>
+    </div>
+    <div id="leaderboard" class="leaderboard"></div>
+
+    <div id="game-over-modal" class="game-over-modal" style="display:none;"></div>
+  </header>
+
+  <div id="pending-choice-banner" class="pending-choice-banner" style="display:none;"></div>
+
+  <div id="action-toast" class="action-toast" style="display:none;"></div>
+
+  <div id="network-magnet-banner" class="network-magnet-banner" style="display:none;"></div>
+  <div id="reconnect-convert-banner" class="reconnect-convert-banner" style="display:none;"></div>
+  <div id="shift-reveal-modal" class="shift-reveal-modal"></div>
+
+  <div id="status-line" class="status-line"></div>
+
+  <main id="game-main">
+    <div id="top-panels-row" class="top-panels-row">
+      <section id="global-milestones-panel" class="top-panel-column milestones-column"></section>
+    </div>
+
+    <div id="board-zoom-viewport" class="board-zoom-viewport">
+      <div id="board-column" class="board-column">
+        <section id="board-hubs" class="board-hubs"></section>
+        <section id="agency-board" class="agency-board"></section>
+      </div>
+      <div class="board-zoom-controls">
+        <button type="button" id="board-zoom-in-btn" class="board-zoom-btn" title="Zoom in">+</button>
+        <button type="button" id="board-zoom-out-btn" class="board-zoom-btn" title="Zoom out">−</button>
+        <button type="button" id="board-zoom-reset-btn" class="board-zoom-btn board-zoom-reset-btn" title="Reset view">⤾</button>
+      </div>
+    </div>
+
+    <aside id="player-dashboards-wrap" class="player-dashboards-wrap">
+      <div id="dashboard-tabs" class="dashboard-tabs"></div>
+      <div id="player-dashboards" class="player-dashboards"></div>
+    </aside>
+  </main>
+
+  <div id="interrupt-overlay" class="interrupt-overlay" style="display:none;"></div>
+
+  <button type="button" id="hand-drawer-toggle" class="corner-drawer-toggle hand-drawer-toggle" title="Your hand">
+    🂠<span id="hand-drawer-count" class="corner-drawer-count"></span>
+  </button>
+  <div id="hand-drawer" class="corner-drawer hand-drawer"></div>
+
+  <button type="button" id="tableau-toggle" class="corner-drawer-toggle tableau-toggle" title="Your recruited Agents">
+    👤<span id="tableau-count" class="corner-drawer-count"></span>
+  </button>
+  <div id="tableau-panel" class="corner-drawer tableau-panel"></div>
+
+  <button type="button" id="log-drawer-toggle" class="corner-drawer-toggle log-drawer-toggle" title="Action Log">
+    📜
+  </button>
+  <div id="log-drawer" class="corner-drawer log-drawer">
+    <div class="corner-drawer-header">
+      <span>Action Log</span>
+      <button type="button" id="log-drawer-close-btn" class="corner-drawer-close-btn">✕</button>
+    </div>
+    <footer id="history-ticker" class="history-ticker"></footer>
+  </div>
+
+  </div>
+
+  <script src="engine.bundle.js?v=33"></script>
+  <script src="app.js?v=33"></script>
+</body>
+</html>
