@@ -102,6 +102,22 @@ const RESERVED_STARTING_DECK_CATALOG_IDS = new Set([...REAL_STARTING_HAND, ...RE
 
 let state = null;
 let pendingFreeAction = false;
+// Epic 3: same toggle-mode pattern as pendingFreeAction — when active,
+// the next space click sends a different action type instead of the
+// normal PLACE_MEEPLE.
+let pendingOvertimeManager = false;
+let pendingLiquidityStaffPT = false;
+// Epic 3: a client-driven modal for abilities that aren't triggered by
+// a server-side pendingInterrupt at all (Liquidation Engine, Proprietary
+// Algorithm are free-standing, player-initiated actions, not choices the
+// engine is blocking on) — null when no such modal is open, otherwise
+// {type: 'LIQUIDATION_ENGINE' | 'PROPRIETARY_ALGORITHM'}.
+let clientModalState = null;
+// Epic 4: two-stage state for SILICON_VALLEY_SWEEP's real play/keep/
+// discard choice (see buildMilestoneChoiceBodyHtml) — null or
+// {stage: 'play'} or {stage: 'keep', playCatalogId: string|null}.
+// Reset whenever a fresh TRACK_MILESTONE_CHOICE interrupt begins.
+let svsStage = null;
 let catalog = null;
 let previousShiftPosition = null;
 let previousBonusClaimState = {};
@@ -272,6 +288,55 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
     render();
     return;
   }
+  if (pendingOvertimeManager) {
+    dismissedInterruptKey = null;
+    logLine('');
+    showToast('');
+    const player = state.players[HUMAN_PLAYER_ID];
+    const availableMeeples = player.timeMeeples.active.filter((m) => m.status === 'in_supply');
+    pendingOvertimeManager = false;
+    if (availableMeeples.length === 0) {
+      showToast('No available Time Meeple to place with Overtime Manager.');
+      render();
+      return;
+    }
+    const result = BrokerBossEngine.executeUserAction(state, {
+      type: 'PLACE_MEEPLE',
+      playerId: HUMAN_PLAYER_ID,
+      meepleInstanceId: availableMeeples[0].instanceId,
+      spaceId,
+      useOvertimeManager: true,
+    });
+    if (result.error) {
+      logLine(`Overtime Manager placement rejected: ${result.error}`);
+      showToast(`Could not place there with Overtime Manager: ${result.error}`);
+    } else {
+      showToast('Overtime Manager used — placed on an occupied space for $2 PT.');
+    }
+    state = result.state;
+    render();
+    return;
+  }
+  if (pendingLiquidityStaffPT) {
+    dismissedInterruptKey = null;
+    logLine('');
+    showToast('');
+    pendingLiquidityStaffPT = false;
+    const result = BrokerBossEngine.executeUserAction(state, {
+      type: 'USE_LIQUIDITY_STAFF_PT',
+      playerId: HUMAN_PLAYER_ID,
+      spaceId,
+    });
+    if (result.error) {
+      logLine(`Venture Liquidation action rejected: ${result.error}`);
+      showToast(`Could not use a Liquidity Staff token there: ${result.error}`);
+    } else {
+      showToast('Venture Liquidation: 1 Liquidity Staff token spent, action performed for free.');
+    }
+    state = result.state;
+    render();
+    return;
+  }
   dismissedInterruptKey = null;
   logLine(''); // BUGFIX: clear any stale error banner from a previous action before this one runs
   showToast('');
@@ -283,6 +348,29 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
   const player = state.players[HUMAN_PLAYER_ID];
   const space = vm.board.actionSpaces.find((s) => s.spaceId === spaceId);
   const meepleCost = (space && space.cost && space.cost.meepleCost) || 1;
+
+  // Epic 3: the Copycat Meeple is a completely separate field
+  // (timeMeeples.copycatMeeple), never part of timeMeeples.active — the
+  // normal availableMeeples selection below would never find it even if
+  // its instanceId were passed in, so it needs its own dedicated path,
+  // checked before falling through to normal meeple selection.
+  if (preferredMeepleInstanceId && player.timeMeeples.copycatMeeple && preferredMeepleInstanceId === player.timeMeeples.copycatMeeple.instanceId) {
+    const result = BrokerBossEngine.executeUserAction(state, {
+      type: 'PLACE_MEEPLE',
+      playerId: HUMAN_PLAYER_ID,
+      meepleInstanceId: preferredMeepleInstanceId,
+      spaceId,
+    });
+    if (result.error) {
+      logLine(`Copycat Meeple placement rejected: ${result.error}`);
+      showToast(`Could not place the Copycat Meeple there: ${result.error}`);
+    } else {
+      showToast('Copycat Meeple placed.');
+    }
+    state = result.state;
+    render();
+    return;
+  }
 
   let availableMeeples = player.timeMeeples.active.filter((m) => m.status === 'in_supply');
   if (availableMeeples.length < meepleCost) {
@@ -1667,6 +1755,7 @@ function handleTrackMilestoneChoice(milestoneKey, options) {
   } else {
     showToast(`${abilityName} resolved.`);
   }
+  svsStage = null;
   state = result.state;
   render();
 }
@@ -1751,8 +1840,65 @@ function buildMilestoneChoiceBodyHtml(milestoneKey, vm, playerDash, dashboards) 
   }
 
   if (milestoneKey === 'HEADHUNTER' || milestoneKey === 'SILICON_VALLEY_SWEEP') {
-    return `<p class="modal-acquire-label">Draws directly from the deck and automatically keeps the first card revealed (a quick-resolve default — the specific cards can't be previewed here yet).</p>
-      <div class="modal-actions"><button class="modal-skip-btn" id="milestone-auto-resolve-btn">Draw & Resolve</button></div>`;
+    // FIX: the engine's own handler already accepts playCatalogId/
+    // keepCatalogId as real parameters — it only ever defaulted to
+    // "keep the first card" because this UI never sent them. Since
+    // personalDrawPile is a plain, deterministic array of catalogIds
+    // already visible on the raw state, the client can safely preview
+    // exactly what the engine will draw (nothing else can reorder it
+    // between this preview and the real submit) and let the player
+    // make a genuine, informed choice instead of an automatic default.
+    const drawCount = milestoneKey === 'SILICON_VALLEY_SWEEP' ? 4 : 1;
+    const rawPlayer = state.players[HUMAN_PLAYER_ID];
+    const previewIds = (rawPlayer.hand.personalDrawPile || []).slice(0, drawCount);
+    if (previewIds.length === 0) {
+      return '<p class="empty-hand-message">Your personal draw pile is empty — this milestone will be forfeited.</p>';
+    }
+    const previewCards = previewIds.map((catalogId, i) => {
+      const entry = catalog.actionCards[catalogId];
+      return {
+        instanceId: `svs-preview-${i}`,
+        catalogId,
+        name: entry ? entry.name : null,
+        cost: entry ? entry.cost : null,
+        cardImage: entry ? entry.cardImage : null,
+        description: entry ? entry.description : null,
+        playRequirement: entry ? entry.playRequirement : null,
+        resolved: !!entry,
+      };
+    });
+
+    if (milestoneKey === 'HEADHUNTER') {
+      // Only 1 card is ever drawn for Headhunter — no play/keep staging
+      // needed, just confirm or skip.
+      return `<p class="modal-acquire-label">Headhunter draws this card from the top of your personal deck:</p>
+        <div class="modal-hand-cards">${buildHandCardHtml(previewCards[0], playerDash, false)}</div>
+        <div class="modal-actions"><button class="modal-skip-btn" id="milestone-auto-resolve-btn">Keep This Card</button></div>`;
+    }
+
+    // SILICON_VALLEY_SWEEP: two-stage — pick 1 to play free (or skip),
+    // then pick 1 of the remaining 3 to keep. The 2 not chosen are
+    // implicitly discarded, matching the engine's own real logic.
+    if (!svsStage || svsStage.stage === 'play') {
+      return `<p class="modal-acquire-label">Silicon Valley Sweep draws these 4 cards. Pick 1 to play for free (ignoring all costs/requirements), or skip straight to keeping one.</p>
+        <div class="modal-hand-cards svs-card-grid">${previewCards
+          .map((c) => `<div class="svs-card-option" data-catalog-id="${c.catalogId}">${buildHandCardHtml(c, playerDash, false)}<button type="button" class="svs-play-btn" data-catalog-id="${c.catalogId}">Play Free</button></div>`)
+          .join('')}</div>
+        <div class="modal-actions"><button class="modal-skip-btn" id="svs-skip-play-btn">Skip — don't play any</button></div>`;
+    }
+
+    const remainingAfterPlay = svsStage.playCatalogId
+      ? (() => {
+          const idx = previewCards.findIndex((c) => c.catalogId === svsStage.playCatalogId);
+          const copy = [...previewCards];
+          if (idx !== -1) copy.splice(idx, 1);
+          return copy;
+        })()
+      : previewCards;
+    return `<p class="modal-acquire-label">Pick 1 card to keep — the other ${remainingAfterPlay.length - 1} will be discarded.</p>
+      <div class="modal-hand-cards svs-card-grid">${remainingAfterPlay
+        .map((c) => `<div class="svs-card-option" data-catalog-id="${c.catalogId}">${buildHandCardHtml(c, playerDash, false)}<button type="button" class="svs-keep-btn" data-catalog-id="${c.catalogId}">Keep This</button></div>`)
+        .join('')}</div>`;
   }
 
   if (milestoneKey === 'MASTER_ALGORITHM') {
@@ -1761,8 +1907,8 @@ function buildMilestoneChoiceBodyHtml(milestoneKey, vm, playerDash, dashboards) 
       return '<p class="empty-hand-message">Fewer than 2 real cards in hand — this milestone will be forfeited.</p>';
     }
     return `<p class="modal-acquire-label">Select at least 2 cards to trash (2 = +1 space, 4 = +2 spaces, 7 = +3 spaces).</p>
-      <div class="modal-hand-cards">${cards
-        .map((c) => `<label class="master-algorithm-card-option"><input type="checkbox" class="master-algorithm-checkbox" value="${c.instanceId}" /> ${c.name}</label>`)
+      <div class="modal-hand-cards master-algorithm-card-grid">${cards
+        .map((c) => `<div class="master-algorithm-card-option" data-instance-id="${c.instanceId}">${buildHandCardHtml(c, playerDash, false)}<div class="master-algorithm-select-badge">✓</div></div>`)
         .join('')}</div>
       <div class="modal-actions"><button class="modal-skip-btn" id="master-algorithm-confirm-btn" disabled>Trash Selected</button></div>`;
   }
@@ -1793,20 +1939,39 @@ function wireMilestoneChoiceHandlers(milestoneKey) {
   } else if (milestoneKey === 'HEADHUNTER' || milestoneKey === 'SILICON_VALLEY_SWEEP') {
     const btn = document.getElementById('milestone-auto-resolve-btn');
     if (btn) btn.addEventListener('click', () => handleTrackMilestoneChoice(milestoneKey, {}));
+    document.querySelectorAll('.svs-play-btn[data-catalog-id]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        svsStage = { stage: 'keep', playCatalogId: el.dataset.catalogId };
+        render();
+      });
+    });
+    const skipPlayBtn = document.getElementById('svs-skip-play-btn');
+    if (skipPlayBtn) {
+      skipPlayBtn.addEventListener('click', () => {
+        svsStage = { stage: 'keep', playCatalogId: null };
+        render();
+      });
+    }
+    document.querySelectorAll('.svs-keep-btn[data-catalog-id]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleTrackMilestoneChoice(milestoneKey, { playCatalogId: svsStage ? svsStage.playCatalogId : null, keepCatalogId: el.dataset.catalogId });
+      });
+    });
   } else if (milestoneKey === 'MASTER_ALGORITHM') {
-    const checkboxes = document.querySelectorAll('.master-algorithm-checkbox');
+    const options = document.querySelectorAll('.master-algorithm-card-option');
     const confirmBtn = document.getElementById('master-algorithm-confirm-btn');
-    checkboxes.forEach((cb) => {
-      cb.addEventListener('change', () => {
-        const checkedCount = Array.from(checkboxes).filter((c) => c.checked).length;
+    options.forEach((opt) => {
+      opt.addEventListener('click', () => {
+        opt.classList.toggle('master-algorithm-card-selected');
+        const checkedCount = document.querySelectorAll('.master-algorithm-card-selected').length;
         confirmBtn.disabled = checkedCount < 2;
       });
     });
     if (confirmBtn) {
       confirmBtn.addEventListener('click', () => {
-        const trashInstanceIds = Array.from(checkboxes)
-          .filter((c) => c.checked)
-          .map((c) => c.value);
+        const trashInstanceIds = Array.from(document.querySelectorAll('.master-algorithm-card-selected')).map((el) => el.dataset.instanceId);
         handleTrackMilestoneChoice(milestoneKey, { trashInstanceIds });
       });
     }
@@ -2108,6 +2273,127 @@ function render() {
   renderHistory(overlay.historyTicker);
   if (vm.meta.phase !== 'FINAL_SCORING') {
     renderOverlay(overlay.modal, dashboards[HUMAN_PLAYER_ID], vm.board.openMarketActionCards, vm, dashboards);
+    renderClientModal(dashboards[HUMAN_PLAYER_ID], vm);
+  }
+}
+
+function buildClientModalOverlay() {
+  const el = document.createElement('div');
+  el.id = 'client-modal-overlay';
+  el.className = 'interrupt-overlay';
+  el.style.display = 'none';
+  document.body.appendChild(el);
+  return el;
+}
+const clientModalOverlay = buildClientModalOverlay();
+
+/**
+ * renderClientModal(dash, vm)
+ * Epic 3: renders clientModalState-driven modals for abilities that
+ * aren't server-side pendingInterrupts — Liquidation Engine and
+ * Proprietary Algorithm are free-standing, player-initiated actions,
+ * not choices the engine is blocking on. Deliberately on its own
+ * dedicated element (not #interrupt-overlay) so it can never conflict
+ * with a genuine server interrupt; if one appears while this is open,
+ * this modal just closes itself rather than risk stacking or hiding it.
+ */
+function renderClientModal(dash, vm) {
+  if (vm.pendingInterrupt && vm.pendingInterrupt.type !== 'NULL') {
+    clientModalState = null;
+  }
+  if (!clientModalState || !dash) {
+    clientModalOverlay.style.display = 'none';
+    clientModalOverlay.innerHTML = '';
+    return;
+  }
+  clientModalOverlay.style.display = 'flex';
+
+  if (clientModalState.type === 'LIQUIDATION_ENGINE') {
+    const realRoster = (dash.roster.agents || []).filter((a) => !a.isVoided && a.resolved !== false);
+    clientModalOverlay.innerHTML = `
+      <div class="modal-box">
+        <h3>Liquidation Engine</h3>
+        <p class="modal-acquire-label">Pick 1 Agent to activate a second time for its Profit payout.</p>
+        <div class="agent-candidate-grid">${realRoster
+          .map((a) => buildAgentCardHtml(a, { clickable: true, dataAttr: `data-target-agent-instance-id="${a.agentInstanceId}"`, tooltip: a.name }))
+          .join('')}</div>
+        <div class="modal-actions"><button class="modal-cancel-btn" id="client-modal-cancel-btn">Cancel</button></div>
+      </div>
+    `;
+    clientModalOverlay.querySelectorAll('.agent-card-clickable[data-target-agent-instance-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        clientModalState = null;
+        const result = BrokerBossEngine.executeUserAction(state, {
+          type: 'USE_LIQUIDATION_ENGINE',
+          playerId: HUMAN_PLAYER_ID,
+          targetAgentInstanceId: el.dataset.targetAgentInstanceId,
+        });
+        if (result.error) {
+          showToast(`Liquidation Engine failed: ${result.error}`);
+        } else {
+          showToast('Liquidation Engine used — Agent activated a second time.');
+        }
+        state = result.state;
+        render();
+      });
+    });
+  } else if (clientModalState.type === 'PROPRIETARY_ALGORITHM') {
+    if (!clientModalState.mode) {
+      clientModalOverlay.innerHTML = `
+        <div class="modal-box">
+          <h3>Proprietary Algorithm</h3>
+          <p class="modal-acquire-label">Choose one:</p>
+          <div class="modal-actions" style="justify-content: center; gap: 10px;">
+            <button class="modal-skip-btn" id="pa-mode-trash">Trash 1 Card → Draw 2</button>
+            <button class="modal-skip-btn" id="pa-mode-discard">Discard 1 Card → Gain $2 PT</button>
+          </div>
+          <div class="modal-actions"><button class="modal-cancel-btn" id="client-modal-cancel-btn">Cancel</button></div>
+        </div>
+      `;
+      const trashBtn = clientModalOverlay.querySelector('#pa-mode-trash');
+      if (trashBtn) trashBtn.addEventListener('click', () => { clientModalState = { type: 'PROPRIETARY_ALGORITHM', mode: 'trash_for_draw' }; render(); });
+      const discardBtn = clientModalOverlay.querySelector('#pa-mode-discard');
+      if (discardBtn) discardBtn.addEventListener('click', () => { clientModalState = { type: 'PROPRIETARY_ALGORITHM', mode: 'discard_for_pt' }; render(); });
+    } else {
+      const modeLabel = clientModalState.mode === 'trash_for_draw' ? 'trash' : 'discard';
+      clientModalOverlay.innerHTML = `
+        <div class="modal-box">
+          <h3>Proprietary Algorithm</h3>
+          <p class="modal-acquire-label">Pick 1 card to ${modeLabel}.</p>
+          <div class="modal-hand-cards">${dash.hand.cards
+            .map((c) => `<div class="master-algorithm-card-option" data-instance-id="${c.instanceId}">${buildHandCardHtml(c, dash, false)}</div>`)
+            .join('')}</div>
+          <div class="modal-actions"><button class="modal-cancel-btn" id="client-modal-cancel-btn">Cancel</button></div>
+        </div>
+      `;
+      clientModalOverlay.querySelectorAll('.master-algorithm-card-option').forEach((el) => {
+        el.addEventListener('click', () => {
+          const mode = clientModalState.mode;
+          clientModalState = null;
+          const result = BrokerBossEngine.executeUserAction(state, {
+            type: 'USE_PROPRIETARY_ALGORITHM',
+            playerId: HUMAN_PLAYER_ID,
+            mode,
+            cardInstanceId: el.dataset.instanceId,
+          });
+          if (result.error) {
+            showToast(`Proprietary Algorithm failed: ${result.error}`);
+          } else {
+            showToast(mode === 'trash_for_draw' ? 'Card trashed — 2 new cards drawn.' : 'Card discarded — gained $2 PT.');
+          }
+          state = result.state;
+          render();
+        });
+      });
+    }
+  }
+
+  const cancelBtn = clientModalOverlay.querySelector('#client-modal-cancel-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      clientModalState = null;
+      render();
+    });
   }
 }
 
@@ -2314,6 +2600,73 @@ function buildShellCompanyStashHtml(dash) {
   `;
 }
 
+/**
+ * buildMilestoneAbilitiesHtml(dash, vm)
+ * Epic 3: real, clickable UI for the once-per-round / toggle-mode
+ * Track Milestone abilities that had zero client-side hooks before —
+ * the engine already supported all four correctly (confirmed via
+ * direct testing in the prior session), but a human player had no way
+ * to actually trigger any of them. Only ever shown for the human
+ * player's own panel, matching every other interactive control here.
+ */
+function buildMilestoneAbilitiesHtml(dash, vm) {
+  if (dash.playerId !== HUMAN_PLAYER_ID) return '';
+  const isHumanActiveTurn = vm.meta.phase === 'WORKER_PLACEMENT' && vm.meta.activePlayerId === HUMAN_PLAYER_ID;
+  const usedThisRound = dash.oncePerRoundAbilitiesUsed || [];
+  const tm = dash.trackMeters || [];
+  const findBranchLevel = (key, branch) => {
+    const meter = tm.find((m) => m.key === key);
+    return meter && meter.branch === branch ? meter.value : -1;
+  };
+
+  const buttons = [];
+
+  // Technology A5 — Overtime Manager: toggle mode, next space click pays
+  // $2 PT to place on an occupied opponent space.
+  if (findBranchLevel('technology', 'A') >= 5) {
+    const already = usedThisRound.includes('OVERTIME_MANAGER');
+    const disabled = already || !isHumanActiveTurn || pendingFreeAction || pendingLiquidityStaffPT || dash.wallet.profitTokens < 2;
+    buttons.push(
+      `<button type="button" class="milestone-ability-btn${pendingOvertimeManager ? ' milestone-ability-btn-active' : ''}" id="overtime-manager-btn" ${disabled ? 'disabled' : ''} title="${already ? 'Already used this round' : 'Pay $2 PT to place your next meeple on an opponent-occupied space'}">⏰ Overtime Manager${pendingOvertimeManager ? ' (click a space)' : ''}</button>`
+    );
+  }
+
+  // Technology B5 — Proprietary Algorithm: once per round, opens a
+  // choice modal (trash 1 to draw 2, OR discard 1 for $2 PT).
+  if (findBranchLevel('technology', 'B') >= 5) {
+    const already = usedThisRound.includes('PROPRIETARY_ALGORITHM');
+    const disabled = already || dash.hand.summary.count === 0;
+    buttons.push(
+      `<button type="button" class="milestone-ability-btn" id="proprietary-algorithm-btn" ${disabled ? 'disabled' : ''} title="${already ? 'Already used this round' : 'Trash 1 to draw 2, or discard 1 for $2 PT'}">🧮 Proprietary Algorithm</button>`
+    );
+  }
+
+  // Recognition A5 — Liquidation Engine: once per round, opens a
+  // choice modal (pick 1 Agent to activate a second time for profit).
+  if (findBranchLevel('recognition', 'A') >= 5) {
+    const already = usedThisRound.includes('LIQUIDATION_ENGINE');
+    const realRoster = (dash.roster.agents || []).filter((a) => !a.isVoided && a.resolved !== false);
+    const disabled = already || realRoster.length === 0;
+    buttons.push(
+      `<button type="button" class="milestone-ability-btn" id="liquidation-engine-btn" ${disabled ? 'disabled' : ''} title="${already ? 'Already used this round' : 'Pick 1 Agent to activate a second time for its Profit payout'}">💧 Liquidation Engine</button>`
+    );
+  }
+
+  // Recognition B7 — Venture Liquidation: toggle mode, only usable the
+  // round after the tokens were granted (liquidityStaffPTUsableRound),
+  // spending 1 token to perform a space's action for free.
+  if (dash.liquidityStaffPT > 0) {
+    const usableNow = dash.liquidityStaffPTUsableRound === vm.meta.round;
+    const disabled = !isHumanActiveTurn || !usableNow || pendingFreeAction || pendingOvertimeManager;
+    buttons.push(
+      `<button type="button" class="milestone-ability-btn${pendingLiquidityStaffPT ? ' milestone-ability-btn-active' : ''}" id="liquidity-staff-pt-btn" ${disabled ? 'disabled' : ''} title="${usableNow ? `Spend 1 of your ${dash.liquidityStaffPT} Liquidity Staff tokens as a free action` : 'Usable starting next round'}">🏦 Spend Liquidity Staff (${dash.liquidityStaffPT})${pendingLiquidityStaffPT ? ' (click a space)' : ''}</button>`
+    );
+  }
+
+  if (buttons.length === 0) return '';
+  return `<div class="milestone-abilities-row">${buttons.join('')}</div>`;
+}
+
 function renderTurnOrderTrack(vm) {
   const container = document.createElement('div');
   container.id = 'turn-order-track';
@@ -2375,53 +2728,8 @@ function renderTurnOrderTrack(vm) {
   `;
   return container;
 }
-/* ==========================================
-   TURN BANNER HELPER FUNCTIONS
-   ========================================== */
-function ensureTurnBannerElement() {
-  let el = document.getElementById('turn-banner');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'turn-banner';
-    el.className = 'turn-banner';
-    const header = document.getElementById('game-header');
-    if (header && header.parentNode) {
-      header.parentNode.insertBefore(el, header.nextSibling);
-    } else {
-      document.body.insertBefore(el, document.body.firstChild);
-    }
-  }
-  return el;
-}
 
-let lastTurnBannerActivePlayerId = null;
-
-function renderTurnBanner(vm) {
-  if (!vm || !vm.meta || vm.meta.phase === 'FINAL_SCORING') {
-    const existing = document.getElementById('turn-banner');
-    if (existing) existing.style.display = 'none';
-    return;
-  }
-  const el = ensureTurnBannerElement();
-  const activePlayerId = vm.meta.activePlayerId;
-  const isMyTurn = activePlayerId === HUMAN_PLAYER_ID;
-  const activePlayer = vm.players[activePlayerId];
-  const activeName = activePlayer ? activePlayer.displayName : '…';
-
-  el.style.display = 'block';
-  el.classList.toggle('turn-banner-mine', isMyTurn);
-  el.classList.toggle('turn-banner-waiting', !isMyTurn);
-  el.textContent = isMyTurn ? '🎯 YOUR TURN!' : `⏳ Waiting for ${activeName}...`;
-
-  if (lastTurnBannerActivePlayerId !== activePlayerId) {
-    el.classList.remove('turn-banner-pulse');
-    void el.offsetWidth;
-    el.classList.add('turn-banner-pulse');
-    lastTurnBannerActivePlayerId = activePlayerId;
-  }
-}
 function renderHeader(vm) {
-  renderTurnBanner(vm);
   document.getElementById('round-info').textContent = `Round ${vm.meta.round} / ${vm.meta.maxRounds}`;
   document.getElementById('phase-info').textContent = vm.meta.phase;
   document.getElementById('active-player-info').textContent = vm.players[vm.meta.activePlayerId]
@@ -2913,11 +3221,22 @@ function buildDraggableMeepleRowHtml(dash) {
       return `<span class="draggable-meeple-token" draggable="true" data-meeple-instance-id="${m.instanceId}" title="Drag onto a valid board space, or click a space directly">${buildMeepleSvg(colorSafe(dash.color))}</span>`;
     })
     .join('');
+  // Epic 3: Copycat Meeple (Recognition Path B, "Copycat Marketing") —
+  // a distinct, separately-tracked meeple, never part of
+  // timeMeeples.active. Orange is reserved specifically for this token
+  // (per the project's own established color convention — Orange is
+  // not a selectable player color), so it's never confused with any
+  // real player's own meeple color.
+  const copycatMeeple = state.players[dash.playerId] && state.players[dash.playerId].timeMeeples.copycatMeeple;
+  const copycatToken =
+    copycatMeeple && copycatMeeple.status === 'in_supply'
+      ? `<span class="draggable-meeple-token draggable-copycat-token" draggable="true" data-meeple-instance-id="${copycatMeeple.instanceId}" title="Copycat Meeple — drag onto ANY occupied opponent space to place there">${buildMeepleSvg('#e8842c')}</span>`
+      : '';
   const trainingBadge =
     dash.timeMeeples.staffInTrainingCount > 0
       ? `<span class="staff-in-training-badge">+${dash.timeMeeples.staffInTrainingCount} in training</span>`
       : '';
-  return `👷 <span class="draggable-meeple-row${justRecalled ? ' draggable-meeple-row-recalled' : ''}" title="${justRecalled ? 'Meeples recalled to supply' : ''}">${activeTokens}</span> ${dash.timeMeeples.availableCount}/${dash.timeMeeples.activeTotal} Available ${trainingBadge}`;
+  return `👷 <span class="draggable-meeple-row${justRecalled ? ' draggable-meeple-row-recalled' : ''}" title="${justRecalled ? 'Meeples recalled to supply' : ''}">${activeTokens}${copycatToken}</span> ${dash.timeMeeples.availableCount}/${dash.timeMeeples.activeTotal} Available ${trainingBadge}`;
 }
 
 function buildMeepleSvg(color) {
@@ -2977,20 +3296,40 @@ function renderBoard(board, vm) {
       const priorityCost = (space.cost && space.cost.priorityTokens) || 0;
       const humanWallet = state.players[HUMAN_PLAYER_ID].wallet;
       const canAfford = humanWallet.profitTokens >= profitCost && humanWallet.priorityTokens >= priorityCost;
-      const isBlocked = space.status === 'blocked' || space.status === 'void';
-      const clickable = pendingFreeAction
-        ? vm.meta.phase === 'WORKER_PLACEMENT' && vm.meta.activePlayerId === HUMAN_PLAYER_ID && !isBlocked
-        : vm.meta.phase === 'WORKER_PLACEMENT' &&
-          vm.meta.activePlayerId === HUMAN_PLAYER_ID &&
-          !vm.pendingInterrupt &&
-          !space.isFull &&
-          !isBlocked &&
-          humanAvailableMeeples >= meepleCost &&
-          canAfford;
+      // FIX: no real agents to coach meant the meeple/space cost was
+      // still spent for a fallback (the Coach Token gets banked, not
+      // lost) — but the player had no way to know that in advance.
+      // Proactively block the space instead of letting them discover
+      // it only after already committing a meeple. Folded into
+      // isBlocked directly so it propagates through every clickability
+      // branch below (special modes included) without duplicating the
+      // condition four separate times.
+      const isHireCoachWithNoAgents =
+        space.spaceId === 'LDR_HIRE_COACH' &&
+        !(state.players[HUMAN_PLAYER_ID].roster || []).some((a) => !a.isVoided);
+      const isBlocked = space.status === 'blocked' || space.status === 'void' || isHireCoachWithNoAgents;
+      const clickable =
+        pendingFreeAction || pendingLiquidityStaffPT
+          ? vm.meta.phase === 'WORKER_PLACEMENT' && vm.meta.activePlayerId === HUMAN_PLAYER_ID && !isBlocked
+          : pendingOvertimeManager
+            ? vm.meta.phase === 'WORKER_PLACEMENT' && vm.meta.activePlayerId === HUMAN_PLAYER_ID && !isBlocked && humanAvailableMeeples >= meepleCost
+            : vm.meta.phase === 'WORKER_PLACEMENT' &&
+              vm.meta.activePlayerId === HUMAN_PLAYER_ID &&
+              !vm.pendingInterrupt &&
+              !space.isFull &&
+              !isBlocked &&
+              humanAvailableMeeples >= meepleCost &&
+              canAfford;
 
       const spaceEl = document.createElement('div');
-      const isUnavailable = pendingFreeAction ? isBlocked : space.isFull || !canAfford || humanAvailableMeeples < meepleCost || isBlocked;
-      spaceEl.className = `board-space-hitbox ${space.isFull ? 'space-full' : ''} ${isUnavailable ? 'space-unavailable' : ''} ${isBlocked ? 'space-locked' : ''} ${clickable ? 'space-clickable' : ''} ${pendingFreeAction && clickable ? 'space-free-action-highlight' : ''}`;
+      const isUnavailable =
+        pendingFreeAction || pendingLiquidityStaffPT
+          ? isBlocked
+          : pendingOvertimeManager
+            ? isBlocked || humanAvailableMeeples < meepleCost
+            : space.isFull || !canAfford || humanAvailableMeeples < meepleCost || isBlocked;
+      const specialModeActive = pendingFreeAction || pendingOvertimeManager || pendingLiquidityStaffPT;
+      spaceEl.className = `board-space-hitbox ${space.isFull ? 'space-full' : ''} ${isUnavailable ? 'space-unavailable' : ''} ${isBlocked ? 'space-locked' : ''} ${clickable ? 'space-clickable' : ''} ${specialModeActive && clickable ? 'space-free-action-highlight' : ''}`;
       spaceEl.dataset.spaceId = space.spaceId;
       spaceEl.dataset.meepleCost = String(meepleCost);
       spaceEl.dataset.capacity = String(space.capacity);
@@ -3572,6 +3911,7 @@ function renderDashboards(dashboards, vm) {
         .join('')}</div>
       ${buildBankedTokensInventoryHtml(dash, vm)}
       ${buildShellCompanyStashHtml(dash)}
+      ${buildMilestoneAbilitiesHtml(dash, vm)}
     `;
 
     if (dash.playerId === HUMAN_PLAYER_ID) {
@@ -3584,6 +3924,38 @@ function renderDashboards(dashboards, vm) {
       panel.querySelectorAll('.banked-token-chip-clickable[data-stash-instance-id]').forEach((el) => {
         el.addEventListener('click', () => handleShellCompanySecondRecruit(el.dataset.stashInstanceId));
       });
+      const overtimeBtn = panel.querySelector('#overtime-manager-btn');
+      if (overtimeBtn) {
+        overtimeBtn.addEventListener('click', () => {
+          pendingOvertimeManager = !pendingOvertimeManager;
+          pendingLiquidityStaffPT = false;
+          pendingFreeAction = false;
+          render();
+        });
+      }
+      const liquidityBtn = panel.querySelector('#liquidity-staff-pt-btn');
+      if (liquidityBtn) {
+        liquidityBtn.addEventListener('click', () => {
+          pendingLiquidityStaffPT = !pendingLiquidityStaffPT;
+          pendingOvertimeManager = false;
+          pendingFreeAction = false;
+          render();
+        });
+      }
+      const proprietaryBtn = panel.querySelector('#proprietary-algorithm-btn');
+      if (proprietaryBtn) {
+        proprietaryBtn.addEventListener('click', () => {
+          clientModalState = { type: 'PROPRIETARY_ALGORITHM' };
+          render();
+        });
+      }
+      const liquidationBtn = panel.querySelector('#liquidation-engine-btn');
+      if (liquidationBtn) {
+        liquidationBtn.addEventListener('click', () => {
+          clientModalState = { type: 'LIQUIDATION_ENGINE' };
+          render();
+        });
+      }
     }
 
   container.appendChild(panel);
@@ -4362,7 +4734,7 @@ function getRelayServerUrl() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('relay')) return params.get('relay');
   const host = window.location.hostname || 'localhost';
-  return 'wss://broker-boss-relay.onrender.com';
+  return `ws://${host}:8081`;
 }
 
 let localExecuteUserAction = null;
@@ -4872,7 +5244,7 @@ function leaveOnlineRoom() {
  * every state change; per-card listeners would need constant
  * re-attachment and risk silently going stale.
  */
-const ZOOMABLE_CARD_SELECTOR = '.hand-card:not(.hand-card-placeholder):not(.hand-card-facedown), .agent-card:not(.agent-card-placeholder), .specialist-card-panel:not(.specialist-card-empty)';
+const ZOOMABLE_CARD_SELECTOR = '.hand-card:not(.hand-card-placeholder):not(.hand-card-facedown), .agent-card:not(.agent-card-placeholder), .specialist-card-panel:not(.specialist-card-empty), .active-shift-box';
 
 function buildCardZoomOverlay() {
   const el = document.createElement('div');
@@ -5102,6 +5474,65 @@ document.getElementById('log-drawer-close-btn').addEventListener('click', () => 
     isPanning = false;
     boardColumn.classList.remove('board-panning');
   });
+
+  // FIX: tablet/mobile "sticking" — this pan mechanism previously only
+  // ever listened for mouse events. Touch devices don't reliably fire a
+  // matching mouseup for every mousedown/synthesized-mousedown (a known
+  // cross-browser inconsistency, worse when a finger lifts off the
+  // element or a gesture gets interrupted), which could leave isPanning
+  // stuck true forever — every subsequent tap anywhere then behaves as
+  // if a pan is still active. Real touch handlers below, using the same
+  // pan math as the mouse path (single-finger only; a second finger
+  // touching down doesn't restart the pan, avoiding a jump).
+  boardColumn.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.target.closest(NON_PANNABLE_SELECTOR)) return;
+      if (e.touches.length !== 1) return;
+      isPanning = true;
+      panStartX = e.touches[0].clientX;
+      panStartY = e.touches[0].clientY;
+      panOriginX = panX;
+      panOriginY = panY;
+      boardColumn.classList.add('board-panning');
+    },
+    { passive: true }
+  );
+
+  viewport.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!isPanning || e.touches.length !== 1) return;
+      e.preventDefault(); // stop the page itself from scrolling while panning the board
+      panX = panOriginX + (e.touches[0].clientX - panStartX);
+      panY = panOriginY + (e.touches[0].clientY - panStartY);
+      applyTransform();
+    },
+    { passive: false }
+  );
+
+  function endTouchPan() {
+    if (!isPanning) return;
+    isPanning = false;
+    boardColumn.classList.remove('board-panning');
+  }
+  boardColumn.addEventListener('touchend', endTouchPan);
+  boardColumn.addEventListener('touchcancel', endTouchPan); // the OS/browser can interrupt a touch (incoming call, notification, etc.) without ever firing touchend
+
+  // Extra safety net, mouse or touch: if the window loses focus or the
+  // tab is hidden mid-pan (alt-tab, app switch, notification pull-down),
+  // neither a mouseup nor a touchend is guaranteed to fire at all — this
+  // guarantees isPanning always gets cleared regardless.
+  window.addEventListener('blur', () => {
+    isPanning = false;
+    boardColumn.classList.remove('board-panning');
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      isPanning = false;
+      boardColumn.classList.remove('board-panning');
+    }
+  });
 })();
 
 document.getElementById('player-aid-btn').addEventListener('click', () => {
@@ -5143,40 +5574,3 @@ preloadCatalogData()
       </div>
     `;
   });
-/* ==========================================
-   FIX 2: MOBILE VIEW TOGGLE (JS)
-   ========================================== */
-function setupMobileViewToggle() {
-  const boardViewport = document.getElementById('board-zoom-viewport');
-  const dashboardsEl = document.getElementById('player-dashboards');
-  const tabsEl = document.getElementById('dashboard-tabs');
-  const gameMain = document.getElementById('game-main');
-  if (!boardViewport || !dashboardsEl || !gameMain) return;
-
-  boardViewport.classList.add('mobile-board-pane');
-  dashboardsEl.classList.add('mobile-console-pane');
-  if (tabsEl) tabsEl.classList.add('mobile-console-pane');
-
-  const toggleBar = document.createElement('div');
-  toggleBar.className = 'mobile-view-toggle';
-  toggleBar.innerHTML = `
-    <button type="button" class="mobile-view-toggle-btn mobile-view-toggle-active" data-view="board">🗺 Board</button>
-    <button type="button" class="mobile-view-toggle-btn" data-view="console">📋 Player Console</button>
-  `;
-  gameMain.parentNode.insertBefore(toggleBar, gameMain);
-
-  function setView(view) {
-    document.body.classList.toggle('mobile-view-board', view === 'board');
-    document.body.classList.toggle('mobile-view-console', view === 'console');
-    toggleBar.querySelectorAll('.mobile-view-toggle-btn').forEach((btn) => {
-      btn.classList.toggle('mobile-view-toggle-active', btn.dataset.view === view);
-    });
-  }
-
-  toggleBar.querySelectorAll('.mobile-view-toggle-btn').forEach((btn) => {
-    btn.addEventListener('click', () => setView(btn.dataset.view));
-  });
-
-  document.body.classList.add('mobile-view-board');
-}
-setupMobileViewToggle();
