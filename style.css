@@ -456,6 +456,13 @@ body {
   position: relative;
   aspect-ratio: 1568 / 588;
   width: 100%;
+  /* FIX: board-hubs (the Main Board) is capped at max-width: 780px, but
+     this had no cap at all — meaning the Agency Board could render far
+     wider than the Main Board above it, the two never actually matching
+     scale the way a single physical table setup would. Same cap now, so
+     they grow and shrink together. */
+  max-width: 780px;
+  margin: 0 auto;
 }
 
 .agency-board-title {
@@ -579,6 +586,7 @@ body {
   background-repeat: no-repeat;
   border-radius: 12px;
   overflow: visible;
+  margin: 0 auto;
 }
 
 /* Defensive fallback for browsers without aspect-ratio support (Safari
@@ -1272,6 +1280,17 @@ body {
   margin: auto;
   display: block;
   transition: transform 0.15s ease;
+  /* FIX: mitigate sub-pixel rendering blur, a known browser behavior
+     when a transform (the -90deg rotation below) lands on non-integer
+     pixel dimensions — which 76.923%/130% sizing against a responsive,
+     not-fixed-pixel container will do at most viewport widths. Forcing
+     GPU compositing (translateZ) and hinting the browser to prioritize
+     sharpness over smoothing when scaling commonly resolves this. */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
 }
 /* Agent Card image rotation (updated to precise, non-cropping math):
    the source card art has its stat labels (Training, Technology,
@@ -1313,16 +1332,36 @@ body {
   height: 130%;
   max-width: none;
   object-fit: contain;
-  transform: rotate(-90deg);
+  /* Combined into one value deliberately: a separate transform rule
+     here would fully replace (not add to) the base .full-card-image
+     rule's transform: translateZ(0) rather than combining with it,
+     silently losing the GPU-compositing blur fix for exactly the case
+     it matters most — this is the only context where a real rotation
+     happens. */
+  transform: rotate(-90deg) translateZ(0);
 }
 .agent-card-clickable .full-card-image,
 .hand-card-playable .full-card-image,
 .hand-card-market .full-card-image {
   cursor: pointer;
 }
-.agent-card:hover .full-card-image,
 .hand-card:hover .full-card-image {
   transform: scale(1.04);
+}
+.agent-card:hover .full-card-image {
+  /* FIX: previously combined with .hand-card:hover in one rule sharing
+     a single transform: scale(1.04) — since this selector's specificity
+     (.agent-card:hover .full-card-image) is genuinely higher than the
+     base rotation rule's (.agent-card .full-card-image), that replaced
+     the -90deg rotation entirely on hover, not just added a scale to
+     it. Every agent card anywhere in the game visually snapped to its
+     unrotated, sideways orientation the moment it was hovered — exactly
+     the kind of thing a rushed bug report would describe as "blurry" or
+     "glitchy" rather than "the rotation disappeared." Combining both in
+     one value here preserves the rotation while still scaling up.
+     Keep in sync with the base rotation rule above if that value
+     changes. */
+  transform: rotate(-90deg) scale(1.04) translateZ(0);
 }
 
 .card-portrait {
@@ -1499,6 +1538,44 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   margin: 14px 0;
+}
+
+.master-algorithm-card-option {
+  position: relative;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: transform 0.1s ease;
+}
+.master-algorithm-card-option:hover {
+  transform: translateY(-2px);
+}
+.master-algorithm-card-option .hand-card {
+  cursor: pointer; /* the click still bubbles up to the wrapper's own handler; buildHandCardHtml(c, dash, false) never assigns .hand-card-playable here, so there's no other click handler on the card itself to conflict with */
+}
+.master-algorithm-select-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--hub-decisions, #e8b64c);
+  color: #201a0a;
+  font-weight: 800;
+  font-size: 0.8em;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+}
+.master-algorithm-card-selected {
+  outline: 3px solid var(--hub-decisions, #e8b64c);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.master-algorithm-card-selected .master-algorithm-select-badge {
+  display: flex;
 }
 
 .modal-actions {
@@ -2631,6 +2708,67 @@ body {
   color: #201a0a;
 }
 
+.milestone-abilities-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.milestone-ability-btn {
+  font-size: 0.7em;
+  padding: 4px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--hub-decisions, #e8b64c);
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  cursor: pointer;
+}
+.milestone-ability-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: var(--border);
+}
+.milestone-ability-btn:not(:disabled):hover {
+  background: var(--hub-decisions, #e8b64c);
+  color: #201a0a;
+}
+.milestone-ability-btn-active {
+  background: var(--hub-decisions, #e8b64c);
+  color: #201a0a;
+  box-shadow: 0 0 0 2px rgba(232, 182, 76, 0.5);
+}
+
+.svs-card-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.svs-card-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.svs-play-btn,
+.svs-keep-btn {
+  font-size: 0.65em;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--hub-decisions, #e8b64c);
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  cursor: pointer;
+}
+.svs-play-btn:hover,
+.svs-keep-btn:hover {
+  background: var(--hub-decisions, #e8b64c);
+  color: #201a0a;
+}
+
+.draggable-copycat-token {
+  filter: drop-shadow(0 0 3px rgba(232, 132, 44, 0.8));
+}
+
 /* Report/Feedback button and modal */
 .report-feedback-btn {
   margin-left: auto;
@@ -2783,138 +2921,4 @@ body {
   background: var(--accent);
   color: #201a0a;
   border-color: var(--accent);
-}
-/* ==========================================
-   MULTIPLAYER & MOBILE BUG FIXES
-   ========================================== */
-
-/* 1. Waiting Spinner for Spectators (Modal Gate) */
-.waiting-on-player-overlay {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 10px;
-}
-
-.waiting-on-player-spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid rgba(255, 255, 255, 0.25);
-  border-top-color: #e8b64c;
-  border-radius: 50%;
-  animation: waiting-on-player-spin 0.9s linear infinite;
-}
-
-@keyframes waiting-on-player-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* 2. Turn Notification Banner */
-.turn-banner {
-  position: sticky;
-  top: 0;
-  z-index: 150;
-  text-align: center;
-  padding: 10px 16px;
-  font-family: var(--font-display);
-  font-size: 1.15em;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-}
-
-.turn-banner-mine {
-  background: linear-gradient(180deg, #6fe08a 0%, #2f9e52 100%);
-  color: #05230f;
-}
-
-.turn-banner-waiting {
-  background: linear-gradient(180deg, #4a5568 0%, #2b3340 100%);
-  color: #dbe2ea;
-}
-
-.turn-banner-pulse {
-  animation: turn-banner-pulse-anim 0.6s ease-out;
-}
-
-@keyframes turn-banner-pulse-anim {
-  0% { transform: scale(0.97); box-shadow: 0 0 0 rgba(111, 224, 138, 0); }
-  40% { transform: scale(1.02); box-shadow: 0 0 22px 6px rgba(111, 224, 138, 0.65); }
-  100% { transform: scale(1); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); }
-}
-
-/* 3. Mobile & Tablet Layout Adjustments (< 768px) */
-@media (max-width: 768px) {
-  html, body { overflow-x: hidden; }
-
-  #game-main {
-    display: flex;
-    flex-direction: column;
-    padding: 8px;
-    gap: 10px;
-  }
-
-  .board-zoom-viewport {
-    width: 100%;
-    height: 62vh;
-    touch-action: pan-x pan-y pinch-zoom;
-  }
-
-  .board-column { cursor: default; }
-
-  .player-dashboards-wrap,
-  .player-dashboards {
-    width: 100%;
-    max-width: 100%;
-    max-height: 62vh;
-  }
-
-  body.mobile-view-board .mobile-console-pane { display: none !important; }
-  body.mobile-view-console .mobile-board-pane { display: none !important; }
-
-  .mobile-view-toggle {
-    position: sticky;
-    top: 0;
-    z-index: 120;
-    display: flex;
-    gap: 6px;
-    padding: 6px 8px;
-    background: var(--bg-panel);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .mobile-view-toggle-btn {
-    flex: 1;
-    padding: 10px;
-    border-radius: 8px;
-    border: 2px solid var(--border);
-    background: var(--bg-panel-light);
-    color: var(--text-main);
-    font-weight: 700;
-    font-size: 0.9em;
-  }
-
-  .mobile-view-toggle-btn.mobile-view-toggle-active {
-    border-color: var(--hub-decisions, #e8b64c);
-    color: var(--hub-decisions, #e8b64c);
-  }
-
-  .board-zoom-controls { top: 6px; right: 6px; }
-  .board-zoom-btn { width: 42px; height: 42px; font-size: 1.3rem; }
-
-  .corner-drawer {
-    left: 8px;
-    right: 8px;
-    width: auto;
-    max-width: calc(100vw - 16px);
-    max-height: 70vh;
-  }
-
-  .corner-drawer-toggle { left: 8px; width: 46px; height: 46px; }
-
-  .modal-box { width: 94vw; max-height: 88vh; }
-
-  .turn-banner { font-size: 0.95em; padding: 8px 10px; }
 }
