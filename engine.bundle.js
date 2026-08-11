@@ -908,7 +908,13 @@ var BrokerBossEngine = (() => {
               ...nextState.players,
               [playerId]: {
                 ...nextState.players[playerId],
-                liquidityStaffPT: (nextState.players[playerId].liquidityStaffPT || 0) + moveAmount
+                liquidityStaffPT: (nextState.players[playerId].liquidityStaffPT || 0) + moveAmount,
+                // FIX: card text is explicit ("Next Round Only") — without
+                // tracking which round these are valid for, there was no
+                // way to enforce that, nor any way to actually spend them
+                // at all (see the new USE_LIQUIDITY_STAFF_PT dispatcher
+                // case below, which checks this field).
+                liquidityStaffPTUsableRound: nextState.phase.round + 1
               }
             }
           };
@@ -933,6 +939,30 @@ var BrokerBossEngine = (() => {
             playerId,
             milestoneKey,
             message: `${playerId} unlocks the Golden Parachute \u2014 3 PT = 1 VP at final scoring (max +10 VP).`
+          });
+        }
+        if (milestoneKey === "MARKET_HIJACK") {
+          // FIX: confirmed genuinely missing from this function via a full
+          // audit against the CSV/rulebook text — reaching this milestone
+          // previously fell through to `return state;` at the bottom, a
+          // silent no-op. Immediate: pay $4 PT (uncapped at 0 if short,
+          // matching this card's own "Instant" framing rather than
+          // silently blocking the milestone). Passive: hasMarketHijack
+          // flag checked at the real Copycat Meeple placement site so the
+          // +1 free Market Share triggers exactly when the card says.
+          let nextState = adjustWallet(state, playerId, -4, 0);
+          nextState = {
+            ...nextState,
+            players: {
+              ...nextState.players,
+              [playerId]: { ...nextState.players[playerId], hasMarketHijack: true }
+            }
+          };
+          return appendLog(nextState, {
+            type: "MILESTONE_APPLIED",
+            playerId,
+            milestoneKey,
+            message: `${playerId} pays $4 PT to unlock Market Hijack \u2014 placing the Copycat Meeple now also advances the Market Share Track for free.`
           });
         }
         return state;
@@ -2066,6 +2096,15 @@ var BrokerBossEngine = (() => {
         return loyaltyCount * 4;
       }
       function calculateProfitTokenScore(player) {
+        // FIX: hasGoldenParachute was set when the milestone was claimed
+        // but never once read anywhere in scoring — the "premium 3:1
+        // conversion, max +10 VP" ability had zero actual effect on a
+        // player's final score despite the milestone log message
+        // claiming it was unlocked. Confirmed via a direct search before
+        // writing this fix, not assumed.
+        if (player.hasGoldenParachute) {
+          return Math.min(10, Math.floor(player.wallet.profitTokens / 3));
+        }
         return Math.floor(player.wallet.profitTokens / 4);
       }
       function calculateMilestoneScore(player) {
@@ -7846,6 +7885,22 @@ var BrokerBossEngine = (() => {
           spaceId: space.spaceId,
           cost: space.cost || null
         });
+        if (player.hasMarketHijack && updatedCopycatMeeple !== player.timeMeeples.copycatMeeple) {
+          // FIX: MARKET_HIJACK's passive ("whenever you place your
+          // Copycat Meeple... also immediately advance +1 space on the
+          // Market Share Track for free") had no trigger point anywhere
+          // — the flag itself didn't even exist until the handler above
+          // was added. This is the actual Copycat Meeple placement site;
+          // updatedCopycatMeeple only differs from the pre-placement
+          // reference exactly when the copycat meeple was the one
+          // committed this call.
+          nextState = adjustMarketShare(nextState, playerId, 1);
+          nextState = appendLog(nextState, {
+            type: "MARKET_HIJACK_TRIGGERED",
+            playerId,
+            message: `${playerId}'s Market Hijack advances the Market Share Track by 1 for free (Copycat Meeple placed).`
+          });
+        }
         const updatedSpace = nextState.board.actionSpaces.find((s) => s.spaceId === space.spaceId);
         const resolution = resolveActionSpace(nextState, playerId, updatedSpace, meeple, extra, occupantOrder);
         nextState = resolution.state;
@@ -8340,7 +8395,14 @@ var BrokerBossEngine = (() => {
             };
           }
           case "rosterSize": {
-            const current = player.roster.length;
+            // FIX: roster.length counted every entry including agents
+            // marked isVoided:true (fired via office-capacity overflow,
+            // kept in the array rather than removed) — a player could
+            // satisfy a "roster of 5" requirement without having 5 real
+            // agents. Filtering isVoided matches the same convention
+            // already used everywhere else this field is checked
+            // (e.g. the office-overflow handler right above this one).
+            const current = player.roster.filter((r) => !r.isVoided).length;
             if (current >= requirement.count) {
               return { ok: true };
             }
@@ -10287,7 +10349,12 @@ var BrokerBossEngine = (() => {
               maxAllowed: player.timeMeeples.maxAllowed
             },
             loyaltyTokensMax: player.loyaltyTokensMax,
-            score: player.score && player.score.finalized ? { ...player.score } : null
+            score: player.score && player.score.finalized ? { ...player.score } : null,
+            oncePerRoundAbilitiesUsed: [...(player.oncePerRoundAbilitiesUsed || [])],
+            hasMarketHijack: !!player.hasMarketHijack,
+            hasGoldenParachute: !!player.hasGoldenParachute,
+            liquidityStaffPT: player.liquidityStaffPT || 0,
+            liquidityStaffPTUsableRound: player.liquidityStaffPTUsableRound || null
           };
         });
         return playerViewModels;
@@ -10779,7 +10846,17 @@ var BrokerBossEngine = (() => {
       }
       function buildRosterMonitor(player) {
         return {
-          count: player.roster.length,
+          // FIX: this previously counted every roster entry including
+          // ones marked isVoided:true (fired via office-capacity
+          // overflow, kept in the array rather than removed) — the
+          // "Roster: X/Y" display shown throughout the game was
+          // inflated whenever a player had any fired agents, and a
+          // rosterSize play requirement could look satisfied here even
+          // when the engine's own real enforcement (verifyPlayRequirement)
+          // correctly rejected it, a confusing mismatch. Matches the
+          // same !r.isVoided convention used everywhere else this field
+          // is checked.
+          count: player.roster.filter((r) => !r.isVoided).length,
           capacity: player.tracks.offices.unlocked,
           agents: player.roster.map((agent) => ({
             agentInstanceId: agent.agentInstanceId,
@@ -10831,7 +10908,12 @@ var BrokerBossEngine = (() => {
           bankedBonusTokens: [...player.bankedBonusTokens || []],
           shellCompanyStash: (player.shellCompanyStash || []).map((s) => ({ ...s })),
           shellCompanyRecruitsUsed: player.shellCompanyRecruitsUsed || 0,
-          score: player.score ? { ...player.score } : null
+          score: player.score ? { ...player.score } : null,
+          oncePerRoundAbilitiesUsed: [...(player.oncePerRoundAbilitiesUsed || [])],
+          hasMarketHijack: !!player.hasMarketHijack,
+          hasGoldenParachute: !!player.hasGoldenParachute,
+          liquidityStaffPT: player.liquidityStaffPT || 0,
+          liquidityStaffPTUsableRound: player.liquidityStaffPTUsableRound || null
         };
       }
       module.exports = {
@@ -12726,6 +12808,50 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_BRANCH_CHOICE_PARAMS", detail: null };
             }
             const result = resolveTrackBranchChoice(state, userIntent.playerId, userIntent.trackName, userIntent.chosenBranch);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          case "USE_LIQUIDITY_STAFF_PT": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            if (typeof userIntent.spaceId !== "string" || userIntent.spaceId.length === 0) {
+              return { state, error: "INVALID_SPACE_ID", detail: null };
+            }
+            const lpPlayer = state.players[userIntent.playerId];
+            if (!lpPlayer || !(lpPlayer.liquidityStaffPT > 0)) {
+              return { state, error: "NO_LIQUIDITY_STAFF_PT", detail: null };
+            }
+            if (lpPlayer.liquidityStaffPTUsableRound !== state.phase.round) {
+              return { state, error: "LIQUIDITY_STAFF_PT_NOT_USABLE_THIS_ROUND", detail: { usableRound: lpPlayer.liquidityStaffPTUsableRound, currentRound: state.phase.round } };
+            }
+            const lpResult = executeFreeBoardAction(state, userIntent.playerId, userIntent.spaceId);
+            if (lpResult.error) {
+              return { state, error: lpResult.error, detail: lpResult.detail };
+            }
+            const nextStateLp = {
+              ...lpResult.state,
+              players: {
+                ...lpResult.state.players,
+                [userIntent.playerId]: {
+                  ...lpResult.state.players[userIntent.playerId],
+                  liquidityStaffPT: lpResult.state.players[userIntent.playerId].liquidityStaffPT - 1
+                }
+              }
+            };
+            return { state: nextStateLp, error: null, detail: null };
+          }
+          case "USE_PROPRIETARY_ALGORITHM": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = useProprietaryAlgorithm(state, userIntent.playerId, userIntent.mode, userIntent.cardInstanceId);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          case "USE_LIQUIDATION_ENGINE": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = useLiquidationEngine(state, userIntent.playerId, userIntent.targetAgentInstanceId);
             return { state: result.state, error: result.error, detail: result.detail };
           }
           case "RESOLVE_TRACK_MILESTONE_CHOICE": {
