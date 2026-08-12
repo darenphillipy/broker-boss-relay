@@ -7253,19 +7253,7 @@ var BrokerBossEngine = (() => {
         if (state.shiftTracker.position < state.shiftTracker.max) {
           return state;
         }
-        let nextState = state;
-        nextState = {
-          ...nextState,
-          phase: {
-            ...nextState.phase,
-            pendingInterrupt: {
-              type: "SHIFT_CARD_RESOLUTION",
-              sourcePlayerId: nextState.phase.activePlayerId,
-              data: { drawnCardCatalogId: null, effectsApplied: [] }
-            }
-          }
-        };
-        let { shiftDeck } = nextState;
+        let { shiftDeck } = state;
         let drawnCard = drawTopCard(shiftDeck.drawPile);
         let remainingDrawPile = shiftDeck.drawPile.slice(1);
         if (drawnCard === null) {
@@ -7275,104 +7263,87 @@ var BrokerBossEngine = (() => {
           remainingDrawPile = shiftDeck.drawPile.slice(1);
         }
         if (drawnCard === null) {
-          nextState = appendLog(nextState, {
+          let nextState = appendLog(state, {
             type: "SHIFT_DECK_EMPTY_NO_CARD_DRAWN",
-            sourcePlayerId: nextState.phase.activePlayerId
+            sourcePlayerId: state.phase.activePlayerId
           });
           nextState = {
             ...nextState,
-            shiftTracker: { ...nextState.shiftTracker, position: nextState.shiftTracker.min },
-            phase: { ...nextState.phase, pendingInterrupt: NULL_INTERRUPT }
+            shiftTracker: { ...nextState.shiftTracker, position: nextState.shiftTracker.min }
           };
           return nextState;
         }
-        nextState = {
-          ...nextState,
+        // FIX (two-stage redesign): this used to draw the card AND apply
+        // its effect (track changes, wallet changes, everything) all
+        // within this same call, only pausing afterward to show what had
+        // already happened — "the engine applies the effect instantly
+        // and pops up a modal showing the card already spent/resolved."
+        // Stage 1 now only draws and announces the card — the shift deck
+        // itself updates (the card really was drawn, revealed to every
+        // player), but the shift tracker position, the card's actual
+        // effect, and the discard-pile move all wait for Stage 2
+        // (resolveShiftEffectStage2), triggered only once a real player
+        // clicks "Resolve Shift Effect." Nothing about any player's
+        // tracks, wallet, or meeples changes until then.
+        return {
+          ...state,
+          shiftDeck: { ...shiftDeck, drawPile: remainingDrawPile },
           phase: {
-            ...nextState.phase,
+            ...state.phase,
             pendingInterrupt: {
-              ...nextState.phase.pendingInterrupt,
-              data: { ...nextState.phase.pendingInterrupt.data, drawnCardCatalogId: drawnCard.catalogId }
+              type: "SHIFT_CARD_RESOLUTION",
+              sourcePlayerId: state.phase.activePlayerId,
+              data: { drawnCardCatalogId: drawnCard.catalogId, stage: "announcement" }
             }
           }
         };
-        const seatPlayerIds = nextState.session.seats.map((s) => s.playerId);
-        const triggeringPlayerId = nextState.phase.activePlayerId;
-        const logLengthBeforeEffect = nextState.log.length;
-        nextState = applyShiftCardEffect(nextState, triggeringPlayerId, drawnCard);
-        seatPlayerIds.forEach((playerId) => {
-          const player = nextState.players[playerId];
+      }
+      function resolveShiftEffectStage2(state, playerId) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "announcement") {
+          return { state, error: "NO_PENDING_SHIFT_ANNOUNCEMENT", detail: { pendingInterrupt: interrupt || null } };
+        }
+        if (playerId !== interrupt.sourcePlayerId) {
+          return { state, error: "NOT_YOUR_SHIFT_CARD_TO_RESOLVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
+        }
+        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
+        const seatPlayerIds = state.session.seats.map((s) => s.playerId);
+        const triggeringPlayerId = interrupt.sourcePlayerId;
+        const logLengthBeforeEffect = state.log.length;
+        let nextState = applyShiftCardEffect(state, triggeringPlayerId, drawnCard);
+        seatPlayerIds.forEach((pid) => {
+          const player = nextState.players[pid];
           if (playerHasShiftImmunity(player)) {
-            nextState = appendLog(nextState, {
-              type: "SHIFT_EFFECT_BLOCKED_BY_IMMUNITY",
-              playerId,
-              catalogId: drawnCard.catalogId
-            });
+            nextState = appendLog(nextState, { type: "SHIFT_EFFECT_BLOCKED_BY_IMMUNITY", playerId: pid, catalogId: drawnCard.catalogId });
           } else {
-            nextState = appendLog(nextState, {
-              type: "SHIFT_EFFECT_APPLIED",
-              playerId,
-              catalogId: drawnCard.catalogId
-            });
+            nextState = appendLog(nextState, { type: "SHIFT_EFFECT_APPLIED", playerId: pid, catalogId: drawnCard.catalogId });
           }
         });
         nextState = {
           ...nextState,
-          shiftDeck: {
-            ...shiftDeck,
-            drawPile: remainingDrawPile,
-            discardPile: [...shiftDeck.discardPile, drawnCard.catalogId]
-          },
-          shiftTracker: { ...nextState.shiftTracker, position: nextState.shiftTracker.min }
-        };
-        nextState = {
-          ...nextState,
+          shiftDeck: { ...nextState.shiftDeck, discardPile: [...nextState.shiftDeck.discardPile, drawnCard.catalogId] },
           shiftTracker: {
             ...nextState.shiftTracker,
+            position: nextState.shiftTracker.min,
             history: [
               ...nextState.shiftTracker.history || [],
-              {
-                round: nextState.phase.round,
-                triggeredByPlayerId: nextState.phase.activePlayerId,
-                shiftCardCatalogId: drawnCard.catalogId,
-                resolvedAt: (/* @__PURE__ */ new Date()).toISOString()
-              }
+              { round: nextState.phase.round, triggeredByPlayerId: triggeringPlayerId, shiftCardCatalogId: drawnCard.catalogId, resolvedAt: (/* @__PURE__ */ new Date()).toISOString() }
             ]
-          }
-        };
-        // FIX (multiplayer acknowledgment redesign): this interrupt used
-        // to be cleared to NULL_INTERRUPT here, within the SAME function
-        // call that set it — meaning no client, in single-player or
-        // multiplayer, could ever actually observe it as pending; it was
-        // set and cleared atomically before any state was ever returned.
-        // Now it stays genuinely pending, carrying the real log entries
-        // the effect just generated (not fabricated summary text) as
-        // consequencesLogEntries, until a real ACKNOWLEDGE_SHIFT_CARD
-        // action clears it. Since every connected client receives the
-        // same broadcast state, this pending interrupt is automatically
-        // visible to all of them — the "freeze for all players" and
-        // "waiting for X to acknowledge" requirements fall out of the
-        // existing state-sync mechanism for free, with no new
-        // multiplayer-specific machinery needed.
-        nextState = {
-          ...nextState,
+          },
           phase: {
             ...nextState.phase,
             pendingInterrupt: {
               type: "SHIFT_CARD_RESOLUTION",
               sourcePlayerId: triggeringPlayerId,
-              data: {
-                drawnCardCatalogId: drawnCard.catalogId,
-                consequencesLogEntries: nextState.log.slice(logLengthBeforeEffect)
-              }
+              data: { drawnCardCatalogId: drawnCard.catalogId, stage: "consequences", consequencesLogEntries: nextState.log.slice(logLengthBeforeEffect) }
             }
           }
         };
-        return nextState;
+        return { state: nextState, error: null, detail: null };
       }
       function acknowledgeShiftCardResolution(state, playerId) {
         const interrupt = state.phase.pendingInterrupt;
-        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION") {
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "consequences") {
           return { state, error: "NO_PENDING_SHIFT_CARD_ACKNOWLEDGMENT", detail: { pendingInterrupt: interrupt || null } };
         }
         if (playerId !== interrupt.sourcePlayerId) {
@@ -7383,6 +7354,7 @@ var BrokerBossEngine = (() => {
       }
       module.exports = {
         resolveShiftTrigger,
+        resolveShiftEffectStage2,
         drawTopCard,
         reshuffleDiscardIntoDrawPile,
         applyShiftCardEffect,
@@ -11807,6 +11779,7 @@ var BrokerBossEngine = (() => {
       var { evaluateRecruitCandidates, evaluatePoachCandidates, evaluateLoyaltyCandidates, evaluateActionCardChoice } = require_botDecisionEngine();
       var { resolveRecruitFromGrowthHub, resolvePoachFromGrowthHub, resolveLoyaltyFromGrowthHub } = require_agentRecruitmentReducer();
       var { playActionCard, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
+      var { resolveShiftEffectStage2 } = require_shiftReducer();
       var DEAD_CARD_TRACK_LEVEL_THRESHOLD = 3;
       function appendLog(state, entry) {
         const logEntry = {
@@ -12371,11 +12344,31 @@ var BrokerBossEngine = (() => {
         }
         if (interrupt.type === "SHIFT_CARD_RESOLUTION") {
           // Bots don't need to pause and read the card — only a human
-          // player genuinely benefits from the acknowledgment gate.
-          // Without this explicit case, a bot-triggered shift card would
-          // leave this interrupt permanently unresolved (bots never
-          // click the real UI's Acknowledge button), stalling the whole
-          // game loop until settleGameLoop's own iteration cap kicked in.
+          // player genuinely benefits from the two-stage announcement/
+          // consequences gate. FIX: this used to unconditionally clear
+          // the interrupt regardless of stage — for a bot-triggered
+          // shift card at the "announcement" stage (effect not yet
+          // applied), that would have cleared the interrupt WITHOUT
+          // ever calling resolveShiftEffectStage2, silently skipping the
+          // card's actual effect entirely for that game. Now correctly
+          // drives through both real stages instead of just discarding
+          // whichever one it's currently on.
+          const stage = interrupt.data && interrupt.data.stage;
+          if (stage === "announcement") {
+            const result2 = resolveShiftEffectStage2(state, interrupt.sourcePlayerId);
+            const loggedState2 = appendLog(result2.error ? state : result2.state, {
+              type: "BOT_INTERRUPT_DECISION_MADE",
+              playerId: interrupt.sourcePlayerId,
+              archetype: player.archetype || null,
+              interruptType: interrupt.type,
+              choiceType: "SHIFT_CARD_AUTO_RESOLVE_STAGE2",
+              rationale: "BOTS_DO_NOT_NEED_TO_PAUSE_FOR_ANNOUNCEMENT"
+            });
+            if (result2.error) {
+              return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
+            }
+            return { state: loggedState2, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+          }
           const nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
           return {
             state: appendLog(nextState, { type: "BOT_INTERRUPT_DECISION_MADE", playerId: interrupt.sourcePlayerId, archetype: player.archetype || null, interruptType: interrupt.type, choiceType: "SHIFT_CARD_AUTO_ACKNOWLEDGED", rationale: "BOTS_DO_NOT_NEED_TO_PAUSE_FOR_ACKNOWLEDGMENT" }),
@@ -12851,7 +12844,7 @@ var BrokerBossEngine = (() => {
       } = require_agentRecruitmentReducer();
       var { handleInterruptResolution } = require_interruptResolutionReducer();
       var { runEndOfRoundSequence, runPreBiddingSequence } = require_endOfRoundReducer();
-      var { acknowledgeShiftCardResolution } = require_shiftReducer();
+      var { acknowledgeShiftCardResolution, resolveShiftEffectStage2 } = require_shiftReducer();
       var { submitTurnOrderBid } = require_turnOrderBiddingReducer();
       var { evaluateTurnOrderBid } = require_botDecisionEngine();
       var { revealNextSpecialist } = require_specialistRevealReducer();
@@ -12957,6 +12950,13 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = acknowledgeShiftCardResolution(state, userIntent.playerId);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          case "RESOLVE_SHIFT_EFFECT": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = resolveShiftEffectStage2(state, userIntent.playerId);
             return { state: result.state, error: result.error, detail: result.detail };
           }
           case "USE_LIQUIDITY_STAFF_PT": {

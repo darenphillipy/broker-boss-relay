@@ -1189,8 +1189,49 @@ function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
   const interrupt = vm.pendingInterrupt;
   const catalogId = interrupt.drawnCardCatalogId;
   const cardEntry = catalogId ? catalog.shiftCards[catalogId] : null;
-  const isAcknowledgingPlayer = HUMAN_PLAYER_ID === interrupt.sourcePlayerId;
+  const isActingPlayer = HUMAN_PLAYER_ID === interrupt.sourcePlayerId;
+  const stage = interrupt.stage;
 
+  const cardArtHtml = cardEntry
+    ? buildFullCardImageHtml(cardEntry.cardImage, 'shift-cards', `<div class="shift-reveal-fallback-name">${escapeAttr(cardEntry.name || catalogId)}</div>`)
+    : '<p class="empty-hand-message">Card details unavailable.</p>';
+  const cardTextHtml = cardEntry ? `<p class="shift-resolution-card-title">${escapeAttr(cardEntry.name)}</p><p class="shift-resolution-card-text">${escapeAttr(cardEntry.description || '')}</p>` : '';
+
+  if (stage === 'announcement') {
+    // Stage 1: the card is revealed, but NOTHING has been applied yet —
+    // no track, wallet, or meeple has changed. Every player sees this
+    // exact same state (the engine hasn't touched anything beyond
+    // drawing the card itself), fixing "the engine applies the effect
+    // instantly" at the root.
+    overlayEl.innerHTML = `
+      <div class="modal-box shift-resolution-modal-box">
+        <h3>⚡ SHIFT CARD TRIGGERED!</h3>
+        <div class="shift-resolution-card-art">${cardArtHtml}</div>
+        ${cardTextHtml}
+        ${
+          isActingPlayer
+            ? `<div class="modal-actions"><button type="button" class="modal-skip-btn" id="shift-card-resolve-btn">Resolve Shift Effect</button></div>`
+            : `<p class="shift-resolution-waiting">Waiting for ${escapeAttr(interrupt.sourcePlayerDisplayName || interrupt.sourcePlayerId)} to resolve this card…</p>`
+        }
+      </div>
+    `;
+    const resolveBtn = overlayEl.querySelector('#shift-card-resolve-btn');
+    if (resolveBtn) {
+      resolveBtn.addEventListener('click', () => {
+        const result = BrokerBossEngine.executeUserAction(state, { type: 'RESOLVE_SHIFT_EFFECT', playerId: HUMAN_PLAYER_ID });
+        if (result.error) {
+          showToast(`Could not resolve shift effect: ${result.error}`);
+        }
+        state = result.state;
+        render();
+      });
+    }
+    return;
+  }
+
+  // Stage 2 ("consequences"): the effect has now genuinely been applied
+  // — this is where the real, evidence-based consequences list (built
+  // from the actual log entries the effect generated) shows.
   const consequenceLines = (interrupt.consequencesLogEntries || [])
     .map((entry) => {
       if (entry.message) return entry.message;
@@ -1206,15 +1247,11 @@ function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
     })
     .filter(Boolean);
 
-  const cardArtHtml = cardEntry
-    ? buildFullCardImageHtml(cardEntry.cardImage, 'shift-cards', `<div class="shift-reveal-fallback-name">${escapeAttr(cardEntry.name || catalogId)}</div>`)
-    : '<p class="empty-hand-message">Card details unavailable.</p>';
-
   overlayEl.innerHTML = `
     <div class="modal-box shift-resolution-modal-box">
-      <h3>⚡ Shift Card Revealed</h3>
+      <h3>⚡ Shift Card Resolved</h3>
       <div class="shift-resolution-card-art">${cardArtHtml}</div>
-      ${cardEntry ? `<p class="shift-resolution-card-title">${escapeAttr(cardEntry.name)}</p><p class="shift-resolution-card-text">${escapeAttr(cardEntry.description || '')}</p>` : ''}
+      ${cardTextHtml}
       <div class="shift-resolution-consequences">
         <div class="shift-resolution-consequences-title">Consequences & Impact</div>
         <ul class="shift-resolution-consequences-list">
@@ -1222,8 +1259,8 @@ function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
         </ul>
       </div>
       ${
-        isAcknowledgingPlayer
-          ? `<div class="modal-actions"><button type="button" class="modal-skip-btn" id="shift-card-acknowledge-btn">Acknowledge &amp; Resume Game</button></div>`
+        isActingPlayer
+          ? `<div class="modal-actions"><button type="button" class="modal-skip-btn" id="shift-card-acknowledge-btn">Acknowledge &amp; Continue</button></div>`
           : `<p class="shift-resolution-waiting">Waiting for ${escapeAttr(interrupt.sourcePlayerDisplayName || interrupt.sourcePlayerId)} to acknowledge…</p>`
       }
     </div>
@@ -2203,6 +2240,15 @@ function showNetworkMagnetBanner(text) {
 // tracker visually resets to 0.
 let lastAnnouncedShiftLogLength = 0;
 let lastAnnouncedRoundSummaryRound = null;
+// FIX: the round summary used to be a one-time "flash" — computed and
+// shown once, then never re-shown or tracked on subsequent renders. Any
+// other render in between (a bot's turn, any state update) with no
+// re-trigger meant it could be missed entirely, and even when seen, it
+// never actually blocked the bidding phase underneath it — both modals
+// simply rendered at once. This now persists until the player
+// explicitly dismisses it, and renderOverlay checks it BEFORE the
+// bidding modal so the board genuinely doesn't unlock until then.
+let pendingRoundSummary = null;
 
 // Market Share sprint bonus claim banner — same "only announce genuinely
 // new log entries" pattern as the shift trigger / network magnet
@@ -2308,7 +2354,7 @@ function checkForRoundSummaryEvent(currentState) {
   const relevant = roundEntries.filter((e) => relevantTypes.has(e.type));
   if (relevant.length === 0) return; // nothing real to summarize (e.g. first round with no prior cleanup)
 
-  renderRoundSummaryModal(justFinishedRound, relevant, currentState);
+  pendingRoundSummary = { roundNumber: justFinishedRound, entries: relevant };
 }
 
 function renderRoundSummaryModal(roundNumber, entries, currentState) {
@@ -2372,7 +2418,10 @@ function renderRoundSummaryModal(roundNumber, entries, currentState) {
   `;
   el.style.display = 'flex';
   el.querySelector('#round-summary-dismiss-btn').addEventListener('click', () => {
+    pendingRoundSummary = null;
     el.style.display = 'none';
+    el.innerHTML = '';
+    render();
   });
 }
 
@@ -2591,6 +2640,18 @@ function render() {
   renderHandDrawer(dashboards[HUMAN_PLAYER_ID], vm);
   renderTableauPanel(dashboards[HUMAN_PLAYER_ID], dashboards);
   renderHistory(overlay.historyTicker);
+  if (pendingRoundSummary) {
+    // FIX: previously rendered once when detected and never tracked
+    // again — any later render (a bot's turn, any other state update)
+    // had nothing re-showing it, so it could be missed entirely, and
+    // even when seen it never actually blocked anything underneath it.
+    // Now renders on every single render() call while pending, so it
+    // genuinely persists until the player explicitly dismisses it.
+    renderRoundSummaryModal(pendingRoundSummary.roundNumber, pendingRoundSummary.entries, state);
+  } else {
+    const roundSummaryEl = document.getElementById('round-summary-modal');
+    if (roundSummaryEl) roundSummaryEl.style.display = 'none';
+  }
   if (vm.meta.phase !== 'FINAL_SCORING') {
     renderOverlay(overlay.modal, dashboards[HUMAN_PLAYER_ID], vm.board.openMarketActionCards, vm, dashboards);
     renderClientModal(dashboards[HUMAN_PLAYER_ID], vm);
@@ -4345,6 +4406,18 @@ function renderPendingBanner(modal) {
 
 function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) {
   const overlayEl = document.getElementById('interrupt-overlay');
+
+  // FIX: the round summary must take absolute priority — nothing else
+  // (bidding included) should be reachable until the player has
+  // explicitly acknowledged it. Previously both this overlay and the
+  // round summary rendered simultaneously on separate elements, so a
+  // player could end up bidding for the next round while the summary
+  // for the round that just ended sat behind it, unacknowledged.
+  if (pendingRoundSummary) {
+    overlayEl.style.display = 'none';
+    overlayEl.innerHTML = '';
+    return;
+  }
 
   // Human Turn Order bidding — a distinct phase.current state, not a
   // pendingInterrupt, so it's checked first and independently of the
