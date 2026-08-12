@@ -3208,3 +3208,42 @@ body {
   color: var(--accent, #e8b64c);
   margin-right: 4px;
 }
+
+/* v=44: engine load error banner — the user-facing counterpart to the
+   startGame() engine-load guard. Sits above ordinary content but below
+   every real modal tier, consistent with the rest of this file's
+   layering scheme; it's an informational banner, not a blocking modal. */
+.engine-load-error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 500;
+  background: #4a1620;
+  border-bottom: 2px solid #e05a5a;
+  padding: 10px 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.engine-load-error-content {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #ffd7d7;
+  font-size: 0.9em;
+}
+.engine-load-error-content strong {
+  color: #ff8a8a;
+}
+#engine-load-error-retry {
+  margin-left: auto;
+  background: #e05a5a;
+  color: #2a0a0a;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}

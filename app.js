@@ -171,6 +171,29 @@ async function preloadCatalogData() {
 }
 
 /**
+ * showEngineLoadError()
+ * v=44: user-facing counterpart to the engine load guard in startGame().
+ * A clean, dismissable banner instead of a silent blank screen or an
+ * uncaught-exception stack trace, for the one real failure mode this can
+ * represent: engine.bundle.js's own <script> tag failed to load.
+ */
+function showEngineLoadError() {
+  if (document.getElementById('engine-load-error-banner')) return; // don't stack duplicates
+  const banner = document.createElement('div');
+  banner.id = 'engine-load-error-banner';
+  banner.className = 'engine-load-error-banner';
+  banner.innerHTML = `
+    <div class="engine-load-error-content">
+      <strong>Couldn't load the game engine.</strong>
+      <span>engine.bundle.js failed to load — check your connection and reload the page. If this keeps happening, the host serving this page may be having trouble.</span>
+      <button id="engine-load-error-retry">Reload</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+  document.getElementById('engine-load-error-retry').addEventListener('click', () => window.location.reload());
+}
+
+/**
  * startGame(botConfigs)
  * botConfigs: array of { archetype } for each bot slot (2 to 5 entries —
  * player 1 is always the local human, fixed, matching HUMAN_PLAYER_ID
@@ -180,6 +203,20 @@ async function preloadCatalogData() {
  * not re-implemented here).
  */
 function startGame(botConfigs) {
+  // v=44: engine load guard. engine.bundle.js is a separate <script> tag
+  // loaded before app.js (see index.html) — if that request is slow,
+  // blocked, or fails (a real HTTP 522 from the host was the actual
+  // trigger reported), BrokerBossEngine simply never gets defined, and
+  // every call into it below would throw an unhandled
+  // "BrokerBossEngine is not defined" ReferenceError with no useful
+  // message for the player. This is the first real engine call in the
+  // whole boot sequence, so it's the right single choke point to guard.
+  if (typeof BrokerBossEngine === 'undefined') {
+    console.error('[startGame] BrokerBossEngine is not defined — engine.bundle.js failed to load (network error, blocked request, or host timeout). Aborting game start.');
+    showEngineLoadError();
+    return;
+  }
+
   const BOT_COLORS = ['blue', 'green', 'gold', 'purple', 'grey'];
   // Named Bot Personalities — a pure display layer over the real,
   // already-working archetype behavior (player.archetype === "Aggressive"
@@ -5265,15 +5302,44 @@ const multiplayerClient = {
   lastRoom: null,
 };
 
+// v=44: this page and the relay server are now deployed on two
+// completely separate hosts — the front-end is served via cPanel at
+// onlyforteams.com/brokerboss/, while the actual WebSocket relay runs
+// separately on Render at broker-boss-relay.onrender.com (see
+// relay-server.js's header comment and package.json's "start" script —
+// Render terminates real TLS on that host automatically). The old
+// same-host-port-8081 default assumed a single-host deployment, and once
+// this page started loading over HTTPS, produced a hard browser Mixed
+// Content block: a page loaded over https:// is never allowed to open a
+// plain ws:// connection, to ANY host, no exceptions — that's what
+// actually threw the reported SecurityError, not a same-origin issue.
+const DEFAULT_RELAY_HOST = 'broker-boss-relay.onrender.com';
 function getRelayServerUrl() {
-  // Defaults to the same host this page was served from, port 8081 — the
-  // relay server's own default port. Override by opening this page as
-  // .../index.html?relay=ws://192.168.1.23:8081 for LAN play, or editing
-  // this default directly for a hosted deployment.
+  // Defaults to the known, real, TLS-terminated Render relay above.
+  // Override by opening this page as .../index.html?relay=ws://192.168.1.23:8081
+  // for LAN play, or by editing the same-host fallback below if this
+  // page and the relay are ever deployed together on one host again.
   const params = new URLSearchParams(window.location.search);
-  if (params.get('relay')) return params.get('relay');
+  const isSecurePage = window.location.protocol === 'https:';
+  if (params.get('relay')) {
+    let override = params.get('relay');
+    // Still auto-upgrade an explicit ws:// override if this page is
+    // HTTPS — a plain ws:// URL here hits the exact same browser block,
+    // LAN play included, once the page itself is served over HTTPS.
+    if (isSecurePage && override.startsWith('ws://')) {
+      override = override.replace(/^ws:\/\//, 'wss://');
+    }
+    return override;
+  }
   const host = window.location.hostname || 'localhost';
-  return `ws://${host}:8081`;
+  // Same-host fallback isn't actually reachable in the current split
+  // deployment (nothing listens on this page's own host at :8081), so
+  // prefer the known real Render relay unless this page is somehow
+  // already being served from that same host.
+  if (host !== DEFAULT_RELAY_HOST) {
+    return `wss://${DEFAULT_RELAY_HOST}`;
+  }
+  return `${isSecurePage ? 'wss' : 'ws'}://${host}:8081`;
 }
 
 let localExecuteUserAction = null;
