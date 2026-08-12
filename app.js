@@ -2258,6 +2258,54 @@ let pendingRoundSummary = null;
 // render above an active turn-blocking modal.
 let blockingModalActive = false;
 
+// v=42: Developer Diagnostic Overlay (Debug HUD). Collapsible, subtle,
+// top-right. Built once and updated every render() frame via
+// updateDebugHud() so it always reflects the exact same values the
+// three disputed bugs were reported against, without needing DevTools
+// open. Off by default (collapsed) — toggled by clicking its header.
+let debugHudExpanded = false;
+function buildDebugHud() {
+  const el = document.createElement('div');
+  el.id = 'debug-hud';
+  el.className = 'debug-hud';
+  el.innerHTML = `
+    <div class="debug-hud-header" id="debug-hud-toggle">🛠 Debug HUD <span class="debug-hud-caret">▸</span></div>
+    <div class="debug-hud-body" id="debug-hud-body" style="display:none;"></div>
+  `;
+  document.body.appendChild(el);
+  el.querySelector('#debug-hud-toggle').addEventListener('click', () => {
+    debugHudExpanded = !debugHudExpanded;
+    el.querySelector('#debug-hud-body').style.display = debugHudExpanded ? 'block' : 'none';
+    el.querySelector('.debug-hud-caret').textContent = debugHudExpanded ? '▾' : '▸';
+  });
+  return el;
+}
+const debugHud = buildDebugHud();
+
+/**
+ * updateDebugHud(vm)
+ * Called once per render() frame (see render()'s call site right after
+ * checkForRoundSummaryEvent). Reads exactly the fields specified for
+ * the diagnostic HUD. Note: vm.pendingInterrupt.stage is used instead
+ * of vm.pendingInterrupt.data.stage — the real view model (see
+ * buildInterruptViewModel in the engine) flattens stage directly onto
+ * pendingInterrupt; there is no nested .data on the view model, so
+ * .data.stage would always read undefined.
+ */
+function updateDebugHud(vm) {
+  const body = debugHud.querySelector('#debug-hud-body');
+  if (!body) return;
+  const interrupt = vm.pendingInterrupt;
+  const zoom = cardZoomDebugState;
+  body.innerHTML = `
+    <div class="debug-hud-row"><span class="debug-hud-label">Phase:</span> ${escapeAttr(String(vm.meta.phase))}</div>
+    <div class="debug-hud-row"><span class="debug-hud-label">Pending Interrupt:</span> ${escapeAttr(interrupt ? interrupt.type : 'NONE')}</div>
+    <div class="debug-hud-row"><span class="debug-hud-label">Interrupt Stage:</span> ${escapeAttr(interrupt && interrupt.stage ? interrupt.stage : 'N/A')}</div>
+    <div class="debug-hud-row"><span class="debug-hud-label">Round Summary Pending:</span> ${pendingRoundSummary ? 'true' : 'false'}</div>
+    <div class="debug-hud-row"><span class="debug-hud-label">Card Zoom Active:</span> ${zoom.active ? 'true' : 'false'} ${zoom.active ? `(x:${zoom.x}, y:${zoom.y})` : ''}</div>
+  `;
+}
+
 // Market Share sprint bonus claim banner — same "only announce genuinely
 // new log entries" pattern as the shift trigger / network magnet
 // banners. Uses showToast rather than a dedicated banner element since
@@ -2647,6 +2695,7 @@ function render() {
   checkForMarketShareBonusClaimEvents(state);
   checkForTurnChangeNotification(vm);
   checkForRoundSummaryEvent(state);
+  updateDebugHud(vm);
   renderHeader(vm);
   renderBoard(board, vm);
   renderGlobalMilestones(vm);
@@ -4432,6 +4481,12 @@ function renderPendingBanner(modal) {
 function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) {
   const overlayEl = document.getElementById('interrupt-overlay');
 
+  // v=42: defense-in-depth diagnostic log — `state` is the module-level
+  // engine state this whole file already reads directly elsewhere (e.g.
+  // checkForMarketShareBonusClaimEvents above), not a parameter of this
+  // function, so it's referenced the same way here.
+  console.log('[OverlayRender] Checking overlays:', { phase: state.phase, pendingInterrupt: vm.pendingInterrupt, pendingRoundSummary });
+
   // MODAL PRIORITY STACK (v=40): exactly four tiers, highest to lowest —
   //   1. Shift Card Resolution (Stage 1 Reveal -> Stage 2 Consequences)
   //   2. End-of-Round 3-Step Summary Wizard
@@ -4473,6 +4528,7 @@ function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) 
   if (pendingRoundSummary) {
     blockingModalActive = true;
     forceHideCardZoom();
+    console.log('[OverlayRender] Blocking Bidding Modal due to pending Round Summary Wizard');
     overlayEl.style.display = 'none';
     overlayEl.innerHTML = '';
     return;
@@ -5740,6 +5796,12 @@ function buildCardZoomOverlay() {
 const cardZoomOverlay = buildCardZoomOverlay();
 let cardZoomPinned = false;
 
+// v=42: Debug HUD instrumentation. Tracked separately from the visual
+// card-zoom classes above (card-zoom-visible/card-zoom-pinned) so the
+// HUD has a plain, always-current snapshot to read from on each render
+// frame without reaching into CSS classList state.
+const cardZoomDebugState = { active: false, x: null, y: null };
+
 /**
  * forceHideCardZoom()
  * Priority 4 (lowest tier) enforcement: called from renderOverlay()
@@ -5751,6 +5813,14 @@ let cardZoomPinned = false;
 function forceHideCardZoom() {
   cardZoomPinned = false;
   cardZoomOverlay.classList.remove('card-zoom-visible', 'card-zoom-pinned');
+  // v=41: also reset the inline position back off-screen so nothing
+  // lingers at a stale coordinate while hidden (belt-and-suspenders
+  // alongside the CSS default in style.css).
+  cardZoomOverlay.style.left = '-9999px';
+  cardZoomOverlay.style.top = '-9999px';
+  cardZoomDebugState.active = false;
+  cardZoomDebugState.x = null;
+  cardZoomDebugState.y = null;
 }
 
 document.addEventListener('click', (e) => {
@@ -5789,10 +5859,28 @@ document.addEventListener('mouseover', (e) => {
 });
 
 function showCardZoom(card) {
+  // v=42: hardened guard — measure the hovered/clicked card's real
+  // layout box BEFORE mutating the overlay at all. If the card reports
+  // a (0,0) origin with zero size, or a rect that's nowhere near the
+  // visible viewport, it means the element isn't actually laid out
+  // (mid re-render, detached, or hidden) — abort immediately rather
+  // than let the overlay mount at whatever stale/default position it
+  // would otherwise fall back to. This is the direct fix for any
+  // "pinned to top-left" report: it removes the one path (an
+  // unlaid-out source element) that could ever produce a zero rect in
+  // the first place, regardless of exactly how that path gets triggered.
+  const rect = card.getBoundingClientRect();
+  const hasNoSize = rect.width === 0 || rect.height === 0;
+  const isZeroOrigin = rect.left === 0 && rect.top === 0;
+  const isOutsideViewport = rect.right < 0 || rect.bottom < 0 || rect.left > window.innerWidth || rect.top > window.innerHeight;
+  if (isZeroOrigin || hasNoSize || isOutsideViewport) {
+    console.warn('[CardZoom] Aborted zoom due to invalid (0,0) bounding box', card);
+    return;
+  }
+
   cardZoomOverlay.innerHTML = card.innerHTML;
   cardZoomOverlay.className = 'card-zoom-overlay card-zoom-visible card-zoom-vertical';
 
-  const rect = card.getBoundingClientRect();
   // Measure the overlay's REAL rendered size now that its real content
   // and variant class are set, rather than a hardcoded guess — the
   // guess previously used (260px buffer) didn't match either real CSS
@@ -5813,6 +5901,9 @@ function showCardZoom(card) {
 
   cardZoomOverlay.style.left = `${left}px`;
   cardZoomOverlay.style.top = `${top}px`;
+  cardZoomDebugState.active = true;
+  cardZoomDebugState.x = Math.round(left);
+  cardZoomDebugState.y = Math.round(top);
 }
 
 document.addEventListener('mouseout', (e) => {
@@ -5823,6 +5914,7 @@ document.addEventListener('mouseout', (e) => {
   // just moved between two child elements inside it).
   if (card.contains(e.relatedTarget)) return;
   cardZoomOverlay.classList.remove('card-zoom-visible');
+  cardZoomDebugState.active = false;
 });
 
 let draggedMeepleInstanceId = null;
