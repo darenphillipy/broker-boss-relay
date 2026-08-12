@@ -139,6 +139,12 @@ let previousBoardMeepleInstanceIds = new Set();
 let previousOnBoardMeepleCountByPlayer = {};
 let dismissedInterruptKey = null;
 let endGameSurveyCompleted = false;
+// v=45: the survey modal used to be re-created from scratch on EVERY
+// render() tick while it was showing — see renderEndGameSurveyModal's own
+// fix comment. This flag makes it mount exactly once per FINAL_SCORING
+// entry instead, and is reset alongside endGameSurveyCompleted wherever
+// that already resets (Play Again).
+let surveyModalMounted = false;
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -3237,7 +3243,22 @@ function renderHeader(vm) {
     document.getElementById('leaderboard').textContent = lines.join('   |   ');
     document.getElementById('leaderboard').style.display = 'block';
     if (!endGameSurveyCompleted) {
-      renderEndGameSurveyModal();
+      // v=45: was called unconditionally here every render() tick — since
+      // render() fires on essentially any state change (bot "thinking"
+      // updates, multiplayer sync messages, etc.), this modal was being
+      // torn down and rebuilt from scratch repeatedly while the player was
+      // actively using it: fresh local balanceRating/funRating each call
+      // (silently discarding any star rating already picked) and a full
+      // overlayEl.innerHTML replacement (silently discarding anything
+      // typed into the Open Feedback textarea, and racing real clicks
+      // against DOM nodes being destroyed mid-interaction). Gated to mount
+      // exactly once now — this was the actual cause of the survey
+      // appearing to "lock" and never let the player through to their
+      // final score.
+      if (!surveyModalMounted) {
+        renderEndGameSurveyModal();
+        surveyModalMounted = true;
+      }
     } else {
       renderGameOverModal(vm);
     }
@@ -3633,6 +3654,7 @@ function renderGameOverModal(vm) {
     modalEl.innerHTML = '';
     document.getElementById('leaderboard').style.display = 'none';
     endGameSurveyCompleted = false;
+    surveyModalMounted = false;
     selectedDashboardTab = HUMAN_PLAYER_ID;
     dismissedInterruptKey = null;
     state = null;
