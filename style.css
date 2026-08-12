@@ -972,8 +972,12 @@ body {
      explanation for the marker being visually covered specifically at
      the top of the ladder, without ever being removed from the DOM —
      which is why testing DOM presence alone never caught this. Now
-     always renders above it regardless of any positioning overlap. */
-  z-index: 7;
+     always renders above it regardless of any positioning overlap.
+     v=40: bumped from 7 to 100 — still far below every modal tier
+     (200+), but now guaranteed above ANY current or future board-slot
+     graphic in this region rather than depending on staying one point
+     ahead of whatever the highest local sibling z-index happens to be. */
+  z-index: 100;
 }
 
 /* Active Shift slot — positioned near the Shift Track ladder
@@ -2015,7 +2019,17 @@ body {
 
 .card-zoom-overlay {
   position: fixed;
-  z-index: 9999;
+  /* v=40: was z-index 9999 — the single highest value anywhere in this
+     stylesheet, above every modal tier including .round-summary-modal
+     (9997) and .interrupt-overlay (9990). That let a hover/zoom preview
+     visually float over an active turn-blocking modal purely via CSS
+     stacking, independent of the JS-side blockingModalActive gating in
+     app.js (which now also suppresses it entirely while any modal is
+     open). Dropped below all three blocking-modal tiers so the two
+     defenses reinforce each other rather than one silently overriding
+     the other; still above every other board/UI layer (highest
+     non-modal z-index elsewhere is 300). */
+  z-index: 9980;
   pointer-events: none;
   background: var(--bg-panel-light);
   border: 2px solid var(--hub-decisions, #e8b64c);

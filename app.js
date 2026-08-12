@@ -2250,6 +2250,14 @@ let lastAnnouncedRoundSummaryRound = null;
 // bidding modal so the board genuinely doesn't unlock until then.
 let pendingRoundSummary = null;
 
+// MODAL PRIORITY STACK (v=40): true whenever any Priority 1-3 blocking
+// modal (Shift Card Resolution, Round Summary Wizard, Turn Order
+// Bidding, or a generic pending interrupt) is on screen — set inside
+// renderOverlay(). Consumed by the card hover/zoom handlers (Priority
+// 4, the lowest tier) further down this file, so a preview can never
+// render above an active turn-blocking modal.
+let blockingModalActive = false;
+
 // Market Share sprint bonus claim banner — same "only announce genuinely
 // new log entries" pattern as the shift trigger / network magnet
 // banners. Uses showToast rather than a dedicated banner element since
@@ -3910,13 +3918,22 @@ function renderMarketShareBonusTiles(vm, boardHubsContainer) {
  * render like every other overlay piece.
  */
 function renderShiftMarkerOverlay(vm, boardHubsContainer) {
+  // DOM RETENTION FIX (v=40): this used to remove() the existing marker
+  // unconditionally, then bail out with nothing re-appended whenever
+  // vm.shiftTracker or its coordinate lookup was ever missing — a real
+  // unmount, violating "UI markers must never be unmounted." The
+  // engine currently always keeps position clamped within
+  // SHIFT_LADDER_COORDS' defined 0-4 range, but this is the one marker
+  // explicitly called out for guaranteed continuous visibility, so it
+  // now falls back to the last known-good position instead of
+  // vanishing if a lookup ever comes back empty, and only removes the
+  // old element once a replacement is guaranteed to be appended.
+  const position = vm.shiftTracker && vm.shiftTracker.position !== undefined && vm.shiftTracker.position !== null ? vm.shiftTracker.position : previousShiftPosition;
+  const coord = position !== null ? SHIFT_LADDER_COORDS[position] : null;
+  if (!coord) return; // nothing has ever rendered yet — no known-good position to fall back to
+
   const existing = boardHubsContainer.querySelector('.shift-ladder-overlay');
   if (existing) existing.remove();
-
-  const position = vm.shiftTracker ? vm.shiftTracker.position : null;
-  if (position === null) return;
-  const coord = SHIFT_LADDER_COORDS[position];
-  if (!coord) return;
 
   const overlay = document.createElement('div');
   overlay.className = 'shift-ladder-overlay';
@@ -3926,7 +3943,7 @@ function renderShiftMarkerOverlay(vm, boardHubsContainer) {
   marker.className = `shift-ladder-marker${justMoved ? ' shift-ladder-marker-moved' : ''}`;
   marker.style.left = `${coord[0]}%`;
   marker.style.top = `${coord[1]}%`;
-  marker.title = `Shift Tracker: ${position} / ${vm.shiftTracker.max}`;
+  marker.title = `Shift Tracker: ${position} / ${vm.shiftTracker ? vm.shiftTracker.max : ''}`;
   overlay.appendChild(marker);
 
   boardHubsContainer.appendChild(overlay);
@@ -4415,46 +4432,74 @@ function renderPendingBanner(modal) {
 function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) {
   const overlayEl = document.getElementById('interrupt-overlay');
 
-  // FIX: the round summary must take absolute priority — nothing else
-  // (bidding included) should be reachable until the player has
-  // explicitly acknowledged it. Previously both this overlay and the
-  // round summary rendered simultaneously on separate elements, so a
-  // player could end up bidding for the next round while the summary
-  // for the round that just ended sat behind it, unacknowledged.
+  // MODAL PRIORITY STACK (v=40): exactly four tiers, highest to lowest —
+  //   1. Shift Card Resolution (Stage 1 Reveal -> Stage 2 Consequences)
+  //   2. End-of-Round 3-Step Summary Wizard
+  //   3. Turn Order / Bidding Phase Modal
+  //   4. Card hover/zoom preview (see forceHideCardZoom() / the
+  //      blockingModalActive flag consumed by the mouseover/click
+  //      handlers near ZOOMABLE_CARD_SELECTOR below)
+  // Every branch that renders a Priority 1-3 modal sets
+  // blockingModalActive = true and calls forceHideCardZoom() so a hover
+  // preview can never be left floating above it. Order matters here:
+  // Shift Card resolution is checked FIRST, ahead of the round summary,
+  // so a still-pending shift interrupt can never be silently hidden
+  // behind the wizard if the two states ever coincided (the engine
+  // shouldn't allow the round to advance while a shift interrupt is
+  // pending, but checking this first makes that invariant safe by
+  // construction at the UI layer too, rather than relying solely on the
+  // engine never producing that state).
+
+  // Priority 1: Shift Card resolution — a genuine, non-dismissable pause
+  // (no Hide button, no auto-close): the engine actually blocks all
+  // other actions while this interrupt is pending (see
+  // PENDING_INTERRUPT_ACTIVE in workerPlacementValidation.js), so every
+  // connected client sees the exact same frozen state via the normal
+  // broadcast mechanism — no new multiplayer sync needed beyond what
+  // state-sharing already does.
+  if (vm.pendingInterrupt && vm.pendingInterrupt.type === 'SHIFT_CARD_RESOLUTION') {
+    blockingModalActive = true;
+    forceHideCardZoom();
+    renderShiftCardResolutionModal(overlayEl, vm, humanDash);
+    return;
+  }
+
+  // Priority 2: the round summary takes priority over bidding — nothing
+  // else should be reachable until the player has explicitly
+  // acknowledged it. Previously both this overlay and the round summary
+  // could render simultaneously on separate elements, so a player could
+  // end up bidding for the next round while the summary for the round
+  // that just ended sat behind it, unacknowledged.
   if (pendingRoundSummary) {
+    blockingModalActive = true;
+    forceHideCardZoom();
     overlayEl.style.display = 'none';
     overlayEl.innerHTML = '';
     return;
   }
 
-  // Human Turn Order bidding — a distinct phase.current state, not a
-  // pendingInterrupt, so it's checked first and independently of the
-  // normal interrupt-key/dismissal machinery below. Confirmed real gap
-  // fixed this session: the engine now genuinely pauses here for every
-  // player's bid instead of silently resolving with empty values.
+  // Priority 3: Human Turn Order bidding — a distinct phase.current
+  // state, not a pendingInterrupt, so it's checked independently of the
+  // normal interrupt-key/dismissal machinery below. The engine
+  // genuinely pauses here for every player's bid instead of silently
+  // resolving with empty values.
   const humanPlayerVm = vm.players[HUMAN_PLAYER_ID];
   if (vm.meta.phase === 'TURN_ORDER_BIDDING' && humanPlayerVm && !humanPlayerVm.turnOrderBid.submitted) {
+    blockingModalActive = true;
+    forceHideCardZoom();
     renderTurnOrderBiddingModal(overlayEl, humanDash);
-    return;
-  }
-
-  // Shift Card resolution — a genuine, non-dismissable pause (no Hide
-  // button, no auto-close): the engine now actually blocks all other
-  // actions while this interrupt is pending (see PENDING_INTERRUPT_ACTIVE
-  // in workerPlacementValidation.js), so every connected client sees the
-  // exact same frozen state via the normal broadcast mechanism — no new
-  // multiplayer sync needed beyond what state-sharing already does.
-  if (vm.pendingInterrupt && vm.pendingInterrupt.type === 'SHIFT_CARD_RESOLUTION') {
-    renderShiftCardResolutionModal(overlayEl, vm, humanDash);
     return;
   }
 
   // The Lobbyist (SPEC_3) — a real player choice of which hub to block,
   // replacing the old auto-pick-the-biggest-hub default. Same
-  // special-case pattern as the Shift Card modal above, for the same
-  // reason: no existing case in buildInterruptOverlayModal matches this
-  // new choice type.
+  // special-case, genuinely-blocking pattern as the Shift Card modal
+  // above (Priority 1 tier — it pauses the same worker-placement flow),
+  // for the same reason: no existing case in buildInterruptOverlayModal
+  // matches this new choice type.
   if (vm.pendingInterrupt && vm.pendingInterrupt.type === 'ACTION_CARD_EFFECT_CHOICE' && vm.pendingInterrupt.isSpecialistCardChoice) {
+    blockingModalActive = true;
+    forceHideCardZoom();
     renderSpecialistCardChoiceModal(overlayEl, vm, humanDash);
     return;
   }
@@ -4464,11 +4509,14 @@ function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) 
   renderPendingBanner(modal);
 
   if (!modal.active || dismissedInterruptKey === key) {
+    blockingModalActive = false;
     overlayEl.style.display = 'none';
     overlayEl.innerHTML = '';
     return;
   }
 
+  blockingModalActive = true;
+  forceHideCardZoom();
   overlayEl.style.display = 'flex';
 
   const hideButtonHtml = `<div class="modal-actions"><button class="modal-hide-btn" id="interrupt-hide-btn">Hide (choice still pending)</button></div>`;
@@ -5692,7 +5740,23 @@ function buildCardZoomOverlay() {
 const cardZoomOverlay = buildCardZoomOverlay();
 let cardZoomPinned = false;
 
+/**
+ * forceHideCardZoom()
+ * Priority 4 (lowest tier) enforcement: called from renderOverlay()
+ * whenever a Priority 1-3 blocking modal (Shift Card Resolution, Round
+ * Summary Wizard, Turn Order Bidding, or a generic pending interrupt)
+ * opens, so any hover/zoom preview already on screen is immediately
+ * dismissed rather than left floating above the modal.
+ */
+function forceHideCardZoom() {
+  cardZoomPinned = false;
+  cardZoomOverlay.classList.remove('card-zoom-visible', 'card-zoom-pinned');
+}
+
 document.addEventListener('click', (e) => {
+  // Priority 4: a blocking modal is on screen — hover/zoom previews are
+  // suppressed entirely until it's dismissed.
+  if (blockingModalActive) return;
   const card = e.target.closest(ZOOMABLE_CARD_SELECTOR);
   if (card) {
     // Clicking the SAME already-pinned card again dismisses it —
@@ -5717,6 +5781,8 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('mouseover', (e) => {
+  // Priority 4: never shows over an active turn-blocking modal.
+  if (blockingModalActive) return;
   const card = e.target.closest(ZOOMABLE_CARD_SELECTOR);
   if (!card || cardZoomPinned) return; // a pinned (click-magnified) card takes priority over hover
   showCardZoom(card);
