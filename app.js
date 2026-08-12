@@ -2354,7 +2354,7 @@ function checkForRoundSummaryEvent(currentState) {
   const relevant = roundEntries.filter((e) => relevantTypes.has(e.type));
   if (relevant.length === 0) return; // nothing real to summarize (e.g. first round with no prior cleanup)
 
-  pendingRoundSummary = { roundNumber: justFinishedRound, entries: relevant };
+  pendingRoundSummary = { roundNumber: justFinishedRound, entries: relevant, currentStep: 1 };
 }
 
 function renderRoundSummaryModal(roundNumber, entries, currentState) {
@@ -2369,58 +2369,66 @@ function renderRoundSummaryModal(roundNumber, entries, currentState) {
   const taxPaidEntries = entries.filter((e) => e.type === 'MEEPLE_TAX_PAID');
   const taxDefaultedEntries = entries.filter((e) => e.type === 'MEEPLE_TAX_DEFAULTED');
 
-  const steps = [];
+  // Step 1: Hand Cleanup & Redraws (plus the Executive Search Hub note,
+  // since both are genuinely "start of round" facts).
+  const handLines = redrawEntries.map((e) => {
+    const discard = discardEntries.find((d) => d.playerId === e.playerId);
+    const discardedCount = discard ? discard.discardedInstanceIds.length : 0;
+    return `${escapeAttr(displayName(e.playerId))}: discarded ${discardedCount}, drew ${e.drawnCount}${e.reshuffleOccurred ? ' (deck reshuffled)' : ''}`;
+  });
+  const step1Html = `
+    <div class="round-summary-step"><div class="round-summary-step-label">🔍 Executive Search Hub</div><div class="round-summary-step-detail">Clears at the start of every round — open for the first player to claim.</div></div>
+    <div class="round-summary-step"><div class="round-summary-step-label">🗂️ Hand Discard & Redraw</div><div class="round-summary-step-detail">${handLines.length > 0 ? handLines.join('<br>') : 'No hand changes this round.'}</div></div>
+  `;
 
-  // Executive Search Hub — no dedicated log event exists for the clear
-  // itself (it's a silent state cleanup, not a logged action), so this
-  // is shown only as a standing factual note, not claimed as "this
-  // round specifically re-opened it" without real evidence either way.
-  steps.push({ label: '🔍 Executive Search Hub', detail: 'Clears at the start of every round — open for the first player to claim.' });
+  // Step 2: Market Churn.
+  const marketLines = marketEntries.map((e) => `${e.market === 'actionCards' ? 'Action Card' : 'Agent'} Market: ${e.purgedCount} purged & replaced`);
+  const step2Html = `
+    <div class="round-summary-step"><div class="round-summary-step-label">🏪 Market Purge & Refill</div><div class="round-summary-step-detail">${marketLines.length > 0 ? marketLines.join('<br>') : 'No market churn this round.'}</div></div>
+  `;
 
-  if (discardEntries.length > 0 || redrawEntries.length > 0) {
-    const lines = redrawEntries.map((e) => {
-      const discard = discardEntries.find((d) => d.playerId === e.playerId);
-      const discardedCount = discard ? discard.discardedInstanceIds.length : 0;
-      return `${escapeAttr(displayName(e.playerId))}: discarded ${discardedCount}, drew ${e.drawnCount}${e.reshuffleOccurred ? ' (deck reshuffled)' : ''}`;
-    });
-    steps.push({ label: '🗂️ Hand Discard & Redraw', detail: lines.join('<br>') || 'No hand changes this round.' });
-  }
+  // Step 3: Financial Settlement — Dividends & Taxes.
+  const taxLines = [
+    ...taxPaidEntries.map((e) => `${escapeAttr(displayName(e.playerId))}: paid ${e.amount} PT Meeple Tax`),
+    ...taxDefaultedEntries.map(
+      (e) => `⚠️ ${escapeAttr(displayName(e.playerId))}: could only pay ${e.partialPaymentMade} PT — ${e.meeplesRepossessed.length} unpaid Meeple(s) repossessed`
+    ),
+  ];
+  const step3Html = `
+    <div class="round-summary-step"><div class="round-summary-step-label">💰 Base Round Dividend</div><div class="round-summary-step-detail">${dividendEntry ? `Every player received ${dividendEntry.amount} PT.` : 'No dividend recorded this round.'}</div></div>
+    <div class="round-summary-step"><div class="round-summary-step-label">👷 Meeple Tax (4 PT × Meeples over 3)</div><div class="round-summary-step-detail">${taxLines.length > 0 ? taxLines.join('<br>') : 'No player owed any Meeple Tax this round.'}</div></div>
+  `;
 
-  if (marketEntries.length > 0) {
-    const lines = marketEntries.map((e) => `${e.market === 'actionCards' ? 'Action Card' : 'Agent'} Market: ${e.purgedCount} purged & replaced`);
-    steps.push({ label: '🏪 Market Purge & Refill', detail: lines.join('<br>') });
-  }
-
-  if (dividendEntry) {
-    steps.push({ label: '💰 Base Round Dividend', detail: `Every player received ${dividendEntry.amount} PT.` });
-  }
-
-  if (taxPaidEntries.length > 0 || taxDefaultedEntries.length > 0) {
-    const lines = [
-      ...taxPaidEntries.map((e) => `${escapeAttr(displayName(e.playerId))}: paid ${e.amount} PT Meeple Tax`),
-      ...taxDefaultedEntries.map(
-        (e) => `⚠️ ${escapeAttr(displayName(e.playerId))}: could only pay ${e.partialPaymentMade} PT — ${e.meeplesRepossessed.length} unpaid Meeple(s) repossessed`
-      ),
-    ];
-    steps.push({ label: '👷 Meeple Tax (4 PT × Meeples over 3)', detail: lines.join('<br>') });
-  } else {
-    steps.push({ label: '👷 Meeple Tax', detail: 'No player owed any Meeple Tax this round.' });
-  }
+  const STEPS = [
+    { title: 'Hand Cleanup & Redraws', html: step1Html, nextLabel: 'Next: Market Churn' },
+    { title: 'Market Churn', html: step2Html, nextLabel: 'Next: Dividends & Taxes' },
+    { title: 'Financial Settlement', html: step3Html, nextLabel: `Proceed to Bidding` },
+  ];
+  const stepIndex = Math.min(Math.max((pendingRoundSummary && pendingRoundSummary.currentStep) || 1, 1), STEPS.length) - 1;
+  const step = STEPS[stepIndex];
+  const isLastStep = stepIndex === STEPS.length - 1;
 
   el.innerHTML = `
     <div class="round-summary-box">
-      <h3>Round ${roundNumber} Complete</h3>
-      <div class="round-summary-steps">
-        ${steps.map((s) => `<div class="round-summary-step"><div class="round-summary-step-label">${s.label}</div><div class="round-summary-step-detail">${s.detail}</div></div>`).join('')}
+      <h3>Round ${roundNumber} Complete — Step ${stepIndex + 1} of ${STEPS.length}: ${escapeAttr(step.title)}</h3>
+      <div class="round-summary-step-indicator">
+        ${STEPS.map((s, i) => `<span class="round-summary-dot${i === stepIndex ? ' round-summary-dot-active' : ''}${i < stepIndex ? ' round-summary-dot-done' : ''}"></span>`).join('')}
       </div>
-      <div class="modal-actions"><button type="button" class="modal-skip-btn" id="round-summary-dismiss-btn">Continue to Round ${roundNumber + 1}</button></div>
+      <div class="round-summary-steps">${step.html}</div>
+      <div class="modal-actions"><button type="button" class="modal-skip-btn" id="round-summary-next-btn">${escapeAttr(step.nextLabel)}</button></div>
     </div>
   `;
   el.style.display = 'flex';
-  el.querySelector('#round-summary-dismiss-btn').addEventListener('click', () => {
-    pendingRoundSummary = null;
-    el.style.display = 'none';
-    el.innerHTML = '';
+  el.querySelector('#round-summary-next-btn').addEventListener('click', () => {
+    if (isLastStep) {
+      // Final step — this is what actually unlocks bidding, matching
+      // "strictly locked until the player completes Step 3."
+      pendingRoundSummary = null;
+      el.style.display = 'none';
+      el.innerHTML = '';
+    } else {
+      pendingRoundSummary = { roundNumber, entries, currentStep: stepIndex + 2 };
+    }
     render();
   });
 }

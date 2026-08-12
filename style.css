@@ -126,6 +126,26 @@ body {
   text-align: center;
   color: var(--hub-decisions, #e8b64c);
 }
+.round-summary-step-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.round-summary-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.round-summary-dot-active {
+  background: var(--hub-decisions, #e8b64c);
+  box-shadow: 0 0 0 3px rgba(232, 182, 76, 0.3);
+}
+.round-summary-dot-done {
+  background: var(--text-dim);
+}
+
 .round-summary-steps {
   display: flex;
   flex-direction: column;
@@ -944,7 +964,16 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 5;
+  /* FIX: was z-index: 5, below .active-shift-slot's z-index: 6 — that
+     slot's own region (left:62% to ~89%, top:1.5%+) sits right at the
+     edge of where SHIFT_LADDER_COORDS places position 4 (the max
+     threshold position, at [90.2%, 7.99%]), and its own comment admits
+     its exact placement was never visually verified. A real, plausible
+     explanation for the marker being visually covered specifically at
+     the top of the ladder, without ever being removed from the DOM —
+     which is why testing DOM presence alone never caught this. Now
+     always renders above it regardless of any positioning overlap. */
+  z-index: 7;
 }
 
 /* Active Shift slot — positioned near the Shift Track ladder
