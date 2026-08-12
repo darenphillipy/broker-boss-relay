@@ -1577,7 +1577,99 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: 9990;
+}
+
+.shift-resolution-modal-box {
+  background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-dark) 100%);
+  border: 3px solid var(--hub-decisions, #e8b64c);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 480px;
+  width: 92%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.55), 0 16px 48px rgba(0, 0, 0, 0.8);
+  text-align: center;
+}
+.shift-resolution-modal-box h3 {
+  margin: 0 0 14px;
+  color: var(--hub-decisions, #e8b64c);
+  font-size: 1.3em;
+}
+.shift-resolution-card-art {
+  width: 160px;
+  aspect-ratio: 540 / 720;
+  margin: 0 auto 14px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+.shift-resolution-card-art .full-card-image-wrap,
+.shift-resolution-card-art .full-card-image {
+  width: 100%;
+  height: 100%;
+}
+.shift-reveal-fallback-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-weight: 700;
+  padding: 8px;
+}
+.shift-resolution-card-title {
+  font-size: 1.15em;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 4px 0 6px;
+}
+.shift-resolution-card-text {
+  font-size: 0.9em;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+.shift-resolution-consequences {
+  text-align: left;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.shift-resolution-consequences-title {
+  font-weight: 700;
+  color: var(--hub-decisions, #e8b64c);
+  margin-bottom: 6px;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.shift-resolution-consequences-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.88em;
+  line-height: 1.6;
+  color: var(--text-main);
+}
+.shift-resolution-waiting {
+  font-style: italic;
+  color: var(--text-dim);
+  margin: 8px 0 0;
+}
+
+@media (max-width: 600px) {
+  .shift-resolution-modal-box {
+    padding: 16px;
+    max-height: 94vh;
+  }
+  .shift-resolution-card-art {
+    width: 120px;
+  }
+  .shift-resolution-modal-box h3 {
+    font-size: 1.1em;
+  }
 }
 
 .modal-box {

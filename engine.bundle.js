@@ -6730,36 +6730,50 @@ var BrokerBossEngine = (() => {
         return { state: nextState, error: null, detail: null };
       }
       function handleSpec3(state, context) {
-        const { playerId } = context;
-        // No existing UI/choiceType lets the player pick which hub to
-        // block; auto-selects the hub with the most currently-open spaces
-        // (the most disruptive, and a deterministic default rather than a
-        // guessed one). Enforcement is real: sets space.status = "blocked"
-        // on every space in that hub, which verifySpaceOpen already checks
-        // and rejects on — confirmed by reading that function before
-        // writing this, not assumed.
+        const { playerId, extra } = context;
         const spacesByHub = {};
         (state.board.actionSpaces || []).forEach((s) => {
           if (!spacesByHub[s.hub]) spacesByHub[s.hub] = [];
           if (s.status !== "blocked" && s.status !== "void") spacesByHub[s.hub].push(s);
         });
-        let bestHub = null;
-        let bestCount = -1;
-        Object.keys(spacesByHub).forEach((hub) => {
-          if (spacesByHub[hub].length > bestCount) { bestCount = spacesByHub[hub].length; bestHub = hub; }
-        });
-        if (!bestHub) {
+        const availableHubs = Object.keys(spacesByHub).filter((hub) => spacesByHub[hub].length > 0);
+        if (availableHubs.length === 0) {
           return { state, effectOutcome: DEFAULT_OUTCOME };
         }
+        // FIX: previously auto-picked the hub with the most open spaces
+        // with no way for the player to actually choose — the card's own
+        // text says "any Hub," a real player decision, not an engine
+        // default. If a real choice hasn't been made yet, this pauses on
+        // a genuine interrupt instead of guessing; the client is
+        // responsible for presenting the available hubs and resubmitting
+        // with extra.targetHub once the player picks.
+        if (!extra || !extra.targetHub || !availableHubs.includes(extra.targetHub)) {
+          return {
+            state: {
+              ...state,
+              phase: {
+                ...state.phase,
+                pendingInterrupt: {
+                  type: "ACTION_CARD_EFFECT_CHOICE",
+                  sourcePlayerId: playerId,
+                  data: { catalogId: "SPEC_3", choiceType: "SPEC3_HUB_TARGET", cardInstanceId: context.cardInstanceId, availableHubs, isSpecialistCardChoice: true }
+                }
+              }
+            },
+            effectOutcome: DEFAULT_OUTCOME
+          };
+        }
+        const targetHub = extra.targetHub;
         const nextState = {
           ...state,
           board: {
             ...state.board,
-            actionSpaces: state.board.actionSpaces.map((s) => s.hub === bestHub ? { ...s, status: "blocked", blockedByCatalogId: "SPEC_3", blockedUntilEndOfRound: state.phase.round } : s)
-          }
+            actionSpaces: state.board.actionSpaces.map((s) => s.hub === targetHub ? { ...s, status: "blocked", blockedByCatalogId: "SPEC_3", blockedUntilEndOfRound: state.phase.round } : s)
+          },
+          phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } }
         };
         return {
-          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_LOBBYIST", playerId, catalogId: "SPEC_3", blockedHub: bestHub, message: `${playerId}'s Lobbyist blocks the ${bestHub} hub for the rest of the round.` }),
+          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_LOBBYIST", playerId, catalogId: "SPEC_3", blockedHub: targetHub, message: `${playerId}'s Lobbyist blocks the ${targetHub} hub for the rest of the round.` }),
           effectOutcome: DEFAULT_OUTCOME
         };
       }
@@ -7284,6 +7298,7 @@ var BrokerBossEngine = (() => {
         };
         const seatPlayerIds = nextState.session.seats.map((s) => s.playerId);
         const triggeringPlayerId = nextState.phase.activePlayerId;
+        const logLengthBeforeEffect = nextState.log.length;
         nextState = applyShiftCardEffect(nextState, triggeringPlayerId, drawnCard);
         seatPlayerIds.forEach((playerId) => {
           const player = nextState.players[playerId];
@@ -7325,17 +7340,53 @@ var BrokerBossEngine = (() => {
             ]
           }
         };
+        // FIX (multiplayer acknowledgment redesign): this interrupt used
+        // to be cleared to NULL_INTERRUPT here, within the SAME function
+        // call that set it — meaning no client, in single-player or
+        // multiplayer, could ever actually observe it as pending; it was
+        // set and cleared atomically before any state was ever returned.
+        // Now it stays genuinely pending, carrying the real log entries
+        // the effect just generated (not fabricated summary text) as
+        // consequencesLogEntries, until a real ACKNOWLEDGE_SHIFT_CARD
+        // action clears it. Since every connected client receives the
+        // same broadcast state, this pending interrupt is automatically
+        // visible to all of them — the "freeze for all players" and
+        // "waiting for X to acknowledge" requirements fall out of the
+        // existing state-sync mechanism for free, with no new
+        // multiplayer-specific machinery needed.
         nextState = {
           ...nextState,
-          phase: { ...nextState.phase, pendingInterrupt: NULL_INTERRUPT }
+          phase: {
+            ...nextState.phase,
+            pendingInterrupt: {
+              type: "SHIFT_CARD_RESOLUTION",
+              sourcePlayerId: triggeringPlayerId,
+              data: {
+                drawnCardCatalogId: drawnCard.catalogId,
+                consequencesLogEntries: nextState.log.slice(logLengthBeforeEffect)
+              }
+            }
+          }
         };
         return nextState;
+      }
+      function acknowledgeShiftCardResolution(state, playerId) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION") {
+          return { state, error: "NO_PENDING_SHIFT_CARD_ACKNOWLEDGMENT", detail: { pendingInterrupt: interrupt || null } };
+        }
+        if (playerId !== interrupt.sourcePlayerId) {
+          return { state, error: "NOT_YOUR_ACKNOWLEDGMENT_TO_GIVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
+        }
+        const nextState = { ...state, phase: { ...state.phase, pendingInterrupt: NULL_INTERRUPT } };
+        return { state: nextState, error: null, detail: null };
       }
       module.exports = {
         resolveShiftTrigger,
         drawTopCard,
         reshuffleDiscardIntoDrawPile,
-        applyShiftCardEffect
+        applyShiftCardEffect,
+        acknowledgeShiftCardResolution
       };
     }
   });
@@ -8338,7 +8389,7 @@ var BrokerBossEngine = (() => {
   var require_actionCardReducer = __commonJS({
     "actionCardReducer.js"(exports, module) {
       var { adjustWallet } = require_cardEffectHelpers();
-      var { resolveActionCardEffect } = require_cardEffectRegistry();
+      var { resolveActionCardEffect, resolveSpecialistCardEffect } = require_cardEffectRegistry();
       var { advanceActivePlayer } = require_workerPlacementReducer();
       var { executeTransaction } = require_transactionGuard();
       var { MARKET_SHARE_TRACK_SPACES } = require_boardConfigLoader();
@@ -8536,7 +8587,7 @@ var BrokerBossEngine = (() => {
       }
       function resolveActionCardEffectChoice(state, playerId, extra) {
         const interrupt = state.phase.pendingInterrupt;
-        if (!interrupt || interrupt.type !== "ACTION_CARD_EFFECT_CHOICE" || interrupt.sourcePlayerId !== playerId || !interrupt.data) {
+        if (!interrupt || interrupt.type !== "ACTION_CARD_EFFECT_CHOICE" || interrupt.sourcePlayerId !== playerId || !interrupt.data || interrupt.data.isSpecialistCardChoice) {
           return { state, error: "NO_PENDING_ACTION_CARD_CHOICE", detail: { playerId, pendingInterrupt: interrupt || null } };
         }
         const { catalogId, cardInstanceId } = interrupt.data;
@@ -8546,9 +8597,29 @@ var BrokerBossEngine = (() => {
         }
         return { state: nextState, error: null, detail: null };
       }
+      function resolveSpecialistCardEffectChoice(state, playerId, extra) {
+        // FIX: confirmed via direct verification that resolveActionCardEffectChoice
+        // (above) unconditionally calls resolveActionCardEffect regardless of
+        // catalog family — reusing ACTION_CARD_EFFECT_CHOICE for a specialist
+        // card like SPEC_3 (The Lobbyist) would have silently routed its
+        // catalogId into the action-card handler table, where it doesn't
+        // exist. This mirrors the same structure but calls
+        // resolveSpecialistCardEffect correctly. Does NOT call
+        // advanceActivePlayer — a specialist claim happens mid-placement
+        // inside placeMeeple, which handles turn advancement itself once
+        // this interrupt clears; advancing here too would double-advance.
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "ACTION_CARD_EFFECT_CHOICE" || interrupt.sourcePlayerId !== playerId || !interrupt.data || !interrupt.data.isSpecialistCardChoice) {
+          return { state, error: "NO_PENDING_SPECIALIST_CARD_CHOICE", detail: { playerId, pendingInterrupt: interrupt || null } };
+        }
+        const { catalogId, cardInstanceId } = interrupt.data;
+        const nextState = resolveSpecialistCardEffect(state, playerId, catalogId, cardInstanceId, extra || {});
+        return { state: nextState, error: null, detail: null };
+      }
       module.exports = {
         playActionCard,
         resolveActionCardEffectChoice,
+        resolveSpecialistCardEffectChoice,
         playActionCardTransactional,
         verifyPlayRequirement,
         verifyPendingActionCardChoice,
@@ -10483,6 +10554,10 @@ var BrokerBossEngine = (() => {
           // GRW007_PLAY_OR_FIRE, gated the same way to avoid any ambiguity.
           actionCardCandidateCatalogIds: ACTION_CARD_CANDIDATE_CHOICE_TYPES.has(data.choiceType) && Array.isArray(data.candidateCatalogIds) ? [...data.candidateCatalogIds] : [],
           cardInstanceId: data.cardInstanceId || null,
+          drawnCardCatalogId: data.drawnCardCatalogId || null,
+          consequencesLogEntries: Array.isArray(data.consequencesLogEntries) ? [...data.consequencesLogEntries] : [],
+          isSpecialistCardChoice: !!data.isSpecialistCardChoice,
+          availableHubs: Array.isArray(data.availableHubs) ? [...data.availableHubs] : [],
           candidates: resolvedCandidates,
           agentCandidates: resolvedAgentCandidates,
           deskStatus
@@ -11731,7 +11806,7 @@ var BrokerBossEngine = (() => {
       var { resolveTrackBranchChoice, resolveTargetedMilestone } = require_techTrackReducer();
       var { evaluateRecruitCandidates, evaluatePoachCandidates, evaluateLoyaltyCandidates, evaluateActionCardChoice } = require_botDecisionEngine();
       var { resolveRecruitFromGrowthHub, resolvePoachFromGrowthHub, resolveLoyaltyFromGrowthHub } = require_agentRecruitmentReducer();
-      var { playActionCard, resolveActionCardEffectChoice } = require_actionCardReducer();
+      var { playActionCard, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
       var DEAD_CARD_TRACK_LEVEL_THRESHOLD = 3;
       function appendLog(state, entry) {
         const logEntry = {
@@ -12099,6 +12174,43 @@ var BrokerBossEngine = (() => {
           }
           return { state: pickResult.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
+        if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC3_HUB_TARGET") {
+          const availableHubs = interrupt.data.availableHubs || [];
+          // Same "most disruptive, deterministic" default the original
+          // handler used for every player before this fix — now correctly
+          // scoped to only apply as the bot's own automatic choice, not
+          // forced on human players who can actually decide for
+          // themselves via the real UI.
+          const spacesByHub = {};
+          (state.board.actionSpaces || []).forEach((s) => {
+            if (!spacesByHub[s.hub]) spacesByHub[s.hub] = [];
+            if (s.status !== "blocked" && s.status !== "void") spacesByHub[s.hub].push(s);
+          });
+          let chosenHub = availableHubs[0] || null;
+          let bestCount = -1;
+          availableHubs.forEach((hub) => {
+            const count = (spacesByHub[hub] || []).length;
+            if (count > bestCount) { bestCount = count; chosenHub = hub; }
+          });
+          const loggedState2 = appendLog(state, {
+            type: "BOT_INTERRUPT_DECISION_MADE",
+            playerId: interrupt.sourcePlayerId,
+            archetype: player.archetype || null,
+            interruptType: interrupt.type,
+            choiceType: "SPEC3_HUB_TARGET",
+            chosenHub,
+            rationale: "MOST_DISRUPTIVE_HUB_DEFAULT"
+          });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, { targetHub: chosenHub });
+          if (result2.error) {
+            return {
+              state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }),
+              action: "BOT_INTERRUPT_RESOLUTION_FAILED",
+              reason: result2.error
+            };
+          }
+          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
         if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE") {
           const { choiceType } = interrupt.data;
           const options = computeBotStartCardChoice(state, interrupt.sourcePlayerId, choiceType, interrupt.data);
@@ -12256,6 +12368,20 @@ var BrokerBossEngine = (() => {
             }
             return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
           }
+        }
+        if (interrupt.type === "SHIFT_CARD_RESOLUTION") {
+          // Bots don't need to pause and read the card — only a human
+          // player genuinely benefits from the acknowledgment gate.
+          // Without this explicit case, a bot-triggered shift card would
+          // leave this interrupt permanently unresolved (bots never
+          // click the real UI's Acknowledge button), stalling the whole
+          // game loop until settleGameLoop's own iteration cap kicked in.
+          const nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
+          return {
+            state: appendLog(nextState, { type: "BOT_INTERRUPT_DECISION_MADE", playerId: interrupt.sourcePlayerId, archetype: player.archetype || null, interruptType: interrupt.type, choiceType: "SHIFT_CARD_AUTO_ACKNOWLEDGED", rationale: "BOTS_DO_NOT_NEED_TO_PAUSE_FOR_ACKNOWLEDGMENT" }),
+            action: "BOT_INTERRUPT_RESOLVED",
+            reason: null
+          };
         }
         if (interrupt.type === "ACTION_SPACE_DEFERRED_CHOICE" && interrupt.data && interrupt.data.spaceType === "acquire_or_play_action_card") {
           const chosenInstanceId = evaluateActionCardChoice(state, interrupt.sourcePlayerId);
@@ -12714,7 +12840,7 @@ var BrokerBossEngine = (() => {
       var { resolveShellCompanySecondRecruit } = require_specialistCards();
       var { resolveTrackBranchChoice, resolveTargetedMilestone, forfeitTargetedMilestone, useProprietaryAlgorithm, useLiquidationEngine } = require_techTrackReducer();
       var { resolveDeficitTrackChoice } = require_cardEffectHelpers();
-      var { playActionCardTransactional, resolveActionCardEffectChoice } = require_actionCardReducer();
+      var { playActionCardTransactional, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
       var { acquireActionCard } = require_openMarketActionCardReducer();
       var {
         resolveRecruitFromGrowthHub,
@@ -12725,6 +12851,7 @@ var BrokerBossEngine = (() => {
       } = require_agentRecruitmentReducer();
       var { handleInterruptResolution } = require_interruptResolutionReducer();
       var { runEndOfRoundSequence, runPreBiddingSequence } = require_endOfRoundReducer();
+      var { acknowledgeShiftCardResolution } = require_shiftReducer();
       var { submitTurnOrderBid } = require_turnOrderBiddingReducer();
       var { evaluateTurnOrderBid } = require_botDecisionEngine();
       var { revealNextSpecialist } = require_specialistRevealReducer();
@@ -12823,6 +12950,13 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_BRANCH_CHOICE_PARAMS", detail: null };
             }
             const result = resolveTrackBranchChoice(state, userIntent.playerId, userIntent.trackName, userIntent.chosenBranch);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          case "ACKNOWLEDGE_SHIFT_CARD": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = acknowledgeShiftCardResolution(state, userIntent.playerId);
             return { state: result.state, error: result.error, detail: result.detail };
           }
           case "USE_LIQUIDITY_STAFF_PT": {
@@ -12982,6 +13116,13 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = resolveActionCardEffectChoice(state, userIntent.playerId, userIntent.extra || {});
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          case "RESOLVE_SPECIALIST_CARD_EFFECT_CHOICE": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = resolveSpecialistCardEffectChoice(state, userIntent.playerId, userIntent.extra || {});
             return { state: result.state, error: result.error, detail: result.detail };
           }
           case "RESOLVE_CRM_UPDATE_CHOICE": {

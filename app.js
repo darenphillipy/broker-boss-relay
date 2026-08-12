@@ -1117,6 +1117,131 @@ function handleShellCompanySecondRecruit(stashInstanceId) {
   render();
 }
 
+/**
+ * renderShiftCardResolutionModal(overlayEl, vm, humanDash)
+ * Full-screen, non-dismissable Shift Card resolution — Priority 1 of
+ * the redesign. The consequences list is built entirely from the real
+ * log entries applyShiftCardEffect actually generated (captured
+ * engine-side as consequencesLogEntries), not fabricated per-card
+ * summary text — each entry's own message field is used verbatim when
+ * present, falling back to a plain, honest description of the log
+ * type only when a specific entry has none.
+ */
+/**
+ * renderSpecialistCardChoiceModal(overlayEl, vm, humanDash)
+ * Priority 2: The Lobbyist (SPEC_3) now genuinely lets the player pick
+ * which hub to block, matching the card's own "any Hub" text — the
+ * engine previously auto-picked the hub with the most open spaces with
+ * no way for the player to actually decide.
+ */
+function renderSpecialistCardChoiceModal(overlayEl, vm, humanDash) {
+  overlayEl.style.display = 'flex';
+  const interrupt = vm.pendingInterrupt;
+  const isChoosingPlayer = HUMAN_PLAYER_ID === interrupt.sourcePlayerId;
+
+  if (interrupt.choiceType !== 'SPEC3_HUB_TARGET') {
+    overlayEl.innerHTML = `<div class="modal-box"><p class="empty-hand-message">Unrecognized specialist card choice.</p></div>`;
+    return;
+  }
+
+  const HUB_LABELS = {
+    GROWTH: 'Growth',
+    LEADERSHIP: 'Leadership',
+    OPERATIONS: 'Operations',
+    EXECUTIVE_DECISIONS: 'Executive Decisions',
+    EXECUTIVE_SEARCH: 'Executive Search',
+  };
+
+  overlayEl.innerHTML = `
+    <div class="modal-box">
+      <h3>🔒 The Lobbyist</h3>
+      <p class="modal-acquire-label">${isChoosingPlayer ? 'Choose which Hub to block for the rest of this round.' : `Waiting for ${escapeAttr(interrupt.sourcePlayerDisplayName || interrupt.sourcePlayerId)} to choose a Hub to block…`}</p>
+      ${
+        isChoosingPlayer
+          ? `<div class="track-boost-picker">${interrupt.availableHubs
+              .map((hub) => `<button type="button" class="track-boost-btn spec3-hub-btn" data-hub="${escapeAttr(hub)}">${escapeAttr(HUB_LABELS[hub] || hub)}</button>`)
+              .join('')}</div>`
+          : ''
+      }
+    </div>
+  `;
+
+  overlayEl.querySelectorAll('.spec3-hub-btn').forEach((el) => {
+    el.addEventListener('click', () => {
+      const result = BrokerBossEngine.executeUserAction(state, {
+        type: 'RESOLVE_SPECIALIST_CARD_EFFECT_CHOICE',
+        playerId: HUMAN_PLAYER_ID,
+        extra: { targetHub: el.dataset.hub },
+      });
+      if (result.error) {
+        showToast(`Could not block that hub: ${result.error}`);
+      } else {
+        showToast(`${HUB_LABELS[el.dataset.hub] || el.dataset.hub} hub blocked for the rest of the round.`);
+      }
+      state = result.state;
+      render();
+    });
+  });
+}
+
+function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
+  overlayEl.style.display = 'flex';
+  const interrupt = vm.pendingInterrupt;
+  const catalogId = interrupt.drawnCardCatalogId;
+  const cardEntry = catalogId ? catalog.shiftCards[catalogId] : null;
+  const isAcknowledgingPlayer = HUMAN_PLAYER_ID === interrupt.sourcePlayerId;
+
+  const consequenceLines = (interrupt.consequencesLogEntries || [])
+    .map((entry) => {
+      if (entry.message) return entry.message;
+      if (entry.type === 'SHIFT_EFFECT_APPLIED') {
+        const name = (vm.players[entry.playerId] && vm.players[entry.playerId].displayName) || entry.playerId;
+        return `Applied to ${name}.`;
+      }
+      if (entry.type === 'SHIFT_EFFECT_BLOCKED_BY_IMMUNITY') {
+        const name = (vm.players[entry.playerId] && vm.players[entry.playerId].displayName) || entry.playerId;
+        return `${name} is immune this round — no effect.`;
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  const cardArtHtml = cardEntry
+    ? buildFullCardImageHtml(cardEntry.cardImage, 'shift-cards', `<div class="shift-reveal-fallback-name">${escapeAttr(cardEntry.name || catalogId)}</div>`)
+    : '<p class="empty-hand-message">Card details unavailable.</p>';
+
+  overlayEl.innerHTML = `
+    <div class="modal-box shift-resolution-modal-box">
+      <h3>⚡ Shift Card Revealed</h3>
+      <div class="shift-resolution-card-art">${cardArtHtml}</div>
+      ${cardEntry ? `<p class="shift-resolution-card-title">${escapeAttr(cardEntry.name)}</p><p class="shift-resolution-card-text">${escapeAttr(cardEntry.description || '')}</p>` : ''}
+      <div class="shift-resolution-consequences">
+        <div class="shift-resolution-consequences-title">Consequences & Impact</div>
+        <ul class="shift-resolution-consequences-list">
+          ${consequenceLines.length > 0 ? consequenceLines.map((line) => `<li>${escapeAttr(line)}</li>`).join('') : '<li>No further effect this time.</li>'}
+        </ul>
+      </div>
+      ${
+        isAcknowledgingPlayer
+          ? `<div class="modal-actions"><button type="button" class="modal-skip-btn" id="shift-card-acknowledge-btn">Acknowledge &amp; Resume Game</button></div>`
+          : `<p class="shift-resolution-waiting">Waiting for ${escapeAttr(interrupt.sourcePlayerDisplayName || interrupt.sourcePlayerId)} to acknowledge…</p>`
+      }
+    </div>
+  `;
+
+  const ackBtn = overlayEl.querySelector('#shift-card-acknowledge-btn');
+  if (ackBtn) {
+    ackBtn.addEventListener('click', () => {
+      const result = BrokerBossEngine.executeUserAction(state, { type: 'ACKNOWLEDGE_SHIFT_CARD', playerId: HUMAN_PLAYER_ID });
+      if (result.error) {
+        showToast(`Could not acknowledge: ${result.error}`);
+      }
+      state = result.state;
+      render();
+    });
+  }
+}
+
 function renderTurnOrderBiddingModal(overlayEl, humanDash) {
   overlayEl.style.display = 'flex';
   const wallet = humanDash.wallet;
@@ -2252,6 +2377,16 @@ function renderRoundSummaryModal(roundNumber, entries, currentState) {
 }
 
 function checkForShiftTriggerEvents(currentState) {
+  // SUPERSEDED: Shift Card resolution is now handled entirely by the
+  // real, blocking SHIFT_CARD_RESOLUTION interrupt and its full-screen
+  // modal (renderShiftCardResolutionModal) — the engine genuinely
+  // pauses now, so this auto-dismissing banner would show duplicate,
+  // redundant UI for the exact same event. Still advances the log
+  // pointer so a later re-enable wouldn't replay a backlog of old
+  // entries.
+  lastAnnouncedShiftLogLength = currentState.log.length;
+  return;
+  // eslint-disable-next-line no-unreachable
   const newEntries = currentState.log.slice(lastAnnouncedShiftLogLength);
   lastAnnouncedShiftLogLength = currentState.log.length;
 
@@ -4219,6 +4354,27 @@ function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) 
   const humanPlayerVm = vm.players[HUMAN_PLAYER_ID];
   if (vm.meta.phase === 'TURN_ORDER_BIDDING' && humanPlayerVm && !humanPlayerVm.turnOrderBid.submitted) {
     renderTurnOrderBiddingModal(overlayEl, humanDash);
+    return;
+  }
+
+  // Shift Card resolution — a genuine, non-dismissable pause (no Hide
+  // button, no auto-close): the engine now actually blocks all other
+  // actions while this interrupt is pending (see PENDING_INTERRUPT_ACTIVE
+  // in workerPlacementValidation.js), so every connected client sees the
+  // exact same frozen state via the normal broadcast mechanism — no new
+  // multiplayer sync needed beyond what state-sharing already does.
+  if (vm.pendingInterrupt && vm.pendingInterrupt.type === 'SHIFT_CARD_RESOLUTION') {
+    renderShiftCardResolutionModal(overlayEl, vm, humanDash);
+    return;
+  }
+
+  // The Lobbyist (SPEC_3) — a real player choice of which hub to block,
+  // replacing the old auto-pick-the-biggest-hub default. Same
+  // special-case pattern as the Shift Card modal above, for the same
+  // reason: no existing case in buildInterruptOverlayModal matches this
+  // new choice type.
+  if (vm.pendingInterrupt && vm.pendingInterrupt.type === 'ACTION_CARD_EFFECT_CHOICE' && vm.pendingInterrupt.isSpecialistCardChoice) {
+    renderSpecialistCardChoiceModal(overlayEl, vm, humanDash);
     return;
   }
 
