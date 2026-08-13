@@ -673,6 +673,7 @@ var BrokerBossEngine = (() => {
         return { state: nextState, error: null, detail: null };
       }
       function applyLevel5ImmediateEffect(state, playerId, trackName, branch) {
+        const reAddToPlayersWithMeeplesRemaining = (s) => s.phase.current === "WORKER_PLACEMENT" && !s.phase.playersWithMeeplesRemaining.includes(playerId) ? { ...s, phase: { ...s.phase, playersWithMeeplesRemaining: [...s.phase.playersWithMeeplesRemaining, playerId] } } : s;
         if (trackName === "training" && branch === "B") {
           const player = state.players[playerId];
           if (player.timeMeeples.staffInTraining.length === 0) {
@@ -683,7 +684,7 @@ var BrokerBossEngine = (() => {
             });
           }
           const [promoted, ...remaining] = player.timeMeeples.staffInTraining;
-          const nextState = {
+          let nextState = {
             ...state,
             players: {
               ...state.players,
@@ -697,6 +698,7 @@ var BrokerBossEngine = (() => {
               }
             }
           };
+          nextState = reAddToPlayersWithMeeplesRemaining(nextState);
           return appendLog(nextState, {
             type: "UNION_BUSTER_IMMEDIATE_APPLIED",
             playerId,
@@ -705,7 +707,7 @@ var BrokerBossEngine = (() => {
         }
         if (trackName === "recognition" && branch === "B") {
           const player = state.players[playerId];
-          const nextState = {
+          let nextState = {
             ...state,
             players: {
               ...state.players,
@@ -719,6 +721,7 @@ var BrokerBossEngine = (() => {
               }
             }
           };
+          nextState = reAddToPlayersWithMeeplesRemaining(nextState);
           return appendLog(nextState, {
             type: "COPYCAT_MARKETING_IMMEDIATE_APPLIED",
             playerId,
@@ -942,14 +945,6 @@ var BrokerBossEngine = (() => {
           });
         }
         if (milestoneKey === "MARKET_HIJACK") {
-          // FIX: confirmed genuinely missing from this function via a full
-          // audit against the CSV/rulebook text — reaching this milestone
-          // previously fell through to `return state;` at the bottom, a
-          // silent no-op. Immediate: pay $4 PT (uncapped at 0 if short,
-          // matching this card's own "Instant" framing rather than
-          // silently blocking the milestone). Passive: hasMarketHijack
-          // flag checked at the real Copycat Meeple placement site so the
-          // +1 free Market Share triggers exactly when the card says.
           let nextState = adjustWallet(state, playerId, -4, 0);
           nextState = {
             ...nextState,
@@ -1505,6 +1500,34 @@ var BrokerBossEngine = (() => {
             message: `${playerId}'s ${trackName} track lands on odd space ${newTrack.value} \u2014 The Venture Capitalist grants +3 PT.`
           });
         }
+        const bridgeActive = player.bridgedTracks && player.bridgedTracksUntilRound === state.phase.round && player.bridgedTracks.includes(trackName) && newTrack.value !== track.value;
+        if (bridgeActive) {
+          const linkedTrackName = player.bridgedTracks.find((t) => t !== trackName);
+          const linkedTrack = player.tracks[linkedTrackName];
+          const newLinkedTrack = { ...linkedTrack, value: clamp(linkedTrack.value + delta, 0, linkedTrack.max) };
+          nextState = {
+            ...nextState,
+            players: {
+              ...nextState.players,
+              [playerId]: {
+                ...nextState.players[playerId],
+                tracks: { ...nextState.players[playerId].tracks, [linkedTrackName]: newLinkedTrack }
+              }
+            }
+          };
+          if (newLinkedTrack.value !== linkedTrack.value) {
+            const { checkLevel10Milestone } = require_techTrackReducer();
+            nextState = checkLevel10Milestone(nextState, playerId, linkedTrackName, linkedTrack.value, newLinkedTrack.value);
+          }
+          nextState = appendLog(nextState, {
+            type: "SPECIALIST_EFFECT_CORPORATE_MERGER_TRIGGERED",
+            playerId,
+            primaryTrack: trackName,
+            linkedTrack: linkedTrackName,
+            delta,
+            message: `${playerId}'s Corporate Merger auto-advances ${linkedTrackName} by ${delta} to match ${trackName}.`
+          });
+        }
         if (newTrack.value !== track.value) {
           const { checkLevel10Milestone } = require_techTrackReducer();
           nextState = checkLevel10Milestone(nextState, playerId, trackName, track.value, newTrack.value);
@@ -1520,24 +1543,10 @@ var BrokerBossEngine = (() => {
         let drawPile = state.board && state.board.decks && state.board.decks.actionCardDrawPile || [];
         let discardPile = state.board && state.board.decks && state.board.decks.actionCardDiscardPile || [];
         let stateForLog = state;
-        // FIX: this previously had no reshuffle-on-exhaustion at all, and
-        // a first attempt at fixing it only checked once up front — which
-        // missed the case where drawPile has SOME cards left but not
-        // enough to fill every vacated slot (e.g. 1 card available, 2
-        // needed). Looping and checking on every single card drawn
-        // matches drawAgentCardsWithAutoRecruitCheck's already-proven
-        // pattern exactly, so multiple reshuffles within one call are
-        // handled correctly too.
         const refillCatalogIds = [];
         while (refillCatalogIds.length < drawCount) {
           if (drawPile.length === 0) {
             if (discardPile.length === 0) {
-              // Both piles genuinely empty and the request still isn't
-              // fulfilled — the safe, non-crashing fallback: stop here
-              // (never loop forever waiting for cards that don't exist),
-              // log it clearly, and set a flag other systems (e.g. a
-              // Final Round warning) can read without needing to
-              // re-derive "is the deck actually out" themselves.
               if (!stateForLog.board.isDeckExhausted) {
                 stateForLog = appendLog(stateForLog, {
                   type: "ACTION_CARD_DECK_DEPLETED",
@@ -1589,7 +1598,7 @@ var BrokerBossEngine = (() => {
             ...stateForLog.players,
             [playerId]: {
               ...player,
-              hand: { ...player.hand, actionCards: handCards, personalDiscardPile: personalDiscardPile }
+              hand: { ...player.hand, actionCards: handCards, personalDiscardPile }
             }
           },
           drawnCatalogIds: acquiredCatalogIds
@@ -1600,13 +1609,6 @@ var BrokerBossEngine = (() => {
         let drawPile = state.board && state.board.decks && state.board.decks.actionCardDrawPile || [];
         let discardPile = state.board && state.board.decks && state.board.decks.actionCardDiscardPile || [];
         let stateForLog = state;
-        // FIX: this previously only checked once up front, the same bug
-        // class already found and fixed in drawFromOpenMarketActionCards
-        // — a drawPile with SOME but not enough cards (e.g. 1 available,
-        // 3 requested) never triggered a reshuffle, silently returning
-        // fewer cards than requested even with plenty sitting unused in
-        // the discard pile. Looping fixes this and also lets multiple
-        // reshuffles happen within one call if needed.
         const drawnCatalogIds = [];
         while (drawnCatalogIds.length < count) {
           if (drawPile.length === 0) {
@@ -1655,7 +1657,7 @@ var BrokerBossEngine = (() => {
           board: { ...stateForLog.board, decks: { ...stateForLog.board.decks, actionCardDrawPile: remainingDrawPile, actionCardDiscardPile: discardPile } },
           players: {
             ...stateForLog.players,
-            [playerId]: { ...player, hand: { ...player.hand, actionCards: handCards, personalDiscardPile: personalDiscardPile } }
+            [playerId]: { ...player, hand: { ...player.hand, actionCards: handCards, personalDiscardPile } }
           },
           drawnCatalogIds
         };
@@ -1684,7 +1686,24 @@ var BrokerBossEngine = (() => {
                 active: [...player.timeMeeples.active, newMeeple]
               }
             }
-          }
+          },
+          // FIX: this player now has a usable meeple in supply, but if they'd
+          // already exhausted every other meeple earlier this round, placeMeeple
+          // would have already removed them from phase.playersWithMeeplesRemaining
+          // — and settleGameLoop advances straight to pre-bidding once that list
+          // is empty, regardless of what's actually sitting in any player's
+          // timeMeeples.active. Without this, a bonus meeple granted mid-round
+          // (a milestone reward, a board-space grant) was correctly created as
+          // available but the player could never actually get a turn to place
+          // it before the round ended. Same re-add pattern already used by
+          // meeple recall (see workerPlacementReducer.js's own comment on this).
+          // Only meaningful during WORKER_PLACEMENT — a milestone firing outside
+          // that phase (e.g. from a card played during a different phase, if
+          // that's ever possible) shouldn't touch this list at all.
+          phase: state.phase.current === "WORKER_PLACEMENT" ? {
+            ...state.phase,
+            playersWithMeeplesRemaining: state.phase.playersWithMeeplesRemaining.includes(playerId) ? state.phase.playersWithMeeplesRemaining : [...state.phase.playersWithMeeplesRemaining, playerId]
+          } : state.phase
         };
       }
       function adjustOfficeSlots(state, playerId, delta) {
@@ -1808,18 +1827,6 @@ var BrokerBossEngine = (() => {
         nextState = { ...nextState, phase: { ...nextState.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
         return { state: nextState, error: null, detail: { trackDowngraded: chosenTrack } };
       }
-      /**
-       * fireAgentFromRoster(state, playerId, agentInstanceId, reasonCatalogId)
-       * NEW — the missing low-level primitive: removes one specific agent
-       * from a player's roster entirely ("out of the game" per every Shift
-       * card's own wording — not returned to the Open Market, unlike a
-       * poach/return effect). No prior helper in this codebase did this;
-       * confirmed by search before building it. Silently no-ops (returns
-       * state unchanged) if the agentInstanceId isn't found, rather than
-       * throwing — callers that already validated existence don't pay for
-       * this, and callers using a selector that finds nothing degrade
-       * gracefully instead of crashing an otherwise-harmless card.
-       */
       function fireAgentFromRoster(state, playerId, agentInstanceId, reasonCatalogId) {
         const player = state.players[playerId];
         if (!player) return state;
@@ -1840,15 +1847,6 @@ var BrokerBossEngine = (() => {
         });
         return nextState;
       }
-      /**
-       * fireAgentBySelector(state, playerId, selectorFn, reasonCatalogId)
-       * NEW — finds the agent to fire via selectorFn(rosterEntries,
-       * agentCatalog) => agentInstanceId | null, then fires it through
-       * fireAgentFromRoster. Centralizes the "look up stats, break ties,
-       * respect Loyal-marker immunity where the card says so" pattern so
-       * each new Shift handler only supplies its own selection criteria,
-       * not a re-implementation of roster lookup and firing.
-       */
       function fireAgentBySelector(state, playerId, selectorFn, reasonCatalogId) {
         const player = state.players[playerId];
         if (!player) return state;
@@ -1858,15 +1856,6 @@ var BrokerBossEngine = (() => {
         if (!chosenInstanceId) return state;
         return fireAgentFromRoster(state, playerId, chosenInstanceId, reasonCatalogId);
       }
-      /**
-       * pickRosterExtremeBy(rosterEntries, agentCatalog, statName, direction)
-       * NEW — small shared comparator for "the agent with the
-       * lowest/highest X" selection, used by nearly every new firing-based
-       * Shift card. direction: 'lowest' | 'highest'. Ties broken by roster
-       * array order (first match wins) — no card text specifies a
-       * tiebreak rule, so this is a deliberate, documented default rather
-       * than an unstated assumption.
-       */
       function pickRosterExtremeBy(rosterEntries, agentCatalog, statName, direction) {
         if (rosterEntries.length === 0) return null;
         let best = null;
@@ -2096,12 +2085,6 @@ var BrokerBossEngine = (() => {
         return loyaltyCount * 4;
       }
       function calculateProfitTokenScore(player) {
-        // FIX: hasGoldenParachute was set when the milestone was claimed
-        // but never once read anywhere in scoring — the "premium 3:1
-        // conversion, max +10 VP" ability had zero actual effect on a
-        // player's final score despite the milestone log message
-        // claiming it was unlocked. Confirmed via a direct search before
-        // writing this fix, not assumed.
         if (player.hasGoldenParachute) {
           return Math.min(10, Math.floor(player.wallet.profitTokens / 3));
         }
@@ -3970,11 +3953,6 @@ var BrokerBossEngine = (() => {
     "handlers/actionCards/strategy.js"(exports, module) {
       var { grantShiftImmunity } = require_immunityReducer();
       var { adjustOfficeSlots, adjustWallet, adjustTrack, adjustMarketShare, fireAgentBySelector, pickRosterExtremeBy } = require_cardEffectHelpers();
-      // LAZY (not top-level): agentRecruitmentReducer.js -> actionCardReducer.js ->
-      // cardEffectRegistry.js -> strategy.js is a real circular chain (confirmed
-      // by tracing requires before writing this) — a top-level destructure here
-      // would capture undefined during initial module load, the same failure
-      // class this project has hit before. Resolved at call time instead.
       function getAgentRecruitmentHelpers() {
         return require_agentRecruitmentReducer();
       }
@@ -4324,12 +4302,6 @@ var BrokerBossEngine = (() => {
           if (pid === playerId) return;
           nextState = { ...nextState, players: { ...nextState.players, [pid]: { ...nextState.players[pid], recruitBannedUntilRound: nextState.phase.round } } };
         });
-        // FLAGGED: recruitBannedUntilRound is written here but this codebase
-        // has no existing read-side check for it anywhere (confirmed by
-        // search) — the same class of gap as the SFT_001/003/012/018
-        // ban/surcharge flags documented in earlier work this session.
-        // Wiring enforcement into recruitOpenMarketAgent/poachCompetingBrokerAgent
-        // is real, valuable next-step work, not something to guess at here.
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr090(state, context) {
@@ -4339,9 +4311,6 @@ var BrokerBossEngine = (() => {
       }
       function handleStr091(state, context) {
         const { playerId } = context;
-        // fireAgentBySelector always FIRES; STR_091 needs to PROTECT, not
-        // fire, so selection logic is done directly here rather than
-        // reusing that helper's fire-only contract.
         const player = state.players[playerId];
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
         const activeRoster = player.roster.filter((r) => !r.isVoided);
@@ -4378,13 +4347,6 @@ var BrokerBossEngine = (() => {
         nextState = { ...nextState, phase: { ...nextState.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
         if (extra.targetCatalogId) {
           const { recruitOpenMarketAgent: recruit } = getAgentRecruitmentHelpers();
-          // FLAGGED: card text says "FREE" (no cost/requirement gate), but
-          // recruitOpenMarketAgent always enforces its own value-matching
-          // gate — no bypass parameter exists on this function. Reusing it
-          // as-is rather than risk a hand-rolled bypass that skips its
-          // other real side effects (influencer network pulls, milestones,
-          // market dominance tax). If the gate blocks it, the recognition
-          // gain above still applies; only the recruit silently no-ops.
           const result = recruit(nextState, playerId, extra.targetCatalogId);
           if (!result.error) nextState = result.state;
         }
@@ -4413,12 +4375,6 @@ var BrokerBossEngine = (() => {
         }
         const { targetPlayerId } = extra;
         let nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
-        // Interpreted as proactive (matching STR_070/077's established
-        // "protect + rival cost" pattern), not a true reactive "play when
-        // rival recruits" trigger — the card has no "Play when" phrase
-        // (unlike STR_081/087, which are deferred for exactly that
-        // reason), so this reading is consistent with the deck's own
-        // wording conventions.
         const agentCatalog = nextState.cardCatalog && nextState.cardCatalog.agentCards || {};
         const ownRoster = nextState.players[playerId].roster.filter((r) => !r.isVoided);
         const bestOwnInstanceId = pickRosterExtremeBy(ownRoster, agentCatalog, "totalProfit", "highest");
@@ -4441,10 +4397,6 @@ var BrokerBossEngine = (() => {
         }
         const { targetPlayerId } = extra;
         let nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
-        // "View 1 rival's hand" — no hand-viewing UI exists yet; the
-        // resulting game-state change (they trash 1 card) is applied
-        // directly, same simplification already established for
-        // INF_095/101.
         if (targetPlayerId && nextState.players[targetPlayerId]) {
           const target = nextState.players[targetPlayerId];
           if (target.hand.actionCards.length > 0) {
@@ -4458,18 +4410,13 @@ var BrokerBossEngine = (() => {
       function handleStr089(state, context) {
         const { playerId } = context;
         let nextState = adjustMarketShare(state, playerId, 1);
-        const drawPile = (nextState.board.decks && nextState.board.decks.actionCardDrawPile) || [];
+        const drawPile = nextState.board.decks && nextState.board.decks.actionCardDrawPile || [];
         const drawn = drawPile.slice(0, 2);
         const remaining = drawPile.slice(2);
         nextState = { ...nextState, board: { ...nextState.board, decks: { ...nextState.board.decks, actionCardDrawPile: remaining } } };
         if (drawn.length > 0) {
-          // No draw-2-keep-1 picker UI exists yet; auto-keeps the
-          // higher-cost of the two (a reasonable, deterministic proxy for
-          // "more valuable"), trashes the other out of the game entirely
-          // (matches "Trash" language used throughout this deck, i.e. not
-          // returned to any discard pile).
           const catalogActionCards = nextState.cardCatalog.actionCards || {};
-          const sorted = [...drawn].sort((a, b) => ((catalogActionCards[b] && catalogActionCards[b].cost) || 0) - ((catalogActionCards[a] && catalogActionCards[a].cost) || 0));
+          const sorted = [...drawn].sort((a, b) => (catalogActionCards[b] && catalogActionCards[b].cost || 0) - (catalogActionCards[a] && catalogActionCards[a].cost || 0));
           const kept = sorted[0];
           const player = nextState.players[playerId];
           const newCardEntry = { instanceId: `ac-${playerId}-str089-${kept}`, catalogId: kept };
@@ -4484,20 +4431,16 @@ var BrokerBossEngine = (() => {
           const nextState2 = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "ACTION_CARD_EFFECT_CHOICE", sourcePlayerId: playerId, data: { catalogId: "STR_093", choiceType: "STR074_RIVAL_TARGET", cardInstanceId, stage: "first" } } } };
           return { state: appendLog(nextState2, { type: "ACTION_CARD_EFFECT_STR093_AWAITING_FIRST_CHOICE", playerId, catalogId: "STR_093" }), effectOutcome: DEFAULT_OUTCOME };
         }
-        // Two-stage sequential targeting: the app.js rival-picker modal
-        // has no built-in concept of "pick 2", so this handler drives 2
-        // passes through the same single-target choiceType, tracking
-        // progress via extra.firstTargetPlayerId across calls.
         if (!extra.secondTargetPlayerId) {
-          let nextState = adjustOfficeSlots(state, extra.firstTargetPlayerId, -1);
-          nextState = {
-            ...nextState,
+          let nextState2 = adjustOfficeSlots(state, extra.firstTargetPlayerId, -1);
+          nextState2 = {
+            ...nextState2,
             phase: {
-              ...nextState.phase,
+              ...nextState2.phase,
               pendingInterrupt: { type: "ACTION_CARD_EFFECT_CHOICE", sourcePlayerId: playerId, data: { catalogId: "STR_093", choiceType: "STR074_RIVAL_TARGET", cardInstanceId, stage: "second", firstTargetPlayerId: extra.firstTargetPlayerId } }
             }
           };
-          return { state: appendLog(nextState, { type: "ACTION_CARD_EFFECT_STR093_FIRST_APPLIED", playerId, catalogId: "STR_093", targetPlayerId: extra.firstTargetPlayerId }), effectOutcome: DEFAULT_OUTCOME };
+          return { state: appendLog(nextState2, { type: "ACTION_CARD_EFFECT_STR093_FIRST_APPLIED", playerId, catalogId: "STR_093", targetPlayerId: extra.firstTargetPlayerId }), effectOutcome: DEFAULT_OUTCOME };
         }
         let nextState = extra.secondTargetPlayerId !== extra.firstTargetPlayerId ? adjustOfficeSlots(state, extra.secondTargetPlayerId, -1) : state;
         nextState = adjustOfficeSlots(nextState, playerId, 2);
@@ -4742,12 +4685,7 @@ var BrokerBossEngine = (() => {
           return { state: appendLog(state, { type: "ACTION_CARD_EFFECT_AGENT_DISCONTENT_SKIPPED", playerId, catalogId: "INF_100", reason: "NO_VALID_TARGET" }), effectOutcome: DEFAULT_OUTCOME };
         }
         const drawResult = forceDrawAndDiscardShiftCard(state);
-        // Same established simplification as INF_111: this engine has no
-        // mechanism to scope a Shift Card's own effect to a single player
-        // (every existing Shift handler applies to all players via its own
-        // internal loop) — the card is drawn and discarded (a real deck
-        // state change), but its printed effect is not separately applied.
-        const nextState = appendLog(drawResult.state, { type: "ACTION_CARD_EFFECT_AGENT_DISCONTENT_SHIFT_DRAWN", playerId, catalogId: "INF_100", targetPlayerId, usedDefaultTarget, drawnCatalogId: drawResult.drawnCatalogId, message: `${targetPlayerId} draws Shift Card ${drawResult.drawnCatalogId || "(deck empty)"} (Agent Discontent) — its single-target effect is not applied by this engine.` });
+        const nextState = appendLog(drawResult.state, { type: "ACTION_CARD_EFFECT_AGENT_DISCONTENT_SHIFT_DRAWN", playerId, catalogId: "INF_100", targetPlayerId, usedDefaultTarget, drawnCatalogId: drawResult.drawnCatalogId, message: `${targetPlayerId} draws Shift Card ${drawResult.drawnCatalogId || "(deck empty)"} (Agent Discontent) \u2014 its single-target effect is not applied by this engine.` });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleInf103(state, context) {
@@ -4757,7 +4695,7 @@ var BrokerBossEngine = (() => {
           return { state: appendLog(state, { type: "ACTION_CARD_EFFECT_NEGATIVE_RECRUITING_SKIPPED", playerId, catalogId: "INF_103", reason: "NO_VALID_TARGET" }), effectOutcome: DEFAULT_OUTCOME };
         }
         const drawResult = forceDrawAndDiscardShiftCard(state);
-        const nextState = appendLog(drawResult.state, { type: "ACTION_CARD_EFFECT_NEGATIVE_RECRUITING_SHIFT_DRAWN", playerId, catalogId: "INF_103", targetPlayerId, usedDefaultTarget, drawnCatalogId: drawResult.drawnCatalogId, message: `${targetPlayerId} draws Shift Card ${drawResult.drawnCatalogId || "(deck empty)"} (Negative Recruiting) — its single-target effect is not applied by this engine.` });
+        const nextState = appendLog(drawResult.state, { type: "ACTION_CARD_EFFECT_NEGATIVE_RECRUITING_SHIFT_DRAWN", playerId, catalogId: "INF_103", targetPlayerId, usedDefaultTarget, drawnCatalogId: drawResult.drawnCatalogId, message: `${targetPlayerId} draws Shift Card ${drawResult.drawnCatalogId || "(deck empty)"} (Negative Recruiting) \u2014 its single-target effect is not applied by this engine.` });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleInf105(state, context) {
@@ -4807,12 +4745,6 @@ var BrokerBossEngine = (() => {
         let nextState = state;
         if (bestInstanceId) {
           const { poachCompetingBrokerAgent: poach } = getAgentRecruitmentHelpers();
-          // FLAGGED: poachCompetingBrokerAgent enforces its normal
-          // value-matching gate; this card's text implies an unconditional
-          // recruit. Reusing the real, fully-tested function as-is rather
-          // than a hand-rolled bypass that would skip its other real
-          // effects (network pulls, milestones). If the gate blocks it,
-          // the self shift-draw cost below still applies.
           const result = poach(nextState, playerId, targetPlayerId, bestInstanceId);
           if (!result.error) nextState = result.state;
         }
@@ -4860,10 +4792,6 @@ var BrokerBossEngine = (() => {
         let nextState = state;
         if (bestInstanceId) {
           const { poachCompetingBrokerAgent: poach } = getAgentRecruitmentHelpers();
-          // FLAGGED: card text implies "any agent" (unrestricted choice);
-          // implemented as auto-selecting the target's highest-profit
-          // Agent rather than a full agent-picker UI, and still subject to
-          // poachCompetingBrokerAgent's normal gate (see INF_110's note).
           const result = poach(nextState, playerId, targetPlayerId, bestInstanceId);
           if (!result.error) nextState = result.state;
         }
@@ -4896,14 +4824,15 @@ var BrokerBossEngine = (() => {
         let bestCatalogId = null;
         let bestValue = -1;
         market.forEach((m) => {
-          const v = (agentCatalog[m.catalogId] && agentCatalog[m.catalogId].totalProfit) || 0;
-          if (v > bestValue) { bestValue = v; bestCatalogId = m.catalogId; }
+          const v = agentCatalog[m.catalogId] && agentCatalog[m.catalogId].totalProfit || 0;
+          if (v > bestValue) {
+            bestValue = v;
+            bestCatalogId = m.catalogId;
+          }
         });
         let nextState = state;
         if (bestCatalogId) {
           const { recruitOpenMarketAgent: recruit } = getAgentRecruitmentHelpers();
-          // FLAGGED: same gate caveat as INF_110/STR_092 — recruitOpenMarketAgent
-          // has no bypass for its value-matching requirement.
           const result = recruit(nextState, playerId, bestCatalogId);
           if (!result.error) nextState = result.state;
         }
@@ -4916,11 +4845,6 @@ var BrokerBossEngine = (() => {
         if (!targetPlayerId || !state.players[targetPlayerId]) {
           return { state: appendLog(state, { type: "ACTION_CARD_EFFECT_FEE_REDUCTION_SKIPPED", playerId, catalogId: "INF_098", reason: "NO_VALID_TARGET" }), effectOutcome: DEFAULT_OUTCOME };
         }
-        // Simplified: the rival's "may block by losing 1 from all 3
-        // Broker Values" option needs a defender-response window this
-        // engine has no mechanism for (same class of gap as the true
-        // reactive Strategy cards) — implemented as an unconditional
-        // poach, same established simplification as INF_102/109/110/113.
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
         const targetRoster = state.players[targetPlayerId].roster.filter((r) => !r.isVoided);
         const bestInstanceId = pickRosterExtremeBy(targetRoster, agentCatalog, "totalProfit", "highest");
@@ -4956,8 +4880,11 @@ var BrokerBossEngine = (() => {
         let bestCatalogId = null;
         let bestValue = -1;
         market.forEach((m) => {
-          const v = (agentCatalog[m.catalogId] && agentCatalog[m.catalogId].totalProfit) || 0;
-          if (v > bestValue) { bestValue = v; bestCatalogId = m.catalogId; }
+          const v = agentCatalog[m.catalogId] && agentCatalog[m.catalogId].totalProfit || 0;
+          if (v > bestValue) {
+            bestValue = v;
+            bestCatalogId = m.catalogId;
+          }
         });
         let nextState = state;
         if (bestCatalogId) {
@@ -5645,14 +5572,6 @@ var BrokerBossEngine = (() => {
         nextState = adjustWallet(nextState, playerId, -5, 0);
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
-      /**
-       * findPlayerWithMostAgents(state) — shared by SFT_008/SFT_010, which
-       * are functionally identical cards ("most Agents" / "highest Agent
-       * Count") — the CSV has genuine duplicate-effect cards with
-       * different flavor text, confirmed by comparing their descriptions
-       * verbatim. Ties broken by turn order (first in players list wins),
-       * since neither card specifies a tiebreak.
-       */
       function findPlayerWithMostAgents(state) {
         let best = null;
         let bestCount = -1;
@@ -5713,9 +5632,6 @@ var BrokerBossEngine = (() => {
         if (playerHasShiftImmunity(state.players[playerId])) {
           return { state, effectOutcome: DEFAULT_OUTCOME };
         }
-        // "lowest income" — income was retired and unified into totalProfit
-        // per Rulebook 5.1 (no 'income' field exists on agentCatalog.json
-        // entries; confirmed by direct inspection before writing this).
         const nextState = fireAgentBySelector(state, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "totalProfit", "lowest"), "SFT_014");
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
@@ -5728,7 +5644,7 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft021(state, context) {
-        const drawPile = (state.board.decks && state.board.decks.agentDrawPile) || state.board.agentDrawPile || [];
+        const drawPile = state.board.decks && state.board.decks.agentDrawPile || state.board.agentDrawPile || [];
         const removedCount = Math.min(3, drawPile.length);
         const remaining = drawPile.slice(removedCount);
         let nextState = {
@@ -5749,8 +5665,8 @@ var BrokerBossEngine = (() => {
         Object.keys(state.players).forEach((playerId) => {
           if (playerHasShiftImmunity(state.players[playerId])) return;
           state.players[playerId].roster.forEach((entry) => {
-            if (entry.isVoided || (entry.loyaltyToken && entry.loyaltyToken.active)) return;
-            const profit = (agentCatalog[entry.catalogId] && agentCatalog[entry.catalogId].totalProfit) || 0;
+            if (entry.isVoided || entry.loyaltyToken && entry.loyaltyToken.active) return;
+            const profit = agentCatalog[entry.catalogId] && agentCatalog[entry.catalogId].totalProfit || 0;
             if (profit > bestProfit) {
               bestProfit = profit;
               bestPlayerId = playerId;
@@ -5828,21 +5744,6 @@ var BrokerBossEngine = (() => {
         if (idx === -1 || order.length < 2) return null;
         return order[(idx + 1) % order.length];
       }
-      function rightNeighborId(state, playerId) {
-        const order = state.phase.turnOrder || [];
-        const idx = order.indexOf(playerId);
-        if (idx === -1 || order.length < 2) return null;
-        return order[(idx - 1 + order.length) % order.length];
-      }
-      // SFT_001/003/012/018/022/023/024/034/045/049/050 write board- or
-      // player-level ban/surcharge flags. Some are wired into real
-      // enforcement below (SFT_001/003/012/018/023, folded into
-      // recruitOpenMarketAgent-adjacent checks where this codebase already
-      // has a clean hook); the rest (SFT_034/045/049/050) have no existing
-      // read-side hook to attach to — "Play a Card"/"Hire Staff"/track-
-      // increase/"Additional Profit" aren't gated anywhere checkable from a
-      // Shift handler — so those remain write-only, flagged here rather
-      // than silently claimed as enforced.
       function handleSft001(state, context) {
         let nextState = state;
         Object.keys(nextState.players).forEach((playerId) => {
@@ -5898,11 +5799,6 @@ var BrokerBossEngine = (() => {
           nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, timeMeeples: { ...player.timeMeeples, active: newActive } } } };
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
-        // NOTE: no existing round-transition sweep in this codebase resets
-        // a "disabled_until_round" meeple back to in_supply automatically
-        // (confirmed by search) — this writes the correct data shape, but
-        // without that sweep the meeple stays disabled past its intended
-        // round. Flagged as a real follow-up, not silently claimed fixed.
       }
       function handleSft018(state, context) {
         let nextState = state;
@@ -5944,14 +5840,10 @@ var BrokerBossEngine = (() => {
         Object.keys(nextState.players).forEach((playerId) => {
           const player = nextState.players[playerId];
           if (playerHasShiftImmunity(player)) return;
-          // Auto-decision (see file header note): pay if affordable, else
-          // fire the cheapest eligible (profit<=4) Agent — same "pay if
-          // you can" convention this codebase already uses for mandatory
-          // Profit Token deficits (payMandatoryProfitTokenDeficit).
           if (player.wallet.profitTokens >= 4) {
             nextState = adjustWallet(nextState, playerId, -4, 0);
           } else {
-            const eligible = player.roster.filter((r) => !r.isVoided && ((agentCatalog[r.catalogId] && agentCatalog[r.catalogId].totalProfit) || 0) <= 4);
+            const eligible = player.roster.filter((r) => !r.isVoided && (agentCatalog[r.catalogId] && agentCatalog[r.catalogId].totalProfit || 0) <= 4);
             if (eligible.length > 0) {
               nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(eligible, cat, "totalProfit", "lowest"), "SFT_026");
             }
@@ -6057,23 +5949,23 @@ var BrokerBossEngine = (() => {
         let lowestWallet = Infinity;
         Object.keys(state.players).forEach((playerId) => {
           const pt = state.players[playerId].wallet.profitTokens;
-          if (pt < lowestWallet) { lowestWallet = pt; lowestPlayerId = playerId; }
+          if (pt < lowestWallet) {
+            lowestWallet = pt;
+            lowestPlayerId = playerId;
+          }
         });
         if (!lowestPlayerId) return { state, effectOutcome: DEFAULT_OUTCOME };
         const market = state.board.openMarketAgents || [];
         let bestCatalogId = null;
         let bestValue = -1;
         market.forEach((m) => {
-          const v = (agentCatalog[m.catalogId] && agentCatalog[m.catalogId].totalProfit) || 0;
-          if (v > bestValue) { bestValue = v; bestCatalogId = m.catalogId; }
+          const v = agentCatalog[m.catalogId] && agentCatalog[m.catalogId].totalProfit || 0;
+          if (v > bestValue) {
+            bestValue = v;
+            bestCatalogId = m.catalogId;
+          }
         });
         if (!bestCatalogId) return { state, effectOutcome: DEFAULT_OUTCOME };
-        // FLAGGED: same gate caveat as the Influence-card free-recruit
-        // handlers — recruitOpenMarketAgent has no bypass parameter for
-        // its own value-matching gate, so "for FREE" here means the
-        // recruit's cost is $0 (which recruitOpenMarketAgent already
-        // grants unconditionally) but the eligibility gate itself still
-        // applies. If it blocks, the recruit silently no-ops.
         const { recruitOpenMarketAgent: recruit } = require_agentRecruitmentReducer();
         const result = recruit(state, lowestPlayerId, bestCatalogId);
         const nextState = result.error ? state : result.state;
@@ -6097,13 +5989,6 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft028(state, context) {
-        // "All players lose 4 Technology and trash 2 Action Cards from
-        // their hand out of the game" — confirmed genuinely missing from
-        // the dispatch table during a full CSV-vs-engine audit (every
-        // other Shift/Action/Specialist card checked out; this was the
-        // one real gap). Matches the established all-players-with-
-        // immunity-check pattern plus the same discard-2 logic already
-        // proven in handleSft050 just above.
         let nextState = state;
         Object.keys(nextState.players).forEach((playerId) => {
           const player = nextState.players[playerId];
@@ -6740,13 +6625,6 @@ var BrokerBossEngine = (() => {
         if (availableHubs.length === 0) {
           return { state, effectOutcome: DEFAULT_OUTCOME };
         }
-        // FIX: previously auto-picked the hub with the most open spaces
-        // with no way for the player to actually choose — the card's own
-        // text says "any Hub," a real player decision, not an engine
-        // default. If a real choice hasn't been made yet, this pauses on
-        // a genuine interrupt instead of guessing; the client is
-        // responsible for presenting the available hubs and resubmitting
-        // with extra.targetHub once the player picks.
         if (!extra || !extra.targetHub || !availableHubs.includes(extra.targetHub)) {
           return {
             state: {
@@ -6780,15 +6658,15 @@ var BrokerBossEngine = (() => {
       function handleSpec4(state, context) {
         const { playerId } = context;
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
-        const drawPile = (state.board.decks && state.board.decks.agentDrawPile) || [];
+        const drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
         const drawn = drawPile.slice(0, 5);
         const remaining = drawPile.slice(5);
         if (drawn.length === 0) {
           return { state, effectOutcome: DEFAULT_OUTCOME };
         }
         const sorted = [...drawn].sort((a, b) => {
-          const va = (agentCatalog[a] && agentCatalog[a].totalProfit) || 0;
-          const vb = (agentCatalog[b] && agentCatalog[b].totalProfit) || 0;
+          const va = agentCatalog[a] && agentCatalog[a].totalProfit || 0;
+          const vb = agentCatalog[b] && agentCatalog[b].totalProfit || 0;
           return vb - va;
         });
         let nextState = { ...state, board: { ...state.board, decks: { ...state.board.decks, agentDrawPile: remaining } } };
@@ -6820,15 +6698,6 @@ var BrokerBossEngine = (() => {
       }
       function handleSpec7(state, context) {
         const { playerId } = context;
-        // Auto-selects a default space to copy (OPS_TRAINING) rather than
-        // a full space-picker UI. The IMMEDIATE effect (writing the flag)
-        // is real; the PASSIVE effect ("once per round, trigger it without
-        // a Meeple") has no enforcement anywhere this can hook into safely
-        // — placeMeeple's cost/validation path is core, shared, heavily-
-        // tested code, and this codebase already treats exactly this kind
-        // of unenforced passive as an accepted, flagged gap (see SPEC_9's
-        // own handler, which claims its passive the same way). Not
-        // claiming this is playable yet.
         const defaultSpaceId = "OPS_TRAINING";
         const nextState = { ...state, players: { ...state.players, [playerId]: { ...state.players[playerId], copiedActionSpaceId: defaultSpaceId, automationEngineerUsedThisRound: false } } };
         return {
@@ -6839,30 +6708,17 @@ var BrokerBossEngine = (() => {
       function handleSpec10(state, context) {
         const { playerId } = context;
         const player = state.players[playerId];
-        // Auto-selects the two lowest tracks to bridge (helps the player
-        // catch up rather than an arbitrary pair) instead of a track-picker
-        // UI. IMMEDIATE flag write is real; the PASSIVE "advancing one
-        // auto-advances the other" has no enforcement hook — adjustTrack
-        // is core, shared, heavily-used code, and modifying it to check
-        // this flag under time pressure risked the same class of
-        // regression this project has hit before. Flagged, not silently
-        // claimed.
         const trackNames = ["training", "technology", "recognition"];
         const sorted = [...trackNames].sort((a, b) => player.tracks[a].value - player.tracks[b].value);
         const bridged = sorted.slice(0, 2);
         const nextState = { ...state, players: { ...state.players, [playerId]: { ...player, bridgedTracks: bridged, bridgedTracksUntilRound: state.phase.round } } };
         return {
-          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_CORPORATE_MERGER", playerId, catalogId: "SPEC_10", bridgedTracks: bridged, message: `${playerId}'s Corporate Merger bridges ${bridged.join(" and ")} for the round \u2014 auto-advance on the linked track is not yet enforced by this engine.` }),
+          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_CORPORATE_MERGER", playerId, catalogId: "SPEC_10", bridgedTracks: bridged, message: `${playerId}'s Corporate Merger bridges ${bridged.join(" and ")} for the round \u2014 advancing either track now auto-advances the other.` }),
           effectOutcome: DEFAULT_OUTCOME
         };
       }
       function handleSpec13(state, context) {
         const { playerId } = context;
-        // IMMEDIATE flag write is real (session.guaranteedFirstPlayerNextRound,
-        // matching this project's own established naming from earlier
-        // Shift-card work). The "take 2 turns back-to-back" half needs
-        // enforcement inside next round's turn-order resolution, which
-        // this pass doesn't touch — flagged, not silently claimed.
         const nextState = { ...state, session: { ...state.session, guaranteedFirstPlayerNextRound: playerId } };
         return {
           state: appendLog(nextState, { type: "SPECIALIST_EFFECT_HOSTILE_TAKEOVER_CLAIMED", playerId, catalogId: "SPEC_13", message: `${playerId} claims The Hostile Takeover \u2014 guaranteed 1st player next round is written, but the extra back-to-back turn is not yet enforced by this engine.` }),
@@ -7273,18 +7129,6 @@ var BrokerBossEngine = (() => {
           };
           return nextState;
         }
-        // FIX (two-stage redesign): this used to draw the card AND apply
-        // its effect (track changes, wallet changes, everything) all
-        // within this same call, only pausing afterward to show what had
-        // already happened — "the engine applies the effect instantly
-        // and pops up a modal showing the card already spent/resolved."
-        // Stage 1 now only draws and announces the card — the shift deck
-        // itself updates (the card really was drawn, revealed to every
-        // player), but the shift tracker position, the card's actual
-        // effect, and the discard-pile move all wait for Stage 2
-        // (resolveShiftEffectStage2), triggered only once a real player
-        // clicks "Resolve Shift Effect." Nothing about any player's
-        // tracks, wallet, or meeples changes until then.
         return {
           ...state,
           shiftDeck: { ...shiftDeck, drawPile: remainingDrawPile },
@@ -7909,14 +7753,6 @@ var BrokerBossEngine = (() => {
           cost: space.cost || null
         });
         if (player.hasMarketHijack && updatedCopycatMeeple !== player.timeMeeples.copycatMeeple) {
-          // FIX: MARKET_HIJACK's passive ("whenever you place your
-          // Copycat Meeple... also immediately advance +1 space on the
-          // Market Share Track for free") had no trigger point anywhere
-          // — the flag itself didn't even exist until the handler above
-          // was added. This is the actual Copycat Meeple placement site;
-          // updatedCopycatMeeple only differs from the pre-placement
-          // reference exactly when the copycat meeple was the one
-          // committed this call.
           nextState = adjustMarketShare(nextState, playerId, 1);
           nextState = appendLog(nextState, {
             type: "MARKET_HIJACK_TRIGGERED",
@@ -8221,6 +8057,49 @@ var BrokerBossEngine = (() => {
         });
         return { state: nextState, error: null, detail: null };
       }
+      function useAutomationEngineer(state, playerId) {
+        const player = state.players[playerId];
+        if (!player) {
+          return { state, error: "PLAYER_NOT_FOUND", detail: null };
+        }
+        if (!player.copiedActionSpaceId) {
+          return { state, error: "ABILITY_NOT_UNLOCKED", detail: null };
+        }
+        if (player.automationEngineerUsedThisRound) {
+          return { state, error: "ALREADY_USED_THIS_ROUND", detail: null };
+        }
+        const space = state.board.actionSpaces.find((s) => s.spaceId === player.copiedActionSpaceId);
+        if (!space) {
+          return { state, error: "SPACE_NOT_FOUND", detail: { spaceId: player.copiedActionSpaceId } };
+        }
+        if (DEFERRED_SPACE_TYPES.includes(space.type)) {
+          return { state, error: "SPACE_TYPE_NOT_SUPPORTED_FOR_AUTOMATION", detail: { spaceType: space.type } };
+        }
+        if (space.cost && (space.cost.profitTokens || 0) > 0 && player.wallet.profitTokens < space.cost.profitTokens) {
+          return { state, error: "INSUFFICIENT_FUNDS", detail: { required: space.cost.profitTokens, current: player.wallet.profitTokens } };
+        }
+        let nextState = state;
+        if (space.cost && (space.cost.profitTokens || space.cost.priorityTokens)) {
+          nextState = adjustWallet(nextState, playerId, -(space.cost.profitTokens || 0), -(space.cost.priorityTokens || 0));
+        }
+        const syntheticMeeple = { instanceId: `automation-engineer-${playerId}-${state.phase.round}` };
+        const occupantOrder = (space.occupiedBy ? space.occupiedBy.length : 0) + 1;
+        const result = resolveActionSpace(nextState, playerId, space, syntheticMeeple, null, occupantOrder);
+        nextState = {
+          ...result.state,
+          players: {
+            ...result.state.players,
+            [playerId]: { ...result.state.players[playerId], automationEngineerUsedThisRound: true }
+          }
+        };
+        nextState = appendLog(nextState, {
+          type: "SPECIALIST_EFFECT_AUTOMATION_ENGINEER_USED",
+          playerId,
+          spaceId: space.spaceId,
+          message: `${playerId}'s Automation Engineer triggers ${space.spaceId} for free (no Meeple) \u2014 any operational cost was still paid normally.`
+        });
+        return { state: nextState, error: null, detail: null };
+      }
       module.exports = {
         claimMarketShareBonusIfEligible,
         executeFreeBoardAction,
@@ -8231,6 +8110,7 @@ var BrokerBossEngine = (() => {
         resolveClearOpenMarketChoice,
         resolveClearOpenMarketFreeCardPick,
         useExecutiveOverdrive,
+        useAutomationEngineer,
         resolveImmediateSpace,
         validatePlacement,
         verifyActivePlayer,
@@ -8418,13 +8298,6 @@ var BrokerBossEngine = (() => {
             };
           }
           case "rosterSize": {
-            // FIX: roster.length counted every entry including agents
-            // marked isVoided:true (fired via office-capacity overflow,
-            // kept in the array rather than removed) — a player could
-            // satisfy a "roster of 5" requirement without having 5 real
-            // agents. Filtering isVoided matches the same convention
-            // already used everywhere else this field is checked
-            // (e.g. the office-overflow handler right above this one).
             const current = player.roster.filter((r) => !r.isVoided).length;
             if (current >= requirement.count) {
               return { ok: true };
@@ -8570,16 +8443,6 @@ var BrokerBossEngine = (() => {
         return { state: nextState, error: null, detail: null };
       }
       function resolveSpecialistCardEffectChoice(state, playerId, extra) {
-        // FIX: confirmed via direct verification that resolveActionCardEffectChoice
-        // (above) unconditionally calls resolveActionCardEffect regardless of
-        // catalog family — reusing ACTION_CARD_EFFECT_CHOICE for a specialist
-        // card like SPEC_3 (The Lobbyist) would have silently routed its
-        // catalogId into the action-card handler table, where it doesn't
-        // exist. This mirrors the same structure but calls
-        // resolveSpecialistCardEffect correctly. Does NOT call
-        // advanceActivePlayer — a specialist claim happens mid-placement
-        // inside placeMeeple, which handles turn advancement itself once
-        // this interrupt clears; advancing here too would double-advance.
         const interrupt = state.phase.pendingInterrupt;
         if (!interrupt || interrupt.type !== "ACTION_CARD_EFFECT_CHOICE" || interrupt.sourcePlayerId !== playerId || !interrupt.data || !interrupt.data.isSpecialistCardChoice) {
           return { state, error: "NO_PENDING_SPECIALIST_CARD_CHOICE", detail: { playerId, pendingInterrupt: interrupt || null } };
@@ -9152,6 +9015,9 @@ var BrokerBossEngine = (() => {
         return { ok: true };
       }
       function clearInterruptAndPassTurn(state) {
+        if (state.phase.pendingInterrupt && state.phase.pendingInterrupt.type !== "NULL") {
+          return state;
+        }
         return advanceActivePlayer({ ...state, phase: { ...state.phase, pendingInterrupt: NULL_INTERRUPT } });
       }
       function resolveRecruitFromGrowthHub(state, playerId, agentCatalogId) {
@@ -9939,14 +9805,6 @@ var BrokerBossEngine = (() => {
         };
       }
       function expiredStatusTokenClearSweep(state) {
-        // FIX: confirmed via a direct audit that this was the ONLY
-        // place expiresAt:"end_of_round" tokens were ever created (the
-        // Specialist Hub's EXECUTED token) and NOWHERE in the entire
-        // cleanup sequence ever checked or cleared that field — the hub
-        // was declaring its own token should expire, but nothing ever
-        // honored that. Once claimed in round 1, it stayed permanently
-        // "already spent" for the rest of the game, rejecting every
-        // player who tried it afterward.
         const statusTokens = state.board.statusTokens || [];
         const remaining = statusTokens.filter((t) => t.expiresAt !== "end_of_round");
         if (remaining.length === statusTokens.length) return state;
@@ -10408,11 +10266,18 @@ var BrokerBossEngine = (() => {
             },
             loyaltyTokensMax: player.loyaltyTokensMax,
             score: player.score && player.score.finalized ? { ...player.score } : null,
-            oncePerRoundAbilitiesUsed: [...(player.oncePerRoundAbilitiesUsed || [])],
+            oncePerRoundAbilitiesUsed: [...player.oncePerRoundAbilitiesUsed || []],
             hasMarketHijack: !!player.hasMarketHijack,
             hasGoldenParachute: !!player.hasGoldenParachute,
             liquidityStaffPT: player.liquidityStaffPT || 0,
-            liquidityStaffPTUsableRound: player.liquidityStaffPTUsableRound || null
+            liquidityStaffPTUsableRound: player.liquidityStaffPTUsableRound || null,
+            // v=49: expose SPEC_9/SPEC_7's claimed-ability state so the front end
+            // can actually render a button for them — these existed in engine
+            // state already but were never surfaced here, so there was no way
+            // for the UI to know the ability had been claimed at all.
+            executiveOverdriveAvailable: !!player.executiveOverdriveAvailable,
+            copiedActionSpaceId: player.copiedActionSpaceId || null,
+            automationEngineerUsedThisRound: !!player.automationEngineerUsedThisRound
           };
         });
         return playerViewModels;
@@ -10971,7 +10836,7 @@ var BrokerBossEngine = (() => {
           shellCompanyStash: (player.shellCompanyStash || []).map((s) => ({ ...s })),
           shellCompanyRecruitsUsed: player.shellCompanyRecruitsUsed || 0,
           score: player.score ? { ...player.score } : null,
-          oncePerRoundAbilitiesUsed: [...(player.oncePerRoundAbilitiesUsed || [])],
+          oncePerRoundAbilitiesUsed: [...player.oncePerRoundAbilitiesUsed || []],
           hasMarketHijack: !!player.hasMarketHijack,
           hasGoldenParachute: !!player.hasGoldenParachute,
           liquidityStaffPT: player.liquidityStaffPT || 0,
@@ -12149,11 +12014,6 @@ var BrokerBossEngine = (() => {
         }
         if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC3_HUB_TARGET") {
           const availableHubs = interrupt.data.availableHubs || [];
-          // Same "most disruptive, deterministic" default the original
-          // handler used for every player before this fix — now correctly
-          // scoped to only apply as the bot's own automatic choice, not
-          // forced on human players who can actually decide for
-          // themselves via the real UI.
           const spacesByHub = {};
           (state.board.actionSpaces || []).forEach((s) => {
             if (!spacesByHub[s.hub]) spacesByHub[s.hub] = [];
@@ -12163,7 +12023,10 @@ var BrokerBossEngine = (() => {
           let bestCount = -1;
           availableHubs.forEach((hub) => {
             const count = (spacesByHub[hub] || []).length;
-            if (count > bestCount) { bestCount = count; chosenHub = hub; }
+            if (count > bestCount) {
+              bestCount = count;
+              chosenHub = hub;
+            }
           });
           const loggedState2 = appendLog(state, {
             type: "BOT_INTERRUPT_DECISION_MADE",
@@ -12343,16 +12206,6 @@ var BrokerBossEngine = (() => {
           }
         }
         if (interrupt.type === "SHIFT_CARD_RESOLUTION") {
-          // Bots don't need to pause and read the card — only a human
-          // player genuinely benefits from the two-stage announcement/
-          // consequences gate. FIX: this used to unconditionally clear
-          // the interrupt regardless of stage — for a bot-triggered
-          // shift card at the "announcement" stage (effect not yet
-          // applied), that would have cleared the interrupt WITHOUT
-          // ever calling resolveShiftEffectStage2, silently skipping the
-          // card's actual effect entirely for that game. Now correctly
-          // drives through both real stages instead of just discarding
-          // whichever one it's currently on.
           const stage = interrupt.data && interrupt.data.stage;
           if (stage === "announcement") {
             const result2 = resolveShiftEffectStage2(state, interrupt.sourcePlayerId);
@@ -12829,10 +12682,11 @@ var BrokerBossEngine = (() => {
       var { renderPlayerDashboard } = require_playerDashboardRenderer();
       var { renderInterruptOverlay } = require_interruptOverlayRenderer();
       var { dispatchAction, triggerBotTurnIfActive } = require_gameActionDispatcher();
-      var { cancelDeferredSpaceChoice, resolveDualTrackChoice, resolveHireCoachChoice, resolveClearOpenMarketChoice, resolveClearOpenMarketFreeCardPick, executeFreeBoardAction } = require_workerPlacementReducer();
+      var { cancelDeferredSpaceChoice, resolveDualTrackChoice, resolveHireCoachChoice, resolveClearOpenMarketChoice, resolveClearOpenMarketFreeCardPick, executeFreeBoardAction, useExecutiveOverdrive, useAutomationEngineer } = require_workerPlacementReducer();
       var { resolveShellCompanySecondRecruit } = require_specialistCards();
       var { resolveTrackBranchChoice, resolveTargetedMilestone, forfeitTargetedMilestone, useProprietaryAlgorithm, useLiquidationEngine } = require_techTrackReducer();
       var { resolveDeficitTrackChoice } = require_cardEffectHelpers();
+      var { resolveShiftEffectStage2, acknowledgeShiftCardResolution } = require_shiftReducer();
       var { playActionCardTransactional, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
       var { acquireActionCard } = require_openMarketActionCardReducer();
       var {
@@ -12923,6 +12777,27 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = cancelDeferredSpaceChoice(state, userIntent.playerId);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          // v=49: wires SPEC_9 (Executive Overdrive) and SPEC_7 (Automation
+          // Engineer)'s consuming abilities — both engine functions already
+          // existed and were correct, but neither had a dispatch case, so
+          // there was no way for a player to ever actually trigger them.
+          case "USE_EXECUTIVE_OVERDRIVE": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            if (typeof userIntent.spaceId !== "string" || userIntent.spaceId.length === 0) {
+              return { state, error: "INVALID_SPACE_ID", detail: null };
+            }
+            const result = useExecutiveOverdrive(state, userIntent.playerId, userIntent.spaceId);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          case "USE_AUTOMATION_ENGINEER": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = useAutomationEngineer(state, userIntent.playerId);
             return { state: result.state, error: result.error, detail: result.detail };
           }
           case "RESOLVE_DUAL_TRACK_CHOICE": {
