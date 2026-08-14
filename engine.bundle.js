@@ -6656,22 +6656,40 @@ var BrokerBossEngine = (() => {
         };
       }
       function handleSpec4(state, context) {
-        const { playerId } = context;
-        const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
-        const drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
-        const drawn = drawPile.slice(0, 5);
-        const remaining = drawPile.slice(5);
-        if (drawn.length === 0) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
+        const { playerId, extra } = context;
+        if (!extra || !extra.selectedCatalogIds) {
+          const drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
+          const drawn = drawPile.slice(0, 5);
+          const remainingDrawPile = drawPile.slice(5);
+          if (drawn.length === 0) {
+            return {
+              state: appendLog(state, { type: "SPECIALIST_EFFECT_INSIDE_SOURCE_SKIPPED", playerId, catalogId: "SPEC_4", reason: "AGENT_DECK_EMPTY" }),
+              effectOutcome: DEFAULT_OUTCOME
+            };
+          }
+          return {
+            state: {
+              ...state,
+              board: { ...state.board, decks: { ...state.board.decks, agentDrawPile: remainingDrawPile } },
+              phase: {
+                ...state.phase,
+                pendingInterrupt: {
+                  type: "ACTION_CARD_EFFECT_CHOICE",
+                  sourcePlayerId: playerId,
+                  data: { catalogId: "SPEC_4", choiceType: "SPEC4_AGENT_SELECTION", cardInstanceId: context.cardInstanceId, drawnCatalogIds: drawn, isSpecialistCardChoice: true }
+                }
+              }
+            },
+            effectOutcome: DEFAULT_OUTCOME
+          };
         }
-        const sorted = [...drawn].sort((a, b) => {
-          const va = agentCatalog[a] && agentCatalog[a].totalProfit || 0;
-          const vb = agentCatalog[b] && agentCatalog[b].totalProfit || 0;
-          return vb - va;
-        });
-        let nextState = { ...state, board: { ...state.board, decks: { ...state.board.decks, agentDrawPile: remaining } } };
+        const interrupt = state.phase.pendingInterrupt;
+        const drawnCatalogIds = interrupt && interrupt.data && interrupt.data.drawnCatalogIds || [];
+        const selected = (extra.selectedCatalogIds || []).filter((id) => drawnCatalogIds.includes(id)).slice(0, 2);
+        const unselected = drawnCatalogIds.filter((id) => !selected.includes(id));
+        let nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
         const recruited = [];
-        for (const catalogId of sorted.slice(0, 2)) {
+        for (const catalogId of selected) {
           const player = nextState.players[playerId];
           const capacity = player.tracks.offices.unlocked;
           const activeCount = player.roster.filter((r) => !r.isVoided).length;
@@ -6689,10 +6707,10 @@ var BrokerBossEngine = (() => {
           nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, roster: [...player.roster, newEntry] } } };
           recruited.push(catalogId);
         }
-        const returnedToBottom = sorted.filter((c) => !recruited.includes(c));
+        const returnedToBottom = [...unselected, ...selected.filter((id) => !recruited.includes(id))];
         nextState = { ...nextState, board: { ...nextState.board, decks: { ...nextState.board.decks, agentDrawPile: [...nextState.board.decks.agentDrawPile, ...returnedToBottom] } } };
         return {
-          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_INSIDE_SOURCE", playerId, catalogId: "SPEC_4", recruited, message: `${playerId}'s Inside Source recruits ${recruited.length ? recruited.join(", ") : "no one (desk full)"} for free; the rest return to the bottom of the deck.` }),
+          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_INSIDE_SOURCE", playerId, catalogId: "SPEC_4", recruited, message: `${playerId}'s Inside Source recruits ${recruited.length ? recruited.join(", ") : "no one"}; the rest return to the bottom of the deck.` }),
           effectOutcome: DEFAULT_OUTCOME
         };
       }
@@ -10395,6 +10413,12 @@ var BrokerBossEngine = (() => {
           consequencesLogEntries: Array.isArray(data.consequencesLogEntries) ? [...data.consequencesLogEntries] : [],
           isSpecialistCardChoice: !!data.isSpecialistCardChoice,
           availableHubs: Array.isArray(data.availableHubs) ? [...data.availableHubs] : [],
+          // v=53: SPEC_4 (The Inside Source) — the 5 agent catalogIds drawn and
+          // awaiting the player's up-to-2 selection. Same explicit-field
+          // pattern as availableHubs immediately above; buildInterruptViewModel
+          // only forwards fields it names here, so this needed adding rather
+          // than assuming a generic passthrough existed.
+          drawnCatalogIds: Array.isArray(data.drawnCatalogIds) ? [...data.drawnCatalogIds] : [],
           candidates: resolvedCandidates,
           agentCandidates: resolvedAgentCandidates,
           deskStatus
