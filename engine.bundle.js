@@ -9033,7 +9033,7 @@ var BrokerBossEngine = (() => {
         return { ok: true };
       }
       function clearInterruptAndPassTurn(state) {
-        if (state.phase.pendingInterrupt && state.phase.pendingInterrupt.type !== "NULL") {
+        if (state.phase.pendingInterrupt && state.phase.pendingInterrupt.type === "SHIFT_CARD_RESOLUTION") {
           return state;
         }
         return advanceActivePlayer({ ...state, phase: { ...state.phase, pendingInterrupt: NULL_INTERRUPT } });
