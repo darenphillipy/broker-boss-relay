@@ -5486,12 +5486,11 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft013(state, context) {
-        const { playerId } = context;
-        const player = state.players[playerId];
-        if (playerHasShiftImmunity(player)) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        const nextState = adjustTrack(state, playerId, "recognition", -3);
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = adjustTrack(nextState, playerId, "recognition", -3);
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft015(state, context) {
@@ -5553,23 +5552,21 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft040(state, context) {
-        const { playerId } = context;
-        const player = state.players[playerId];
-        if (playerHasShiftImmunity(player)) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        let nextState = adjustWallet(state, playerId, -5, 0);
-        nextState = adjustTrack(nextState, playerId, "technology", -2);
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = adjustWallet(nextState, playerId, -5, 0);
+          nextState = adjustTrack(nextState, playerId, "technology", -2);
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft047(state, context) {
-        const { playerId } = context;
-        const player = state.players[playerId];
-        if (playerHasShiftImmunity(player)) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        let nextState = adjustTrack(state, playerId, "recognition", -3);
-        nextState = adjustWallet(nextState, playerId, -5, 0);
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = adjustTrack(nextState, playerId, "recognition", -3);
+          nextState = adjustWallet(nextState, playerId, -5, 0);
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function findPlayerWithMostAgents(state) {
@@ -5628,11 +5625,11 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft014(state, context) {
-        const { playerId } = context;
-        if (playerHasShiftImmunity(state.players[playerId])) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        const nextState = fireAgentBySelector(state, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "totalProfit", "lowest"), "SFT_014");
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "totalProfit", "lowest"), "SFT_014");
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft017(state, context) {
@@ -5687,39 +5684,39 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft031(state, context) {
-        const { playerId } = context;
-        if (playerHasShiftImmunity(state.players[playerId])) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        const nextState = fireAgentBySelector(state, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "recognition", "lowest"), "SFT_031");
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "recognition", "lowest"), "SFT_031");
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft041(state, context) {
-        const { playerId } = context;
-        if (playerHasShiftImmunity(state.players[playerId])) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        let nextState = adjustWallet(state, playerId, -5, 0);
-        nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "totalProfit", "lowest"), "SFT_041");
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = adjustWallet(nextState, playerId, -5, 0);
+          nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "totalProfit", "lowest"), "SFT_041");
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft046(state, context) {
-        const { playerId } = context;
-        if (playerHasShiftImmunity(state.players[playerId])) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
-        let nextState = adjustTrack(state, playerId, "recognition", -1);
-        nextState = shrinkOfficeAndFireExcess(nextState, playerId, agentCatalog, "SFT_046");
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = adjustTrack(nextState, playerId, "recognition", -1);
+          nextState = shrinkOfficeAndFireExcess(nextState, playerId, agentCatalog, "SFT_046");
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft051(state, context) {
-        const { playerId } = context;
-        if (playerHasShiftImmunity(state.players[playerId])) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        let nextState = adjustTrack(state, playerId, "recognition", -2);
-        nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "culture", "highest"), "SFT_051");
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = adjustTrack(nextState, playerId, "recognition", -2);
+          nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "culture", "highest"), "SFT_051");
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft052(state, context) {
@@ -5761,22 +5758,23 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft007(state, context) {
-        const { playerId } = context;
-        const player = state.players[playerId];
-        const targetPlayerId = leftNeighborId(state, playerId);
-        if (!targetPlayerId || player.hand.actionCards.length === 0) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        const [given, ...rest] = player.hand.actionCards;
-        const target = state.players[targetPlayerId];
-        const nextState = {
-          ...state,
-          players: {
-            ...state.players,
-            [playerId]: { ...player, hand: { ...player.hand, actionCards: rest } },
-            [targetPlayerId]: { ...target, hand: { ...target.hand, actionCards: [...target.hand.actionCards, given] } }
-          }
-        };
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          const player = nextState.players[playerId];
+          const targetPlayerId = leftNeighborId(nextState, playerId);
+          if (!targetPlayerId || player.hand.actionCards.length === 0) return;
+          const [given, ...rest] = player.hand.actionCards;
+          const target = nextState.players[targetPlayerId];
+          nextState = {
+            ...nextState,
+            players: {
+              ...nextState.players,
+              [playerId]: { ...player, hand: { ...player.hand, actionCards: rest } },
+              [targetPlayerId]: { ...target, hand: { ...target.hand, actionCards: [...target.hand.actionCards, given] } }
+            }
+          };
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft012(state, context) {
@@ -5809,10 +5807,10 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft022(state, context) {
-        const { playerId } = context;
-        let nextState = playerHasShiftImmunity(state.players[playerId]) ? state : adjustTrack(state, playerId, "recognition", -3);
+        let nextState = state;
         Object.keys(nextState.players).forEach((pid) => {
           if (playerHasShiftImmunity(nextState.players[pid])) return;
+          nextState = adjustTrack(nextState, pid, "recognition", -3);
           nextState = { ...nextState, players: { ...nextState.players, [pid]: { ...nextState.players[pid], recruitBannedUntilRound: nextState.phase.round } } };
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
@@ -5836,11 +5834,13 @@ var BrokerBossEngine = (() => {
       }
       function handleSft026(state, context) {
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
+        const playerChoices = context.extra && context.extra.playerChoices || null;
         let nextState = state;
         Object.keys(nextState.players).forEach((playerId) => {
           const player = nextState.players[playerId];
           if (playerHasShiftImmunity(player)) return;
-          if (player.wallet.profitTokens >= 4) {
+          const choice = playerChoices ? playerChoices[playerId] : player.wallet.profitTokens >= 4 ? "PAY" : "PENALTY";
+          if (choice === "PAY" && player.wallet.profitTokens >= 4) {
             nextState = adjustWallet(nextState, playerId, -4, 0);
           } else {
             const eligible = player.roster.filter((r) => !r.isVoided && (agentCatalog[r.catalogId] && agentCatalog[r.catalogId].totalProfit || 0) <= 4);
@@ -5852,19 +5852,21 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft032(state, context) {
-        const { playerId } = context;
-        const player = state.players[playerId];
         let nextState = state;
-        if (player.hand.actionCards.length > 0) {
-          const [, ...rest] = player.hand.actionCards;
-          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: rest } } } };
-        }
-        const active = nextState.players[playerId].timeMeeples.active;
-        const idx = active.findIndex((m) => m.status === "in_supply");
-        if (idx >= 0) {
-          const newActive = active.map((m, i) => i === idx ? { ...m, status: "disabled_until_round", disabledUntilRound: nextState.phase.round + 1 } : m);
-          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], timeMeeples: { ...nextState.players[playerId].timeMeeples, active: newActive } } } };
-        }
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          const player = nextState.players[playerId];
+          if (player.hand.actionCards.length > 0) {
+            const [, ...rest] = player.hand.actionCards;
+            nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: rest } } } };
+          }
+          const active = nextState.players[playerId].timeMeeples.active;
+          const idx = active.findIndex((m) => m.status === "in_supply");
+          if (idx >= 0) {
+            const newActive = active.map((m, i) => i === idx ? { ...m, status: "disabled_until_round", disabledUntilRound: nextState.phase.round + 1 } : m);
+            nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], timeMeeples: { ...nextState.players[playerId].timeMeeples, active: newActive } } } };
+          }
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft034(state, context) {
@@ -5877,11 +5879,13 @@ var BrokerBossEngine = (() => {
       }
       function handleSft035(state, context) {
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
+        const playerChoices = context.extra && context.extra.playerChoices || null;
         let nextState = state;
         Object.keys(nextState.players).forEach((playerId) => {
           const player = nextState.players[playerId];
           if (playerHasShiftImmunity(player)) return;
-          if (player.wallet.profitTokens >= 6) {
+          const choice = playerChoices ? playerChoices[playerId] : player.wallet.profitTokens >= 6 ? "PAY" : "PENALTY";
+          if (choice === "PAY" && player.wallet.profitTokens >= 6) {
             nextState = adjustWallet(nextState, playerId, -6, 0);
           } else {
             nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "totalProfit", "highest"), "SFT_035");
@@ -5890,11 +5894,13 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft036(state, context) {
+        const playerChoices = context.extra && context.extra.playerChoices || null;
         let nextState = state;
         Object.keys(nextState.players).forEach((playerId) => {
           const player = nextState.players[playerId];
           if (playerHasShiftImmunity(player)) return;
-          if (player.wallet.profitTokens >= 5) {
+          const choice = playerChoices ? playerChoices[playerId] : player.wallet.profitTokens >= 5 ? "PAY" : "PENALTY";
+          if (choice === "PAY" && player.wallet.profitTokens >= 5) {
             nextState = adjustWallet(nextState, playerId, -5, 0);
           } else {
             const active = player.timeMeeples.active;
@@ -5909,13 +5915,14 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft037(state, context) {
-        const { playerId } = context;
-        const player = state.players[playerId];
-        if (player.hand.actionCards.length === 0) {
-          return { state, effectOutcome: DEFAULT_OUTCOME };
-        }
-        const [, ...rest] = player.hand.actionCards;
-        const nextState = { ...state, players: { ...state.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: rest } } } };
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          const player = nextState.players[playerId];
+          if (player.hand.actionCards.length === 0) return;
+          const [, ...rest] = player.hand.actionCards;
+          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: rest } } } };
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft039(state, context) {
@@ -5938,9 +5945,12 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft045(state, context) {
-        const { playerId } = context;
-        let nextState = playerHasShiftImmunity(state.players[playerId]) ? state : adjustWallet(state, playerId, -5, 0);
-        nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], hireStaffBannedUntilRound: nextState.phase.round } } };
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          nextState = adjustWallet(nextState, playerId, -5, 0);
+          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], hireStaffBannedUntilRound: nextState.phase.round } } };
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft048(state, context) {
@@ -5980,12 +5990,14 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft050(state, context) {
-        const { playerId } = context;
-        const player = state.players[playerId];
-        const discarded = player.hand.actionCards.slice(0, 2);
-        const remaining = player.hand.actionCards.slice(2);
-        let nextState = { ...state, players: { ...state.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: remaining } } } };
-        nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], additionalProfitBannedUntilRound: nextState.phase.round } } };
+        let nextState = state;
+        Object.keys(nextState.players).forEach((playerId) => {
+          if (playerHasShiftImmunity(nextState.players[playerId])) return;
+          const player = nextState.players[playerId];
+          const remaining = player.hand.actionCards.slice(2);
+          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: remaining } } } };
+          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], additionalProfitBannedUntilRound: nextState.phase.round } } };
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSft028(state, context) {
@@ -6136,40 +6148,46 @@ var BrokerBossEngine = (() => {
       }
       function handleSpec1(state, context) {
         const { playerId, extra } = context;
-        const usedDefaultTarget = !(extra && extra.targetPlayerId);
-        const targetPlayerId = extra && extra.targetPlayerId || getNextOpponentId(state, playerId);
-        if (!targetPlayerId || !state.players[targetPlayerId]) {
+        if (!extra || !extra.stolenCardInstanceId) {
+          const seatPlayerIds = Object.keys(state.players).filter((pid) => pid !== playerId);
+          const options = seatPlayerIds.map((pid) => ({ targetPlayerId: pid, cards: state.players[pid].hand.actionCards.map((c) => ({ instanceId: c.instanceId, catalogId: c.catalogId })) })).filter((opt) => opt.cards.length > 0);
+          if (options.length === 0) {
+            return {
+              state: appendLog(state, { type: "SPECIALIST_EFFECT_SNOOP_SKIPPED", playerId, catalogId: "SPEC_1", reason: "NO_VALID_TARGET" }),
+              effectOutcome: DEFAULT_OUTCOME
+            };
+          }
           return {
-            state: appendLog(state, {
-              type: "SPECIALIST_EFFECT_SNOOP_SKIPPED",
-              playerId,
-              catalogId: "SPEC_1",
-              reason: "NO_VALID_TARGET"
-            }),
+            state: {
+              ...state,
+              phase: {
+                ...state.phase,
+                pendingInterrupt: {
+                  type: "ACTION_CARD_EFFECT_CHOICE",
+                  sourcePlayerId: playerId,
+                  data: { catalogId: "SPEC_1", choiceType: "SPEC1_STEAL_CARD", cardInstanceId: context.cardInstanceId, stealOptions: options, isSpecialistCardChoice: true }
+                }
+              }
+            },
             effectOutcome: DEFAULT_OUTCOME
           };
+        }
+        const { targetPlayerId, stolenCardInstanceId } = extra;
+        if (!targetPlayerId || !state.players[targetPlayerId]) {
+          return { state: appendLog(state, { type: "SPECIALIST_EFFECT_SNOOP_SKIPPED", playerId, catalogId: "SPEC_1", reason: "NO_VALID_TARGET" }), effectOutcome: DEFAULT_OUTCOME };
         }
         const target = state.players[targetPlayerId];
-        if (target.hand.actionCards.length === 0) {
-          return {
-            state: appendLog(state, {
-              type: "SPECIALIST_EFFECT_SNOOP_WASTED",
-              playerId,
-              catalogId: "SPEC_1",
-              targetPlayerId,
-              reason: "TARGET_HAND_EMPTY",
-              usedDefaultTarget
-            }),
-            effectOutcome: DEFAULT_OUTCOME
-          };
+        const stolenCard = target.hand.actionCards.find((c) => c.instanceId === stolenCardInstanceId);
+        if (!stolenCard) {
+          return { state: appendLog(state, { type: "SPECIALIST_EFFECT_SNOOP_SKIPPED", playerId, catalogId: "SPEC_1", targetPlayerId, reason: "CARD_NOT_FOUND" }), effectOutcome: DEFAULT_OUTCOME };
         }
-        const stolenCard = target.hand.actionCards[0];
-        const remainingTargetHand = target.hand.actionCards.slice(1);
+        const remainingTargetHand = target.hand.actionCards.filter((c) => c.instanceId !== stolenCardInstanceId);
         const draw = drawOneActionCardCatalogId(target.hand.personalDrawPile, target.hand.personalDiscardPile);
         const newTargetHandCards = draw.catalogId ? [...remainingTargetHand, { instanceId: generateActionCardInstanceId(targetPlayerId), catalogId: draw.catalogId }] : remainingTargetHand;
         const claimer = state.players[playerId];
         let nextState = {
           ...state,
+          phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } },
           players: {
             ...state.players,
             [playerId]: {
@@ -6198,43 +6216,42 @@ var BrokerBossEngine = (() => {
           stolenCardInstanceId: stolenCard.instanceId,
           stolenCardCatalogId: stolenCard.catalogId,
           replacementCatalogId: draw.catalogId,
-          usedDefaultTarget,
           message: `${playerId} steals an Action Card from ${targetPlayerId} (The Snoop).`
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleSpec2(state, context) {
         const { playerId, extra } = context;
-        const usedDefaultTarget = !(extra && extra.targetPlayerId);
-        const targetPlayerId = extra && extra.targetPlayerId || getNextOpponentId(state, playerId);
-        if (!targetPlayerId || !state.players[targetPlayerId]) {
+        if (!extra || !extra.agentInstanceId) {
+          const seatPlayerIds = Object.keys(state.players).filter((pid) => pid !== playerId);
+          const options = seatPlayerIds.map((pid) => ({ targetPlayerId: pid, agents: (state.players[pid].roster || []).filter((r) => !r.isVoided).map((r) => ({ agentInstanceId: r.agentInstanceId, catalogId: r.catalogId })) })).filter((opt) => opt.agents.length > 0);
+          if (options.length === 0) {
+            return {
+              state: appendLog(state, { type: "SPECIALIST_EFFECT_WHISTLEBLOWER_SKIPPED", playerId, catalogId: "SPEC_2", reason: "NO_VALID_TARGET" }),
+              effectOutcome: DEFAULT_OUTCOME
+            };
+          }
           return {
-            state: appendLog(state, {
-              type: "SPECIALIST_EFFECT_WHISTLEBLOWER_SKIPPED",
-              playerId,
-              catalogId: "SPEC_2",
-              reason: "NO_VALID_TARGET"
-            }),
+            state: {
+              ...state,
+              phase: {
+                ...state.phase,
+                pendingInterrupt: {
+                  type: "ACTION_CARD_EFFECT_CHOICE",
+                  sourcePlayerId: playerId,
+                  data: { catalogId: "SPEC_2", choiceType: "SPEC2_RELEASE_AGENT", cardInstanceId: context.cardInstanceId, releaseOptions: options, isSpecialistCardChoice: true }
+                }
+              }
+            },
             effectOutcome: DEFAULT_OUTCOME
           };
+        }
+        const { targetPlayerId, agentInstanceId } = extra;
+        if (!targetPlayerId || !state.players[targetPlayerId]) {
+          return { state: appendLog(state, { type: "SPECIALIST_EFFECT_WHISTLEBLOWER_SKIPPED", playerId, catalogId: "SPEC_2", reason: "NO_VALID_TARGET" }), effectOutcome: DEFAULT_OUTCOME };
         }
         const target = state.players[targetPlayerId];
-        if (!target.roster || target.roster.length === 0) {
-          return {
-            state: appendLog(state, {
-              type: "SPECIALIST_EFFECT_WHISTLEBLOWER_WASTED",
-              playerId,
-              catalogId: "SPEC_2",
-              targetPlayerId,
-              reason: "TARGET_ROSTER_EMPTY",
-              usedDefaultTarget
-            }),
-            effectOutcome: DEFAULT_OUTCOME
-          };
-        }
-        const usedDefaultAgent = !(extra && extra.agentInstanceId);
-        const agentInstanceId = extra && extra.agentInstanceId || target.roster[0].agentInstanceId;
-        const agentEntry = target.roster.find((a) => a.agentInstanceId === agentInstanceId);
+        const agentEntry = (target.roster || []).find((a) => a.agentInstanceId === agentInstanceId);
         if (!agentEntry) {
           return {
             state: appendLog(state, {
@@ -6254,6 +6271,7 @@ var BrokerBossEngine = (() => {
         const updatedRoster = target.roster.filter((a) => a.agentInstanceId !== agentInstanceId);
         let nextState = {
           ...state,
+          phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } },
           players: {
             ...state.players,
             [targetPlayerId]: { ...target, roster: updatedRoster }
@@ -6277,8 +6295,6 @@ var BrokerBossEngine = (() => {
           agentInstanceId,
           agentCatalogId: agentEntry.catalogId,
           profitCompensation,
-          usedDefaultTarget,
-          usedDefaultAgent,
           message: `${playerId} forces ${targetPlayerId} to release an Agent to the open market; ${targetPlayerId} is compensated ${profitCompensation} PT (The Whistleblower).`
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
@@ -6451,13 +6467,41 @@ var BrokerBossEngine = (() => {
       function handleSpec11(state, context) {
         const { playerId, extra } = context;
         const eligibleOpponents = Object.keys(state.players).filter((pid) => pid !== playerId).map((pid) => ({ playerId: pid, tech: state.players[pid].tracks.technology })).filter((p) => p.tech.branch === "A" || p.tech.branch === "B").filter((p) => p.tech.value >= 5);
-        let chosenTargetPlayerId = extra && extra.targetPlayerId;
-        let usedDefaultTarget = false;
-        if (!chosenTargetPlayerId) {
-          usedDefaultTarget = true;
-          const sorted = [...eligibleOpponents].sort((a, b) => b.tech.value - a.tech.value);
-          chosenTargetPlayerId = sorted[0] ? sorted[0].playerId : null;
+        if (!extra || !extra.targetPlayerId) {
+          if (eligibleOpponents.length === 0) {
+            return {
+              state: appendLog(state, {
+                type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE_SKIPPED",
+                playerId,
+                catalogId: "SPEC_11",
+                reason: "NO_ELIGIBLE_OPPONENT",
+                message: `${playerId} claims The Ghost in the Machine, but no opponent has reached Level 5 Technology yet \u2014 nothing to copy.`
+              }),
+              effectOutcome: DEFAULT_OUTCOME
+            };
+          }
+          return {
+            state: {
+              ...state,
+              phase: {
+                ...state.phase,
+                pendingInterrupt: {
+                  type: "ACTION_CARD_EFFECT_CHOICE",
+                  sourcePlayerId: playerId,
+                  data: {
+                    catalogId: "SPEC_11",
+                    choiceType: "SPEC11_COPY_TARGET",
+                    cardInstanceId: context.cardInstanceId,
+                    copyOptions: eligibleOpponents.map((o) => ({ targetPlayerId: o.playerId, branch: o.tech.branch, value: o.tech.value })),
+                    isSpecialistCardChoice: true
+                  }
+                }
+              }
+            },
+            effectOutcome: DEFAULT_OUTCOME
+          };
         }
+        const chosenTargetPlayerId = extra.targetPlayerId;
         if (!chosenTargetPlayerId || !state.players[chosenTargetPlayerId]) {
           return {
             state: appendLog(state, {
@@ -6485,6 +6529,7 @@ var BrokerBossEngine = (() => {
         }
         const nextState = {
           ...state,
+          phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } },
           players: {
             ...state.players,
             [playerId]: { ...state.players[playerId], ghostInTheMachineBorrowedBranch: targetTech.branch }
@@ -6498,7 +6543,6 @@ var BrokerBossEngine = (() => {
             catalogId: "SPEC_11",
             targetPlayerId: chosenTargetPlayerId,
             copiedBranch: targetTech.branch,
-            usedDefaultTarget,
             message: `${playerId}'s Ghost in the Machine copies ${chosenTargetPlayerId}'s Technology-${targetTech.branch} passive (${passiveName}) for the rest of this round.`
           }),
           effectOutcome: DEFAULT_OUTCOME
@@ -7083,6 +7127,7 @@ var BrokerBossEngine = (() => {
       var { playerHasShiftImmunity } = require_immunityReducer();
       var { getSharedRng } = require_cardEffectHelpers();
       var NULL_INTERRUPT = { type: "NULL", sourcePlayerId: null, data: {} };
+      var SHIFT_CARD_CHOICE_CATALOG_IDS = /* @__PURE__ */ new Set(["SFT_026", "SFT_035", "SFT_036"]);
       function appendLog(state, entry) {
         const logEntry = {
           seq: state.log.length + 1,
@@ -7096,7 +7141,7 @@ var BrokerBossEngine = (() => {
         if (!drawPile || drawPile.length === 0) return null;
         return drawPile[0];
       }
-      function applyShiftCardEffect(state, playerId, drawnCard) {
+      function applyShiftCardEffect(state, playerId, drawnCard, extra = null) {
         let resolveShiftCardEffect;
         try {
           ({ resolveShiftCardEffect } = require_cardEffectRegistry());
@@ -7104,7 +7149,7 @@ var BrokerBossEngine = (() => {
           resolveShiftCardEffect = null;
         }
         if (typeof resolveShiftCardEffect === "function") {
-          return resolveShiftCardEffect(state, playerId, drawnCard.catalogId);
+          return resolveShiftCardEffect(state, playerId, drawnCard.catalogId, null, extra);
         }
         return appendLog(state, {
           type: "CARD_EFFECT_NOT_IMPLEMENTED",
@@ -7160,19 +7205,10 @@ var BrokerBossEngine = (() => {
           }
         };
       }
-      function resolveShiftEffectStage2(state, playerId) {
-        const interrupt = state.phase.pendingInterrupt;
-        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "announcement") {
-          return { state, error: "NO_PENDING_SHIFT_ANNOUNCEMENT", detail: { pendingInterrupt: interrupt || null } };
-        }
-        if (playerId !== interrupt.sourcePlayerId) {
-          return { state, error: "NOT_YOUR_SHIFT_CARD_TO_RESOLVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
-        }
-        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
+      function applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, extra) {
         const seatPlayerIds = state.session.seats.map((s) => s.playerId);
-        const triggeringPlayerId = interrupt.sourcePlayerId;
         const logLengthBeforeEffect = state.log.length;
-        let nextState = applyShiftCardEffect(state, triggeringPlayerId, drawnCard);
+        let nextState = applyShiftCardEffect(state, triggeringPlayerId, drawnCard, extra || null);
         seatPlayerIds.forEach((pid) => {
           const player = nextState.players[pid];
           if (playerHasShiftImmunity(player)) {
@@ -7201,6 +7237,71 @@ var BrokerBossEngine = (() => {
             }
           }
         };
+        return nextState;
+      }
+      function resolveShiftEffectStage2(state, playerId) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "announcement") {
+          return { state, error: "NO_PENDING_SHIFT_ANNOUNCEMENT", detail: { pendingInterrupt: interrupt || null } };
+        }
+        if (playerId !== interrupt.sourcePlayerId) {
+          return { state, error: "NOT_YOUR_SHIFT_CARD_TO_RESOLVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
+        }
+        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
+        if (SHIFT_CARD_CHOICE_CATALOG_IDS.has(drawnCard.catalogId)) {
+          const seatPlayerIds = state.session.seats.map((s) => s.playerId);
+          const pendingChoicePlayerIds = seatPlayerIds.filter((pid) => !playerHasShiftImmunity(state.players[pid]));
+          const nextState2 = {
+            ...state,
+            phase: {
+              ...state.phase,
+              pendingInterrupt: {
+                type: "SHIFT_CARD_RESOLUTION",
+                sourcePlayerId: interrupt.sourcePlayerId,
+                data: {
+                  drawnCardCatalogId: drawnCard.catalogId,
+                  stage: "player_choices",
+                  pendingChoicePlayerIds,
+                  playerChoices: {}
+                }
+              }
+            }
+          };
+          return { state: nextState2, error: null, detail: null };
+        }
+        const triggeringPlayerId = interrupt.sourcePlayerId;
+        const nextState = applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, null);
+        return { state: nextState, error: null, detail: null };
+      }
+      function resolveShiftCardPlayerChoice(state, playerId, choice) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "player_choices") {
+          return { state, error: "NO_PENDING_SHIFT_CARD_CHOICE", detail: { pendingInterrupt: interrupt || null } };
+        }
+        if (!interrupt.data.pendingChoicePlayerIds.includes(playerId)) {
+          return { state, error: "NOT_YOUR_SHIFT_CARD_CHOICE_TO_MAKE", detail: { pendingChoicePlayerIds: interrupt.data.pendingChoicePlayerIds } };
+        }
+        if (choice !== "PAY" && choice !== "PENALTY") {
+          return { state, error: "INVALID_SHIFT_CARD_CHOICE", detail: { choice } };
+        }
+        const remainingPlayerIds = interrupt.data.pendingChoicePlayerIds.filter((pid) => pid !== playerId);
+        const playerChoices = { ...interrupt.data.playerChoices, [playerId]: choice };
+        if (remainingPlayerIds.length > 0) {
+          const nextState2 = {
+            ...state,
+            phase: {
+              ...state.phase,
+              pendingInterrupt: {
+                ...state.phase.pendingInterrupt,
+                data: { ...interrupt.data, pendingChoicePlayerIds: remainingPlayerIds, playerChoices }
+              }
+            }
+          };
+          return { state: nextState2, error: null, detail: null };
+        }
+        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
+        const triggeringPlayerId = interrupt.sourcePlayerId;
+        const nextState = applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, { playerChoices });
         return { state: nextState, error: null, detail: null };
       }
       function acknowledgeShiftCardResolution(state, playerId) {
@@ -7217,6 +7318,7 @@ var BrokerBossEngine = (() => {
       module.exports = {
         resolveShiftTrigger,
         resolveShiftEffectStage2,
+        resolveShiftCardPlayerChoice,
         drawTopCard,
         reshuffleDiscardIntoDrawPile,
         applyShiftCardEffect,
@@ -10411,6 +10513,12 @@ var BrokerBossEngine = (() => {
           cardInstanceId: data.cardInstanceId || null,
           drawnCardCatalogId: data.drawnCardCatalogId || null,
           consequencesLogEntries: Array.isArray(data.consequencesLogEntries) ? [...data.consequencesLogEntries] : [],
+          // v=55: SFT_026/035/036's new "player_choices" stage — which
+          // non-immune players still need to answer, and what's been recorded
+          // so far. Same explicit-field pattern as everything else in this
+          // block; buildInterruptViewModel only forwards fields named here.
+          pendingChoicePlayerIds: Array.isArray(data.pendingChoicePlayerIds) ? [...data.pendingChoicePlayerIds] : [],
+          playerChoices: data.playerChoices && typeof data.playerChoices === "object" ? { ...data.playerChoices } : {},
           isSpecialistCardChoice: !!data.isSpecialistCardChoice,
           availableHubs: Array.isArray(data.availableHubs) ? [...data.availableHubs] : [],
           // v=53: SPEC_4 (The Inside Source) — the 5 agent catalogIds drawn and
@@ -10419,6 +10527,11 @@ var BrokerBossEngine = (() => {
           // only forwards fields it names here, so this needed adding rather
           // than assuming a generic passthrough existed.
           drawnCatalogIds: Array.isArray(data.drawnCatalogIds) ? [...data.drawnCatalogIds] : [],
+          // v=56: SPEC_1/SPEC_2/SPEC_11's new real-choice options — same
+          // explicit-field pattern as drawnCatalogIds immediately above.
+          stealOptions: Array.isArray(data.stealOptions) ? data.stealOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, cards: [...o.cards || []] })) : [],
+          releaseOptions: Array.isArray(data.releaseOptions) ? data.releaseOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, agents: [...o.agents || []] })) : [],
+          copyOptions: Array.isArray(data.copyOptions) ? data.copyOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, branch: o.branch, value: o.value })) : [],
           candidates: resolvedCandidates,
           agentCandidates: resolvedAgentCandidates,
           deskStatus
@@ -12710,7 +12823,7 @@ var BrokerBossEngine = (() => {
       var { resolveShellCompanySecondRecruit } = require_specialistCards();
       var { resolveTrackBranchChoice, resolveTargetedMilestone, forfeitTargetedMilestone, useProprietaryAlgorithm, useLiquidationEngine } = require_techTrackReducer();
       var { resolveDeficitTrackChoice } = require_cardEffectHelpers();
-      var { resolveShiftEffectStage2, acknowledgeShiftCardResolution } = require_shiftReducer();
+      var { resolveShiftEffectStage2, acknowledgeShiftCardResolution, resolveShiftCardPlayerChoice } = require_shiftReducer();
       var { playActionCardTransactional, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
       var { acquireActionCard } = require_openMarketActionCardReducer();
       var {
@@ -12856,6 +12969,19 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = resolveShiftEffectStage2(state, userIntent.playerId);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
+          // v=55: wires the new per-player choice stage for SFT_026/035/036 —
+          // resolveShiftCardPlayerChoice already existed fully built in
+          // shiftReducer.js as of this pass, just needed a dispatch case.
+          case "RESOLVE_SHIFT_CARD_PLAYER_CHOICE": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            if (userIntent.choice !== "PAY" && userIntent.choice !== "PENALTY") {
+              return { state, error: "INVALID_SHIFT_CARD_CHOICE", detail: null };
+            }
+            const result = resolveShiftCardPlayerChoice(state, userIntent.playerId, userIntent.choice);
             return { state: result.state, error: result.error, detail: result.detail };
           }
           case "USE_LIQUIDITY_STAFF_PT": {

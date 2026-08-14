@@ -246,7 +246,53 @@ function handleJoinRoom(connectionId, ws, msg) {
     return;
   }
   if (room.state) {
-    sendTo(connectionId, { type: 'JOIN_ERROR', reason: 'GAME_ALREADY_STARTED' });
+    // FIX (v57): a player who lost their locally-stored reconnectToken
+    // entirely (different browser/device, cleared storage — the normal
+    // attemptAutoReconnect() path in app.js has nothing to work with in
+    // that case) had no way back into an already-started game at all;
+    // the manual "enter room code" flow always landed here and always
+    // got flatly rejected, even though they're legitimately still
+    // seated. If a currently-disconnected human seat's displayName
+    // matches (case-insensitive, trimmed) what they typed, treat this
+    // as an implicit reconnect-by-name instead: re-seat them with a
+    // fresh token rather than reject. Deliberately scoped to seats that
+    // are genuinely disconnected right now — a connected seat with the
+    // same display name is never touched, so this can't be used to hijack
+    // an active player's seat.
+    const trimmedName = (msg.displayName || '').trim().toLowerCase();
+    const recoverableSeat = trimmedName
+      ? room.seats.find((s) => s.type === 'human' && s.connectionStatus === 'disconnected' && (s.displayName || '').trim().toLowerCase() === trimmedName)
+      : null;
+    if (!recoverableSeat) {
+      sendTo(connectionId, { type: 'JOIN_ERROR', reason: 'GAME_ALREADY_STARTED' });
+      return;
+    }
+    const reconnectToken = crypto.randomBytes(16).toString('hex');
+    if (recoverableSeat.connectionId) {
+      connections.delete(recoverableSeat.connectionId);
+    }
+    if (pendingSeatTimeouts.has(`${room.code}:${recoverableSeat.seatIndex}`)) {
+      clearTimeout(pendingSeatTimeouts.get(`${room.code}:${recoverableSeat.seatIndex}`));
+      pendingSeatTimeouts.delete(`${room.code}:${recoverableSeat.seatIndex}`);
+    }
+    recoverableSeat.connectionId = connectionId;
+    recoverableSeat.connectionStatus = 'connected';
+    recoverableSeat.disconnectedAt = null;
+    recoverableSeat.reconnectToken = reconnectToken;
+    if (recoverableSeat.seatIndex === 0) {
+      room.hostConnectionId = connectionId;
+    }
+    connections.set(connectionId, { ws, roomCode: room.code, seatIndex: recoverableSeat.seatIndex, playerId: `p${recoverableSeat.seatIndex + 1}` });
+    sendTo(connectionId, {
+      type: 'RECONNECTED',
+      roomCode: room.code,
+      seatIndex: recoverableSeat.seatIndex,
+      reconnectToken,
+      gameStarted: true,
+      isHost: room.hostConnectionId === connectionId,
+    });
+    sendTo(connectionId, { type: 'FORCE_STATE_SYNC', state: room.state });
+    broadcastRoomState(room.code);
     return;
   }
   const openSeat = room.seats.find((s) => s.type === 'open');
