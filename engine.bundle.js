@@ -2204,6 +2204,231 @@ var BrokerBossEngine = (() => {
     }
   });
 
+  // workerPlacementValidation.js
+  var require_workerPlacementValidation = __commonJS({
+    "workerPlacementValidation.js"(exports, module) {
+      function verifyActivePlayer(state, playerId) {
+        const player = state.players[playerId];
+        if (!player) {
+          return { ok: false, error: "PLAYER_NOT_FOUND", detail: { playerId } };
+        }
+        if (state.phase.activePlayerId !== playerId) {
+          return {
+            ok: false,
+            error: "NOT_ACTIVE_PLAYER",
+            detail: { playerId, activePlayerId: state.phase.activePlayerId }
+          };
+        }
+        return { ok: true, player };
+      }
+      function verifyMeepleAvailable(state, playerId, meepleInstanceId) {
+        const player = state.players[playerId];
+        if (!player) {
+          return { ok: false, error: "PLAYER_NOT_FOUND", detail: { playerId } };
+        }
+        const meeple = player.timeMeeples.active.find((m) => m.instanceId === meepleInstanceId) || (player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.instanceId === meepleInstanceId ? player.timeMeeples.copycatMeeple : void 0);
+        if (meeple === void 0) {
+          return { ok: false, error: "MEEPLE_NOT_FOUND", detail: { meepleInstanceId } };
+        }
+        if (meeple.status !== "in_supply") {
+          return {
+            ok: false,
+            error: "MEEPLE_NOT_IN_SUPPLY",
+            detail: { meepleInstanceId, currentStatus: meeple.status }
+          };
+        }
+        return { ok: true, meeple };
+      }
+      function cardGrantsSpaceSharing(state, playerId, extra) {
+        if (!extra || extra.useOvertimeManager !== true) {
+          return false;
+        }
+        const player = state.players[playerId];
+        if (!player) {
+          return false;
+        }
+        const tech = player.tracks.technology;
+        const hasAbility = tech.branch === "A" && tech.value >= 5 || player.ghostInTheMachineBorrowedBranch === "A";
+        const alreadyUsed = player.oncePerRoundAbilitiesUsed.includes("OVERTIME_MANAGER");
+        const canAfford = player.wallet.profitTokens >= 2;
+        return hasAbility && !alreadyUsed && canAfford;
+      }
+      function meepleIsCopycatBypass(player, meeple) {
+        return !!(player.timeMeeples.copycatMeeple && meeple && meeple.instanceId === player.timeMeeples.copycatMeeple.instanceId);
+      }
+      function verifySpaceOpen(state, spaceId, playerId, extra, meeple = null) {
+        const space = state.board.actionSpaces.find((s) => s.spaceId === spaceId);
+        if (space === void 0) {
+          return { ok: false, error: "SPACE_NOT_FOUND", detail: { spaceId } };
+        }
+        if (space.status === "blocked" || space.status === "void") {
+          return { ok: false, error: "SPACE_BLOCKED", detail: { spaceId, status: space.status } };
+        }
+        const effectiveCapacity = space.capacityScalesWithPlayerCount ? Math.max(1, (state.settings.playerCount || 2) - 1) : space.capacity;
+        if (effectiveCapacity !== null && space.occupiedBy.length >= effectiveCapacity) {
+          const player = state.players[playerId];
+          const allowsSharing = cardGrantsSpaceSharing(state, playerId, extra) || meepleIsCopycatBypass(player, meeple);
+          if (!allowsSharing) {
+            return {
+              ok: false,
+              error: "SPACE_AT_CAPACITY",
+              detail: {
+                spaceId,
+                capacity: effectiveCapacity,
+                currentOccupants: space.occupiedBy.length
+              }
+            };
+          }
+        }
+        return { ok: true, space };
+      }
+      function verifyCanAffordSpace(state, playerId, space) {
+        const cost = space.cost;
+        if (!cost) {
+          return { ok: true };
+        }
+        const wallet = state.players[playerId].wallet;
+        const requiredProfit = cost.profitTokens || 0;
+        const requiredPriority = cost.priorityTokens || 0;
+        if (wallet.profitTokens < requiredProfit || wallet.priorityTokens < requiredPriority) {
+          return {
+            ok: false,
+            error: "INSUFFICIENT_FUNDS_FOR_PLACEMENT",
+            detail: {
+              spaceId: space.spaceId,
+              required: { profitTokens: requiredProfit, priorityTokens: requiredPriority },
+              available: { profitTokens: wallet.profitTokens, priorityTokens: wallet.priorityTokens }
+            }
+          };
+        }
+        return { ok: true };
+      }
+      function verifySpecialistHubNotSpent(state, spaceId) {
+        const statusTokens = state.board.statusTokens || [];
+        const spentToken = statusTokens.find(
+          (t) => t.targetType === "action_space" && t.targetId === spaceId && t.type === "EXECUTED"
+        );
+        if (spentToken) {
+          return {
+            ok: false,
+            error: "SPECIALIST_HUB_ALREADY_SPENT",
+            detail: { spaceId, tokenId: spentToken.tokenId, placedRound: spentToken.placedRound }
+          };
+        }
+        return { ok: true };
+      }
+      function verifyMeepleCommitment(state, playerId, space, meeple, extra) {
+        const meepleCost = space.cost && space.cost.meepleCost;
+        if (!meepleCost) {
+          return { ok: true, additionalMeeples: [] };
+        }
+        const player = state.players[playerId];
+        const additionalIds = extra && extra.additionalMeepleInstanceIds || [];
+        if (additionalIds.includes(meeple.instanceId)) {
+          return {
+            ok: false,
+            error: "DUPLICATE_MEEPLE_IN_COMMITMENT",
+            detail: { meepleInstanceId: meeple.instanceId }
+          };
+        }
+        if (new Set(additionalIds).size !== additionalIds.length) {
+          return {
+            ok: false,
+            error: "DUPLICATE_MEEPLE_IN_COMMITMENT",
+            detail: { additionalMeepleInstanceIds: additionalIds }
+          };
+        }
+        const totalCommitted = 1 + additionalIds.length;
+        if (totalCommitted !== meepleCost) {
+          return {
+            ok: false,
+            error: "INCORRECT_MEEPLE_COMMITMENT_COUNT",
+            detail: { spaceId: space.spaceId, required: meepleCost, provided: totalCommitted }
+          };
+        }
+        const additionalMeeples = [];
+        for (let i = 0; i < additionalIds.length; i += 1) {
+          const id = additionalIds[i];
+          const m = player.timeMeeples.active.find((mm) => mm.instanceId === id);
+          if (!m) {
+            return { ok: false, error: "MEEPLE_NOT_FOUND", detail: { meepleInstanceId: id } };
+          }
+          if (m.status !== "in_supply") {
+            return {
+              ok: false,
+              error: "MEEPLE_NOT_IN_SUPPLY",
+              detail: { meepleInstanceId: id, currentStatus: m.status }
+            };
+          }
+          additionalMeeples.push(m);
+        }
+        return { ok: true, additionalMeeples };
+      }
+      function verifySpecialistAction(state, playerId, space, meeple, extra) {
+        if (space.type === "specialist_action") {
+          const lockoutCheck = verifySpecialistHubNotSpent(state, space.spaceId);
+          if (!lockoutCheck.ok) {
+            return lockoutCheck;
+          }
+        }
+        return verifyMeepleCommitment(state, playerId, space, meeple, extra);
+      }
+      function validatePlacement(state, playerId, meepleInstanceId, spaceId, extra) {
+        if (state.phase.current !== "WORKER_PLACEMENT") {
+          return {
+            ok: false,
+            error: "WRONG_PHASE",
+            detail: { expected: "WORKER_PLACEMENT", actual: state.phase.current }
+          };
+        }
+        if (state.phase.pendingInterrupt && state.phase.pendingInterrupt.type !== "NULL") {
+          return {
+            ok: false,
+            error: "PENDING_INTERRUPT_ACTIVE",
+            detail: { pendingInterrupt: state.phase.pendingInterrupt }
+          };
+        }
+        const activePlayerCheck = verifyActivePlayer(state, playerId);
+        if (!activePlayerCheck.ok) {
+          return activePlayerCheck;
+        }
+        const supplyCheck = verifyMeepleAvailable(state, playerId, meepleInstanceId);
+        if (!supplyCheck.ok) {
+          return supplyCheck;
+        }
+        const spaceCheck = verifySpaceOpen(state, spaceId, playerId, extra, supplyCheck.meeple);
+        if (!spaceCheck.ok) {
+          return spaceCheck;
+        }
+        const affordCheck = verifyCanAffordSpace(state, playerId, spaceCheck.space);
+        if (!affordCheck.ok) {
+          return affordCheck;
+        }
+        const specialistCheck = verifySpecialistAction(state, playerId, spaceCheck.space, supplyCheck.meeple, extra);
+        if (!specialistCheck.ok) {
+          return specialistCheck;
+        }
+        return {
+          ok: true,
+          meeple: supplyCheck.meeple,
+          space: spaceCheck.space,
+          additionalMeeples: specialistCheck.additionalMeeples || []
+        };
+      }
+      module.exports = {
+        validatePlacement,
+        verifyActivePlayer,
+        verifyMeepleAvailable,
+        verifySpaceOpen,
+        verifyCanAffordSpace,
+        verifySpecialistAction,
+        verifySpecialistHubNotSpent,
+        verifyMeepleCommitment,
+        cardGrantsSpaceSharing
+      };
+    }
+  });
+
   // engineConfig.js
   var require_engineConfig = __commonJS({
     "engineConfig.js"(exports, module) {
@@ -7121,437 +7346,6 @@ var BrokerBossEngine = (() => {
     }
   });
 
-  // shiftReducer.js
-  var require_shiftReducer = __commonJS({
-    "shiftReducer.js"(exports, module) {
-      var { playerHasShiftImmunity } = require_immunityReducer();
-      var { getSharedRng } = require_cardEffectHelpers();
-      var NULL_INTERRUPT = { type: "NULL", sourcePlayerId: null, data: {} };
-      var SHIFT_CARD_CHOICE_CATALOG_IDS = /* @__PURE__ */ new Set(["SFT_026", "SFT_035", "SFT_036"]);
-      function appendLog(state, entry) {
-        const logEntry = {
-          seq: state.log.length + 1,
-          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          round: state.phase.round,
-          ...entry
-        };
-        return { ...state, log: [...state.log, logEntry] };
-      }
-      function drawTopCard(drawPile) {
-        if (!drawPile || drawPile.length === 0) return null;
-        return drawPile[0];
-      }
-      function applyShiftCardEffect(state, playerId, drawnCard, extra = null) {
-        let resolveShiftCardEffect;
-        try {
-          ({ resolveShiftCardEffect } = require_cardEffectRegistry());
-        } catch (e) {
-          resolveShiftCardEffect = null;
-        }
-        if (typeof resolveShiftCardEffect === "function") {
-          return resolveShiftCardEffect(state, playerId, drawnCard.catalogId, null, extra);
-        }
-        return appendLog(state, {
-          type: "CARD_EFFECT_NOT_IMPLEMENTED",
-          playerId,
-          catalogId: drawnCard.catalogId,
-          context: "shiftCard"
-        });
-      }
-      function reshuffleDiscardIntoDrawPile(shiftDeck) {
-        const rng = getSharedRng();
-        const shuffled = [...shiftDeck.discardPile];
-        for (let i = shuffled.length - 1; i > 0; i -= 1) {
-          const j = Math.floor(rng() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        const shuffledCards = shuffled.map((catalogId) => ({ catalogId }));
-        return { drawPile: shuffledCards, discardPile: [] };
-      }
-      function resolveShiftTrigger(state) {
-        if (state.shiftTracker.position < state.shiftTracker.max) {
-          return state;
-        }
-        let { shiftDeck } = state;
-        let drawnCard = drawTopCard(shiftDeck.drawPile);
-        let remainingDrawPile = shiftDeck.drawPile.slice(1);
-        if (drawnCard === null) {
-          const reshuffled = reshuffleDiscardIntoDrawPile(shiftDeck);
-          shiftDeck = { ...shiftDeck, ...reshuffled };
-          drawnCard = drawTopCard(shiftDeck.drawPile);
-          remainingDrawPile = shiftDeck.drawPile.slice(1);
-        }
-        if (drawnCard === null) {
-          let nextState = appendLog(state, {
-            type: "SHIFT_DECK_EMPTY_NO_CARD_DRAWN",
-            sourcePlayerId: state.phase.activePlayerId
-          });
-          nextState = {
-            ...nextState,
-            shiftTracker: { ...nextState.shiftTracker, position: nextState.shiftTracker.min }
-          };
-          return nextState;
-        }
-        return {
-          ...state,
-          shiftDeck: { ...shiftDeck, drawPile: remainingDrawPile },
-          phase: {
-            ...state.phase,
-            pendingInterrupt: {
-              type: "SHIFT_CARD_RESOLUTION",
-              sourcePlayerId: state.phase.activePlayerId,
-              data: { drawnCardCatalogId: drawnCard.catalogId, stage: "announcement" }
-            }
-          }
-        };
-      }
-      function applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, extra) {
-        const seatPlayerIds = state.session.seats.map((s) => s.playerId);
-        const logLengthBeforeEffect = state.log.length;
-        let nextState = applyShiftCardEffect(state, triggeringPlayerId, drawnCard, extra || null);
-        seatPlayerIds.forEach((pid) => {
-          const player = nextState.players[pid];
-          if (playerHasShiftImmunity(player)) {
-            nextState = appendLog(nextState, { type: "SHIFT_EFFECT_BLOCKED_BY_IMMUNITY", playerId: pid, catalogId: drawnCard.catalogId });
-          } else {
-            nextState = appendLog(nextState, { type: "SHIFT_EFFECT_APPLIED", playerId: pid, catalogId: drawnCard.catalogId });
-          }
-        });
-        nextState = {
-          ...nextState,
-          shiftDeck: { ...nextState.shiftDeck, discardPile: [...nextState.shiftDeck.discardPile, drawnCard.catalogId] },
-          shiftTracker: {
-            ...nextState.shiftTracker,
-            position: nextState.shiftTracker.min,
-            history: [
-              ...nextState.shiftTracker.history || [],
-              { round: nextState.phase.round, triggeredByPlayerId: triggeringPlayerId, shiftCardCatalogId: drawnCard.catalogId, resolvedAt: (/* @__PURE__ */ new Date()).toISOString() }
-            ]
-          },
-          phase: {
-            ...nextState.phase,
-            pendingInterrupt: {
-              type: "SHIFT_CARD_RESOLUTION",
-              sourcePlayerId: triggeringPlayerId,
-              data: { drawnCardCatalogId: drawnCard.catalogId, stage: "consequences", consequencesLogEntries: nextState.log.slice(logLengthBeforeEffect) }
-            }
-          }
-        };
-        return nextState;
-      }
-      function resolveShiftEffectStage2(state, playerId) {
-        const interrupt = state.phase.pendingInterrupt;
-        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "announcement") {
-          return { state, error: "NO_PENDING_SHIFT_ANNOUNCEMENT", detail: { pendingInterrupt: interrupt || null } };
-        }
-        if (playerId !== interrupt.sourcePlayerId) {
-          return { state, error: "NOT_YOUR_SHIFT_CARD_TO_RESOLVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
-        }
-        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
-        if (SHIFT_CARD_CHOICE_CATALOG_IDS.has(drawnCard.catalogId)) {
-          const seatPlayerIds = state.session.seats.map((s) => s.playerId);
-          const pendingChoicePlayerIds = seatPlayerIds.filter((pid) => !playerHasShiftImmunity(state.players[pid]));
-          const nextState2 = {
-            ...state,
-            phase: {
-              ...state.phase,
-              pendingInterrupt: {
-                type: "SHIFT_CARD_RESOLUTION",
-                sourcePlayerId: interrupt.sourcePlayerId,
-                data: {
-                  drawnCardCatalogId: drawnCard.catalogId,
-                  stage: "player_choices",
-                  pendingChoicePlayerIds,
-                  playerChoices: {}
-                }
-              }
-            }
-          };
-          return { state: nextState2, error: null, detail: null };
-        }
-        const triggeringPlayerId = interrupt.sourcePlayerId;
-        const nextState = applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, null);
-        return { state: nextState, error: null, detail: null };
-      }
-      function resolveShiftCardPlayerChoice(state, playerId, choice) {
-        const interrupt = state.phase.pendingInterrupt;
-        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "player_choices") {
-          return { state, error: "NO_PENDING_SHIFT_CARD_CHOICE", detail: { pendingInterrupt: interrupt || null } };
-        }
-        if (!interrupt.data.pendingChoicePlayerIds.includes(playerId)) {
-          return { state, error: "NOT_YOUR_SHIFT_CARD_CHOICE_TO_MAKE", detail: { pendingChoicePlayerIds: interrupt.data.pendingChoicePlayerIds } };
-        }
-        if (choice !== "PAY" && choice !== "PENALTY") {
-          return { state, error: "INVALID_SHIFT_CARD_CHOICE", detail: { choice } };
-        }
-        const remainingPlayerIds = interrupt.data.pendingChoicePlayerIds.filter((pid) => pid !== playerId);
-        const playerChoices = { ...interrupt.data.playerChoices, [playerId]: choice };
-        if (remainingPlayerIds.length > 0) {
-          const nextState2 = {
-            ...state,
-            phase: {
-              ...state.phase,
-              pendingInterrupt: {
-                ...state.phase.pendingInterrupt,
-                data: { ...interrupt.data, pendingChoicePlayerIds: remainingPlayerIds, playerChoices }
-              }
-            }
-          };
-          return { state: nextState2, error: null, detail: null };
-        }
-        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
-        const triggeringPlayerId = interrupt.sourcePlayerId;
-        const nextState = applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, { playerChoices });
-        return { state: nextState, error: null, detail: null };
-      }
-      function acknowledgeShiftCardResolution(state, playerId) {
-        const interrupt = state.phase.pendingInterrupt;
-        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "consequences") {
-          return { state, error: "NO_PENDING_SHIFT_CARD_ACKNOWLEDGMENT", detail: { pendingInterrupt: interrupt || null } };
-        }
-        if (playerId !== interrupt.sourcePlayerId) {
-          return { state, error: "NOT_YOUR_ACKNOWLEDGMENT_TO_GIVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
-        }
-        const nextState = { ...state, phase: { ...state.phase, pendingInterrupt: NULL_INTERRUPT } };
-        return { state: nextState, error: null, detail: null };
-      }
-      module.exports = {
-        resolveShiftTrigger,
-        resolveShiftEffectStage2,
-        resolveShiftCardPlayerChoice,
-        drawTopCard,
-        reshuffleDiscardIntoDrawPile,
-        applyShiftCardEffect,
-        acknowledgeShiftCardResolution
-      };
-    }
-  });
-
-  // workerPlacementValidation.js
-  var require_workerPlacementValidation = __commonJS({
-    "workerPlacementValidation.js"(exports, module) {
-      function verifyActivePlayer(state, playerId) {
-        const player = state.players[playerId];
-        if (!player) {
-          return { ok: false, error: "PLAYER_NOT_FOUND", detail: { playerId } };
-        }
-        if (state.phase.activePlayerId !== playerId) {
-          return {
-            ok: false,
-            error: "NOT_ACTIVE_PLAYER",
-            detail: { playerId, activePlayerId: state.phase.activePlayerId }
-          };
-        }
-        return { ok: true, player };
-      }
-      function verifyMeepleAvailable(state, playerId, meepleInstanceId) {
-        const player = state.players[playerId];
-        if (!player) {
-          return { ok: false, error: "PLAYER_NOT_FOUND", detail: { playerId } };
-        }
-        const meeple = player.timeMeeples.active.find((m) => m.instanceId === meepleInstanceId) || (player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.instanceId === meepleInstanceId ? player.timeMeeples.copycatMeeple : void 0);
-        if (meeple === void 0) {
-          return { ok: false, error: "MEEPLE_NOT_FOUND", detail: { meepleInstanceId } };
-        }
-        if (meeple.status !== "in_supply") {
-          return {
-            ok: false,
-            error: "MEEPLE_NOT_IN_SUPPLY",
-            detail: { meepleInstanceId, currentStatus: meeple.status }
-          };
-        }
-        return { ok: true, meeple };
-      }
-      function cardGrantsSpaceSharing(state, playerId, extra) {
-        if (!extra || extra.useOvertimeManager !== true) {
-          return false;
-        }
-        const player = state.players[playerId];
-        if (!player) {
-          return false;
-        }
-        const tech = player.tracks.technology;
-        const hasAbility = tech.branch === "A" && tech.value >= 5 || player.ghostInTheMachineBorrowedBranch === "A";
-        const alreadyUsed = player.oncePerRoundAbilitiesUsed.includes("OVERTIME_MANAGER");
-        const canAfford = player.wallet.profitTokens >= 2;
-        return hasAbility && !alreadyUsed && canAfford;
-      }
-      function meepleIsCopycatBypass(player, meeple) {
-        return !!(player.timeMeeples.copycatMeeple && meeple && meeple.instanceId === player.timeMeeples.copycatMeeple.instanceId);
-      }
-      function verifySpaceOpen(state, spaceId, playerId, extra, meeple = null) {
-        const space = state.board.actionSpaces.find((s) => s.spaceId === spaceId);
-        if (space === void 0) {
-          return { ok: false, error: "SPACE_NOT_FOUND", detail: { spaceId } };
-        }
-        if (space.status === "blocked" || space.status === "void") {
-          return { ok: false, error: "SPACE_BLOCKED", detail: { spaceId, status: space.status } };
-        }
-        const effectiveCapacity = space.capacityScalesWithPlayerCount ? Math.max(1, (state.settings.playerCount || 2) - 1) : space.capacity;
-        if (effectiveCapacity !== null && space.occupiedBy.length >= effectiveCapacity) {
-          const player = state.players[playerId];
-          const allowsSharing = cardGrantsSpaceSharing(state, playerId, extra) || meepleIsCopycatBypass(player, meeple);
-          if (!allowsSharing) {
-            return {
-              ok: false,
-              error: "SPACE_AT_CAPACITY",
-              detail: {
-                spaceId,
-                capacity: effectiveCapacity,
-                currentOccupants: space.occupiedBy.length
-              }
-            };
-          }
-        }
-        return { ok: true, space };
-      }
-      function verifyCanAffordSpace(state, playerId, space) {
-        const cost = space.cost;
-        if (!cost) {
-          return { ok: true };
-        }
-        const wallet = state.players[playerId].wallet;
-        const requiredProfit = cost.profitTokens || 0;
-        const requiredPriority = cost.priorityTokens || 0;
-        if (wallet.profitTokens < requiredProfit || wallet.priorityTokens < requiredPriority) {
-          return {
-            ok: false,
-            error: "INSUFFICIENT_FUNDS_FOR_PLACEMENT",
-            detail: {
-              spaceId: space.spaceId,
-              required: { profitTokens: requiredProfit, priorityTokens: requiredPriority },
-              available: { profitTokens: wallet.profitTokens, priorityTokens: wallet.priorityTokens }
-            }
-          };
-        }
-        return { ok: true };
-      }
-      function verifySpecialistHubNotSpent(state, spaceId) {
-        const statusTokens = state.board.statusTokens || [];
-        const spentToken = statusTokens.find(
-          (t) => t.targetType === "action_space" && t.targetId === spaceId && t.type === "EXECUTED"
-        );
-        if (spentToken) {
-          return {
-            ok: false,
-            error: "SPECIALIST_HUB_ALREADY_SPENT",
-            detail: { spaceId, tokenId: spentToken.tokenId, placedRound: spentToken.placedRound }
-          };
-        }
-        return { ok: true };
-      }
-      function verifyMeepleCommitment(state, playerId, space, meeple, extra) {
-        const meepleCost = space.cost && space.cost.meepleCost;
-        if (!meepleCost) {
-          return { ok: true, additionalMeeples: [] };
-        }
-        const player = state.players[playerId];
-        const additionalIds = extra && extra.additionalMeepleInstanceIds || [];
-        if (additionalIds.includes(meeple.instanceId)) {
-          return {
-            ok: false,
-            error: "DUPLICATE_MEEPLE_IN_COMMITMENT",
-            detail: { meepleInstanceId: meeple.instanceId }
-          };
-        }
-        if (new Set(additionalIds).size !== additionalIds.length) {
-          return {
-            ok: false,
-            error: "DUPLICATE_MEEPLE_IN_COMMITMENT",
-            detail: { additionalMeepleInstanceIds: additionalIds }
-          };
-        }
-        const totalCommitted = 1 + additionalIds.length;
-        if (totalCommitted !== meepleCost) {
-          return {
-            ok: false,
-            error: "INCORRECT_MEEPLE_COMMITMENT_COUNT",
-            detail: { spaceId: space.spaceId, required: meepleCost, provided: totalCommitted }
-          };
-        }
-        const additionalMeeples = [];
-        for (let i = 0; i < additionalIds.length; i += 1) {
-          const id = additionalIds[i];
-          const m = player.timeMeeples.active.find((mm) => mm.instanceId === id);
-          if (!m) {
-            return { ok: false, error: "MEEPLE_NOT_FOUND", detail: { meepleInstanceId: id } };
-          }
-          if (m.status !== "in_supply") {
-            return {
-              ok: false,
-              error: "MEEPLE_NOT_IN_SUPPLY",
-              detail: { meepleInstanceId: id, currentStatus: m.status }
-            };
-          }
-          additionalMeeples.push(m);
-        }
-        return { ok: true, additionalMeeples };
-      }
-      function verifySpecialistAction(state, playerId, space, meeple, extra) {
-        if (space.type === "specialist_action") {
-          const lockoutCheck = verifySpecialistHubNotSpent(state, space.spaceId);
-          if (!lockoutCheck.ok) {
-            return lockoutCheck;
-          }
-        }
-        return verifyMeepleCommitment(state, playerId, space, meeple, extra);
-      }
-      function validatePlacement(state, playerId, meepleInstanceId, spaceId, extra) {
-        if (state.phase.current !== "WORKER_PLACEMENT") {
-          return {
-            ok: false,
-            error: "WRONG_PHASE",
-            detail: { expected: "WORKER_PLACEMENT", actual: state.phase.current }
-          };
-        }
-        if (state.phase.pendingInterrupt && state.phase.pendingInterrupt.type !== "NULL") {
-          return {
-            ok: false,
-            error: "PENDING_INTERRUPT_ACTIVE",
-            detail: { pendingInterrupt: state.phase.pendingInterrupt }
-          };
-        }
-        const activePlayerCheck = verifyActivePlayer(state, playerId);
-        if (!activePlayerCheck.ok) {
-          return activePlayerCheck;
-        }
-        const supplyCheck = verifyMeepleAvailable(state, playerId, meepleInstanceId);
-        if (!supplyCheck.ok) {
-          return supplyCheck;
-        }
-        const spaceCheck = verifySpaceOpen(state, spaceId, playerId, extra, supplyCheck.meeple);
-        if (!spaceCheck.ok) {
-          return spaceCheck;
-        }
-        const affordCheck = verifyCanAffordSpace(state, playerId, spaceCheck.space);
-        if (!affordCheck.ok) {
-          return affordCheck;
-        }
-        const specialistCheck = verifySpecialistAction(state, playerId, spaceCheck.space, supplyCheck.meeple, extra);
-        if (!specialistCheck.ok) {
-          return specialistCheck;
-        }
-        return {
-          ok: true,
-          meeple: supplyCheck.meeple,
-          space: spaceCheck.space,
-          additionalMeeples: specialistCheck.additionalMeeples || []
-        };
-      }
-      module.exports = {
-        validatePlacement,
-        verifyActivePlayer,
-        verifyMeepleAvailable,
-        verifySpaceOpen,
-        verifyCanAffordSpace,
-        verifySpecialistAction,
-        verifySpecialistHubNotSpent,
-        verifyMeepleCommitment,
-        cardGrantsSpaceSharing
-      };
-    }
-  });
-
   // workerPlacementReducer.js
   var require_workerPlacementReducer = __commonJS({
     "workerPlacementReducer.js"(exports, module) {
@@ -8242,6 +8036,213 @@ var BrokerBossEngine = (() => {
         resolveSpecialistAction,
         advanceActivePlayer,
         IMMEDIATE_SPACE_TYPES
+      };
+    }
+  });
+
+  // shiftReducer.js
+  var require_shiftReducer = __commonJS({
+    "shiftReducer.js"(exports, module) {
+      var { playerHasShiftImmunity } = require_immunityReducer();
+      var { getSharedRng } = require_cardEffectHelpers();
+      var { advanceActivePlayer } = require_workerPlacementReducer();
+      var NULL_INTERRUPT = { type: "NULL", sourcePlayerId: null, data: {} };
+      var SHIFT_CARD_CHOICE_CATALOG_IDS = /* @__PURE__ */ new Set(["SFT_026", "SFT_035", "SFT_036"]);
+      function appendLog(state, entry) {
+        const logEntry = {
+          seq: state.log.length + 1,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          round: state.phase.round,
+          ...entry
+        };
+        return { ...state, log: [...state.log, logEntry] };
+      }
+      function drawTopCard(drawPile) {
+        if (!drawPile || drawPile.length === 0) return null;
+        return drawPile[0];
+      }
+      function applyShiftCardEffect(state, playerId, drawnCard, extra = null) {
+        let resolveShiftCardEffect;
+        try {
+          ({ resolveShiftCardEffect } = require_cardEffectRegistry());
+        } catch (e) {
+          resolveShiftCardEffect = null;
+        }
+        if (typeof resolveShiftCardEffect === "function") {
+          return resolveShiftCardEffect(state, playerId, drawnCard.catalogId, null, extra);
+        }
+        return appendLog(state, {
+          type: "CARD_EFFECT_NOT_IMPLEMENTED",
+          playerId,
+          catalogId: drawnCard.catalogId,
+          context: "shiftCard"
+        });
+      }
+      function reshuffleDiscardIntoDrawPile(shiftDeck) {
+        const rng = getSharedRng();
+        const shuffled = [...shiftDeck.discardPile];
+        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(rng() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        const shuffledCards = shuffled.map((catalogId) => ({ catalogId }));
+        return { drawPile: shuffledCards, discardPile: [] };
+      }
+      function resolveShiftTrigger(state) {
+        if (state.shiftTracker.position < state.shiftTracker.max) {
+          return state;
+        }
+        let { shiftDeck } = state;
+        let drawnCard = drawTopCard(shiftDeck.drawPile);
+        let remainingDrawPile = shiftDeck.drawPile.slice(1);
+        if (drawnCard === null) {
+          const reshuffled = reshuffleDiscardIntoDrawPile(shiftDeck);
+          shiftDeck = { ...shiftDeck, ...reshuffled };
+          drawnCard = drawTopCard(shiftDeck.drawPile);
+          remainingDrawPile = shiftDeck.drawPile.slice(1);
+        }
+        if (drawnCard === null) {
+          let nextState = appendLog(state, {
+            type: "SHIFT_DECK_EMPTY_NO_CARD_DRAWN",
+            sourcePlayerId: state.phase.activePlayerId
+          });
+          nextState = {
+            ...nextState,
+            shiftTracker: { ...nextState.shiftTracker, position: nextState.shiftTracker.min }
+          };
+          return nextState;
+        }
+        return {
+          ...state,
+          shiftDeck: { ...shiftDeck, drawPile: remainingDrawPile },
+          phase: {
+            ...state.phase,
+            pendingInterrupt: {
+              type: "SHIFT_CARD_RESOLUTION",
+              sourcePlayerId: state.phase.activePlayerId,
+              data: { drawnCardCatalogId: drawnCard.catalogId, stage: "announcement" }
+            }
+          }
+        };
+      }
+      function applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, extra) {
+        const seatPlayerIds = state.session.seats.map((s) => s.playerId);
+        const logLengthBeforeEffect = state.log.length;
+        let nextState = applyShiftCardEffect(state, triggeringPlayerId, drawnCard, extra || null);
+        seatPlayerIds.forEach((pid) => {
+          const player = nextState.players[pid];
+          if (playerHasShiftImmunity(player)) {
+            nextState = appendLog(nextState, { type: "SHIFT_EFFECT_BLOCKED_BY_IMMUNITY", playerId: pid, catalogId: drawnCard.catalogId });
+          } else {
+            nextState = appendLog(nextState, { type: "SHIFT_EFFECT_APPLIED", playerId: pid, catalogId: drawnCard.catalogId });
+          }
+        });
+        nextState = {
+          ...nextState,
+          shiftDeck: { ...nextState.shiftDeck, discardPile: [...nextState.shiftDeck.discardPile, drawnCard.catalogId] },
+          shiftTracker: {
+            ...nextState.shiftTracker,
+            position: nextState.shiftTracker.min,
+            history: [
+              ...nextState.shiftTracker.history || [],
+              { round: nextState.phase.round, triggeredByPlayerId: triggeringPlayerId, shiftCardCatalogId: drawnCard.catalogId, resolvedAt: (/* @__PURE__ */ new Date()).toISOString() }
+            ]
+          },
+          phase: {
+            ...nextState.phase,
+            pendingInterrupt: {
+              type: "SHIFT_CARD_RESOLUTION",
+              sourcePlayerId: triggeringPlayerId,
+              data: { drawnCardCatalogId: drawnCard.catalogId, stage: "consequences", consequencesLogEntries: nextState.log.slice(logLengthBeforeEffect) }
+            }
+          }
+        };
+        return nextState;
+      }
+      function resolveShiftEffectStage2(state, playerId) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "announcement") {
+          return { state, error: "NO_PENDING_SHIFT_ANNOUNCEMENT", detail: { pendingInterrupt: interrupt || null } };
+        }
+        if (playerId !== interrupt.sourcePlayerId) {
+          return { state, error: "NOT_YOUR_SHIFT_CARD_TO_RESOLVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
+        }
+        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
+        if (SHIFT_CARD_CHOICE_CATALOG_IDS.has(drawnCard.catalogId)) {
+          const seatPlayerIds = state.session.seats.map((s) => s.playerId);
+          const pendingChoicePlayerIds = seatPlayerIds.filter((pid) => !playerHasShiftImmunity(state.players[pid]));
+          const nextState2 = {
+            ...state,
+            phase: {
+              ...state.phase,
+              pendingInterrupt: {
+                type: "SHIFT_CARD_RESOLUTION",
+                sourcePlayerId: interrupt.sourcePlayerId,
+                data: {
+                  drawnCardCatalogId: drawnCard.catalogId,
+                  stage: "player_choices",
+                  pendingChoicePlayerIds,
+                  playerChoices: {}
+                }
+              }
+            }
+          };
+          return { state: nextState2, error: null, detail: null };
+        }
+        const triggeringPlayerId = interrupt.sourcePlayerId;
+        const nextState = applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, null);
+        return { state: nextState, error: null, detail: null };
+      }
+      function resolveShiftCardPlayerChoice(state, playerId, choice) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "player_choices") {
+          return { state, error: "NO_PENDING_SHIFT_CARD_CHOICE", detail: { pendingInterrupt: interrupt || null } };
+        }
+        if (!interrupt.data.pendingChoicePlayerIds.includes(playerId)) {
+          return { state, error: "NOT_YOUR_SHIFT_CARD_CHOICE_TO_MAKE", detail: { pendingChoicePlayerIds: interrupt.data.pendingChoicePlayerIds } };
+        }
+        if (choice !== "PAY" && choice !== "PENALTY") {
+          return { state, error: "INVALID_SHIFT_CARD_CHOICE", detail: { choice } };
+        }
+        const remainingPlayerIds = interrupt.data.pendingChoicePlayerIds.filter((pid) => pid !== playerId);
+        const playerChoices = { ...interrupt.data.playerChoices, [playerId]: choice };
+        if (remainingPlayerIds.length > 0) {
+          const nextState2 = {
+            ...state,
+            phase: {
+              ...state.phase,
+              pendingInterrupt: {
+                ...state.phase.pendingInterrupt,
+                data: { ...interrupt.data, pendingChoicePlayerIds: remainingPlayerIds, playerChoices }
+              }
+            }
+          };
+          return { state: nextState2, error: null, detail: null };
+        }
+        const drawnCard = { catalogId: interrupt.data.drawnCardCatalogId };
+        const triggeringPlayerId = interrupt.sourcePlayerId;
+        const nextState = applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, { playerChoices });
+        return { state: nextState, error: null, detail: null };
+      }
+      function acknowledgeShiftCardResolution(state, playerId) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || interrupt.data.stage !== "consequences") {
+          return { state, error: "NO_PENDING_SHIFT_CARD_ACKNOWLEDGMENT", detail: { pendingInterrupt: interrupt || null } };
+        }
+        if (playerId !== interrupt.sourcePlayerId) {
+          return { state, error: "NOT_YOUR_ACKNOWLEDGMENT_TO_GIVE", detail: { expected: interrupt.sourcePlayerId, actual: playerId } };
+        }
+        const nextState = advanceActivePlayer({ ...state, phase: { ...state.phase, pendingInterrupt: NULL_INTERRUPT } });
+        return { state: nextState, error: null, detail: null };
+      }
+      module.exports = {
+        resolveShiftTrigger,
+        resolveShiftEffectStage2,
+        resolveShiftCardPlayerChoice,
+        drawTopCard,
+        reshuffleDiscardIntoDrawPile,
+        applyShiftCardEffect,
+        acknowledgeShiftCardResolution
       };
     }
   });
