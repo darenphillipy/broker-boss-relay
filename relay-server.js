@@ -431,11 +431,37 @@ function handleStartGame(connectionId) {
   const conn = connections.get(connectionId);
   if (!conn) return;
   const room = rooms.get(conn.roomCode);
-  if (!requireHost(connectionId, room) || room.state) return;
+  // FIX (v62): these were silent early returns with zero feedback to the
+  // client — not even a server-side log — the exact mechanism behind
+  // "click Start Game, nothing visibly happens, no error banner." This
+  // bypasses the generic top-level try/catch entirely (it's a deliberate
+  // return, not a thrown exception), so that catch-all's own error
+  // reporting never had a chance to fire either. Each branch now
+  // explains specifically what blocked the start, and app.js's new
+  // 'ERROR' case (previously unhandled entirely) actually surfaces it.
+  if (!room) {
+    console.error(`START_GAME: no room found for connection ${connectionId}`);
+    sendTo(connectionId, { type: 'ERROR', message: 'Could not start — this room no longer exists.' });
+    return;
+  }
+  if (!requireHost(connectionId, room)) {
+    console.error(`START_GAME: connection ${connectionId} is not the host of room ${room.code}`);
+    sendTo(connectionId, { type: 'ERROR', message: 'Only the host can start the game.' });
+    return;
+  }
+  if (room.state) {
+    console.error(`START_GAME: room ${room.code} already has a started game`);
+    sendTo(connectionId, { type: 'ERROR', message: 'This game has already started.' });
+    return;
+  }
 
   const humanSeats = room.seats.filter((s) => s.type === 'human');
   const botSeats = room.seats.filter((s) => s.type === 'bot');
-  if (humanSeats.length === 0) return;
+  if (humanSeats.length === 0) {
+    console.error(`START_GAME: room ${room.code} has no human seats`);
+    sendTo(connectionId, { type: 'ERROR', message: 'Need at least one human player to start.' });
+    return;
+  }
 
   if (!BrokerBossEngine) BrokerBossEngine = loadEngine();
   const catalog = loadCatalogs();

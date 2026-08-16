@@ -6776,28 +6776,44 @@ var BrokerBossEngine = (() => {
       function handleSpec12(state, context) {
         const { playerId, extra } = context;
         const player = state.players[playerId];
-        const drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
-        const drawCount = Math.min(5, drawPile.length);
-        const stash = drawPile.slice(0, drawCount).map((catalogId, i) => ({ stashInstanceId: `shell-${playerId}-${state.phase.round}-${i}`, catalogId }));
-        const remainingDrawPile = drawPile.slice(drawCount);
-        let nextState = {
-          ...state,
-          board: { ...state.board, decks: { ...state.board.decks, agentDrawPile: remainingDrawPile } },
-          players: { ...state.players, [playerId]: { ...player, shellCompanyStash: stash, shellCompanyRecruitsUsed: 0 } }
-        };
-        nextState = appendLog(nextState, {
-          type: "SPECIALIST_EFFECT_SHELL_COMPANY_DRAWN",
-          playerId,
-          catalogId: "SPEC_12",
-          stashSize: stash.length,
-          message: `${playerId} privately draws ${stash.length} Agent(s) into a hidden stash (The Shell Company).`
-        });
-        const chosenStashInstanceId = extra && extra.stashInstanceId ? extra.stashInstanceId : extra && extra.skipFirstRecruit ? null : (stash.slice().sort((a, b) => {
-          const statsA = getAgentStats(nextState, a.catalogId);
-          const statsB = getAgentStats(nextState, b.catalogId);
-          return (statsB ? statsB.totalProfit : 0) - (statsA ? statsA.totalProfit : 0);
-        })[0] || {}).stashInstanceId;
-        const usedDefaultChoice = !(extra && (extra.stashInstanceId || extra.skipFirstRecruit));
+        if (!extra || !extra.stashInstanceId && !extra.skipFirstRecruit) {
+          const drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
+          const drawCount = Math.min(5, drawPile.length);
+          const stash2 = drawPile.slice(0, drawCount).map((catalogId, i) => ({ stashInstanceId: `shell-${playerId}-${state.phase.round}-${i}`, catalogId }));
+          const remainingDrawPile = drawPile.slice(drawCount);
+          let nextState2 = {
+            ...state,
+            board: { ...state.board, decks: { ...state.board.decks, agentDrawPile: remainingDrawPile } },
+            players: { ...state.players, [playerId]: { ...player, shellCompanyStash: stash2, shellCompanyRecruitsUsed: 0 } }
+          };
+          nextState2 = appendLog(nextState2, {
+            type: "SPECIALIST_EFFECT_SHELL_COMPANY_DRAWN",
+            playerId,
+            catalogId: "SPEC_12",
+            stashSize: stash2.length,
+            message: `${playerId} privately draws ${stash2.length} Agent(s) into a hidden stash (The Shell Company).`
+          });
+          if (stash2.length === 0) {
+            return { state: nextState2, effectOutcome: DEFAULT_OUTCOME };
+          }
+          return {
+            state: {
+              ...nextState2,
+              phase: {
+                ...nextState2.phase,
+                pendingInterrupt: {
+                  type: "ACTION_CARD_EFFECT_CHOICE",
+                  sourcePlayerId: playerId,
+                  data: { catalogId: "SPEC_12", choiceType: "SPEC12_FIRST_RECRUIT", cardInstanceId: context.cardInstanceId, stashOptions: stash2, isSpecialistCardChoice: true }
+                }
+              }
+            },
+            effectOutcome: DEFAULT_OUTCOME
+          };
+        }
+        const stash = player.shellCompanyStash || [];
+        let nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
+        const chosenStashInstanceId = extra.skipFirstRecruit ? null : extra.stashInstanceId;
         if (!chosenStashInstanceId) {
           return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
         }
@@ -6820,7 +6836,6 @@ var BrokerBossEngine = (() => {
           playerId,
           catalogId: "SPEC_12",
           recruitedCatalogId: stashEntry.catalogId,
-          usedDefaultChoice,
           message: `${playerId} recruits ${stashEntry.catalogId} for free from the hidden stash (The Shell Company, 1st recruit \u2014 all requirements waived).`
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
@@ -10533,6 +10548,9 @@ var BrokerBossEngine = (() => {
           stealOptions: Array.isArray(data.stealOptions) ? data.stealOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, cards: [...o.cards || []] })) : [],
           releaseOptions: Array.isArray(data.releaseOptions) ? data.releaseOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, agents: [...o.agents || []] })) : [],
           copyOptions: Array.isArray(data.copyOptions) ? data.copyOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, branch: o.branch, value: o.value })) : [],
+          // v=67 audit: SPEC_12 (The Shell Company) — same explicit-field
+          // pattern as everything else in this block.
+          stashOptions: Array.isArray(data.stashOptions) ? data.stashOptions.map((o) => ({ stashInstanceId: o.stashInstanceId, catalogId: o.catalogId })) : [],
           candidates: resolvedCandidates,
           agentCandidates: resolvedAgentCandidates,
           deskStatus
@@ -12182,6 +12200,126 @@ var BrokerBossEngine = (() => {
               action: "BOT_INTERRUPT_RESOLUTION_FAILED",
               reason: result2.error
             };
+          }
+          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
+        if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC1_STEAL_CARD") {
+          const stealOptions = interrupt.data.stealOptions || [];
+          let chosen = null;
+          stealOptions.forEach((opt) => {
+            if (!chosen || opt.cards.length > chosen.cards.length) chosen = opt;
+          });
+          const targetPlayerId = chosen ? chosen.targetPlayerId : null;
+          const stolenCardInstanceId = chosen && chosen.cards[0] ? chosen.cards[0].instanceId : null;
+          const loggedState2 = appendLog(state, {
+            type: "BOT_INTERRUPT_DECISION_MADE",
+            playerId: interrupt.sourcePlayerId,
+            archetype: player.archetype || null,
+            interruptType: interrupt.type,
+            choiceType: "SPEC1_STEAL_CARD",
+            targetPlayerId,
+            stolenCardInstanceId,
+            rationale: "MOST_DISRUPTIVE_TARGET_DEFAULT"
+          });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, { targetPlayerId, stolenCardInstanceId });
+          if (result2.error) {
+            return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
+          }
+          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
+        if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC2_RELEASE_AGENT") {
+          const releaseOptions = interrupt.data.releaseOptions || [];
+          const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
+          let best = null;
+          releaseOptions.forEach((opt) => {
+            opt.agents.forEach((a) => {
+              const profit = agentCatalog[a.catalogId] && agentCatalog[a.catalogId].totalProfit || 0;
+              if (!best || profit > best.profit) best = { targetPlayerId: opt.targetPlayerId, agentInstanceId: a.agentInstanceId, profit };
+            });
+          });
+          const loggedState2 = appendLog(state, {
+            type: "BOT_INTERRUPT_DECISION_MADE",
+            playerId: interrupt.sourcePlayerId,
+            archetype: player.archetype || null,
+            interruptType: interrupt.type,
+            choiceType: "SPEC2_RELEASE_AGENT",
+            targetPlayerId: best ? best.targetPlayerId : null,
+            agentInstanceId: best ? best.agentInstanceId : null,
+            rationale: "HIGHEST_PROFIT_TARGET_DEFAULT"
+          });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, { targetPlayerId: best ? best.targetPlayerId : null, agentInstanceId: best ? best.agentInstanceId : null });
+          if (result2.error) {
+            return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
+          }
+          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
+        if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC4_AGENT_SELECTION") {
+          const drawnCatalogIds = interrupt.data.drawnCatalogIds || [];
+          const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
+          const sorted = [...drawnCatalogIds].sort((a, b) => {
+            const pa = agentCatalog[a] && agentCatalog[a].totalProfit || 0;
+            const pb = agentCatalog[b] && agentCatalog[b].totalProfit || 0;
+            return pb - pa;
+          });
+          const selectedCatalogIds = sorted.slice(0, 2);
+          const loggedState2 = appendLog(state, {
+            type: "BOT_INTERRUPT_DECISION_MADE",
+            playerId: interrupt.sourcePlayerId,
+            archetype: player.archetype || null,
+            interruptType: interrupt.type,
+            choiceType: "SPEC4_AGENT_SELECTION",
+            selectedCatalogIds,
+            rationale: "TOP_2_BY_PROFIT_DEFAULT"
+          });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, { selectedCatalogIds });
+          if (result2.error) {
+            return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
+          }
+          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
+        if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC11_COPY_TARGET") {
+          const copyOptions = interrupt.data.copyOptions || [];
+          let best = null;
+          copyOptions.forEach((opt) => {
+            if (!best || opt.value > best.value) best = opt;
+          });
+          const targetPlayerId = best ? best.targetPlayerId : null;
+          const loggedState2 = appendLog(state, {
+            type: "BOT_INTERRUPT_DECISION_MADE",
+            playerId: interrupt.sourcePlayerId,
+            archetype: player.archetype || null,
+            interruptType: interrupt.type,
+            choiceType: "SPEC11_COPY_TARGET",
+            targetPlayerId,
+            rationale: "HIGHEST_TECH_VALUE_DEFAULT"
+          });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, { targetPlayerId });
+          if (result2.error) {
+            return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
+          }
+          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
+        if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC12_FIRST_RECRUIT") {
+          const stashOptions = interrupt.data.stashOptions || [];
+          let best = null;
+          stashOptions.forEach((entry) => {
+            const stats = (state.cardCatalog && state.cardCatalog.agentCards || {})[entry.catalogId] || null;
+            const profit = stats ? stats.totalProfit : 0;
+            if (!best || profit > best.profit) best = { stashInstanceId: entry.stashInstanceId, profit };
+          });
+          const stashInstanceId = best ? best.stashInstanceId : null;
+          const loggedState2 = appendLog(state, {
+            type: "BOT_INTERRUPT_DECISION_MADE",
+            playerId: interrupt.sourcePlayerId,
+            archetype: player.archetype || null,
+            interruptType: interrupt.type,
+            choiceType: "SPEC12_FIRST_RECRUIT",
+            stashInstanceId,
+            rationale: "HIGHEST_PROFIT_DEFAULT"
+          });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, stashInstanceId ? { stashInstanceId } : { skipFirstRecruit: true });
+          if (result2.error) {
+            return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
           }
           return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
