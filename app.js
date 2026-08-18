@@ -11,6 +11,12 @@
  * it never mutates game state directly.
  */
 
+// [DEBUG v68.1-debug] Build/version banner — same purpose as the one in
+// engine.bundle.js: if this exact line isn't in the live console after a
+// hard refresh, the browser/CDN/cPanel is serving a stale cached app.js,
+// not this build.
+console.log('[BB_DEBUG] app.js build 2026-08-18T03:58:45Z (v68.3-techtree-final) — loaded and executing.');
+
 let HUMAN_PLAYER_ID = 'p1';
 
 const BOT_ARCHETYPE_TITLES = {
@@ -2006,6 +2012,43 @@ function handleForfeitTrackMilestone(milestoneKey) {
     logLine(`Forfeit rejected: ${result.error}`);
   } else {
     showToast(`${abilityName} forfeited.`);
+  }
+  state = result.state;
+  render();
+}
+
+/**
+ * handleEndOfRoundTechBonusChoice(decision)
+ * [v68.3-techtree-final] Fires the RESOLVE_END_OF_ROUND_TECH_BONUS_CHOICE
+ * user intent for the new dedicated END_OF_ROUND_TECH_BONUSES game-loop
+ * phase (Copycat Marketing / The Liquidation Engine — rulebook: "Passive
+ * (End of Round Phase)"). `decision` is either `{}` (decline) or
+ * `{ability: 'LIQUIDATION_ENGINE', targetAgentInstanceId}` /
+ * `{ability: 'COPYCAT_MARKETING', targetSpaceId}` — purely button/valid-
+ * target driven, no drag-and-drop, matching the rulebook's End-of-Round
+ * window exactly (see resolveEndOfRoundTechBonusChoice in
+ * endOfRoundReducer.js).
+ */
+function handleEndOfRoundTechBonusChoice(decision) {
+  dismissedInterruptKey = null;
+  logLine('');
+  showToast('');
+
+  const result = BrokerBossEngine.executeUserAction(state, {
+    type: 'RESOLVE_END_OF_ROUND_TECH_BONUS_CHOICE',
+    playerId: HUMAN_PLAYER_ID,
+    decision,
+  });
+
+  if (result.error) {
+    logLine(`End of Round Tech Bonus choice rejected: ${result.error}`);
+    showToast(`Tech Bonus failed: ${result.error}`);
+  } else if (decision && decision.ability === 'LIQUIDATION_ENGINE') {
+    showToast('Liquidation Engine used — Agent activated a second time for its Profit payout.');
+  } else if (decision && decision.ability === 'COPYCAT_MARKETING') {
+    showToast('Copycat Marketing — Copycat Meeple placed and action resolved.');
+  } else {
+    showToast('End of Round Tech Bonus declined.');
   }
   state = result.state;
   render();
@@ -4967,6 +5010,93 @@ function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) 
       const forfeitBtn = overlayEl.querySelector('#milestone-forfeit-btn');
       if (forfeitBtn) {
         forfeitBtn.addEventListener('click', () => handleForfeitTrackMilestone(milestoneKey));
+      }
+    }
+  } else if (modal.mode === 'END_OF_ROUND_TECH_BONUS_HINT') {
+    // [v68.3-techtree-final] Copycat Marketing (Recognition Path B, Lv 5)
+    // and The Liquidation Engine (Recognition Path A, Lv 5) — rulebook:
+    // "Passive (End of Round Phase). Before the board resets..." Purely
+    // button/valid-target driven per the architecture rules for this
+    // engine: no drag-and-drop anywhere in this modal. Copycat targets
+    // are restricted server-side to opponent-occupied spaces (see
+    // getEndOfRoundTechBonusOptions in endOfRoundReducer.js) — this UI
+    // only ever renders buttons for spaceIds the server already validated.
+    const isForHuman = modal.sourcePlayerId === HUMAN_PLAYER_ID;
+    const { liquidationOption, copycatOption } = modal;
+
+    let bodyHtml = '<p><em>Waiting on another player…</em></p>';
+    if (isForHuman) {
+      const sections = [];
+      if (liquidationOption && liquidationOption.validTargetAgentInstanceIds.length > 0) {
+        const targets = (humanDash.roster.agents || []).filter((a) =>
+          liquidationOption.validTargetAgentInstanceIds.includes(a.agentInstanceId)
+        );
+        sections.push(`
+          <div class="tech-bonus-section">
+            <h4>💧 The Liquidation Engine</h4>
+            <p>Select 1 Agent to activate a second time and immediately claim their printed Profit payout.</p>
+            <div class="agent-candidate-grid">${targets
+              .map((a) => buildAgentCardHtml(a, { clickable: true, dataAttr: `data-liquidation-target-agent-instance-id="${a.agentInstanceId}"`, tooltip: a.name }))
+              .join('')}</div>
+          </div>
+        `);
+      }
+      if (copycatOption && copycatOption.validTargetSpaceIds.length > 0) {
+        const spaceButtons = copycatOption.validTargetSpaceIds
+          .map((spaceId) => {
+            const space = (vm.board.actionSpaces || []).find((s) => s.spaceId === spaceId);
+            const occupantNames = space
+              ? space.occupiedBy
+                  .filter((entry) => entry.playerId !== HUMAN_PLAYER_ID)
+                  .map((entry) => (vm.players[entry.playerId] ? vm.players[entry.playerId].displayName : entry.playerId))
+                  .join(', ')
+              : '';
+            return `<button type="button" class="milestone-target-btn" data-copycat-target-space-id="${spaceId}">${spaceId.replace(/_/g, ' ')}${occupantNames ? ` (occupied by ${occupantNames})` : ''}</button>`;
+          })
+          .join('');
+        sections.push(`
+          <div class="tech-bonus-section">
+            <h4>🐑 Copycat Marketing</h4>
+            <p>Place your Copycat Meeple on any opponent-occupied action space and immediately execute that action, bypassing occupancy limits.</p>
+            <div class="milestone-target-list">${spaceButtons}</div>
+          </div>
+        `);
+      }
+      if (sections.length === 0) {
+        sections.push('<p><em>No eligible target this round.</em></p>');
+      }
+      bodyHtml = sections.join('');
+    }
+
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>${modal.headerText}</h3>
+        <p>${modal.promptText}</p>
+        ${bodyHtml}
+        ${isForHuman ? '<div class="modal-actions"><button class="modal-hide-btn" id="tech-bonus-decline-btn">Skip This Round</button></div>' : ''}
+      </div>
+    `;
+
+    if (isForHuman) {
+      overlayEl.querySelectorAll('[data-liquidation-target-agent-instance-id]').forEach((el) => {
+        el.addEventListener('click', () =>
+          handleEndOfRoundTechBonusChoice({
+            ability: 'LIQUIDATION_ENGINE',
+            targetAgentInstanceId: el.dataset.liquidationTargetAgentInstanceId,
+          })
+        );
+      });
+      overlayEl.querySelectorAll('[data-copycat-target-space-id]').forEach((el) => {
+        el.addEventListener('click', () =>
+          handleEndOfRoundTechBonusChoice({
+            ability: 'COPYCAT_MARKETING',
+            targetSpaceId: el.dataset.copycatTargetSpaceId,
+          })
+        );
+      });
+      const declineBtn = overlayEl.querySelector('#tech-bonus-decline-btn');
+      if (declineBtn) {
+        declineBtn.addEventListener('click', () => handleEndOfRoundTechBonusChoice({}));
       }
     }
   } else if (modal.mode === 'DEFICIT_TRACK_CHOICE_HINT') {

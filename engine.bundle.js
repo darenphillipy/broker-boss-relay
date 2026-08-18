@@ -1,4 +1,11 @@
 var BrokerBossEngine = (() => {
+  // [DEBUG v68.1-debug] Build/version banner — logs unconditionally the
+  // instant this script executes, before anything else runs. If the live
+  // site's console does NOT show this exact line after a hard refresh,
+  // the browser (or an intermediate CDN/cPanel cache) is still serving an
+  // old cached copy of engine.bundle.js, not this build — check cache
+  // headers / force a cache-busting query string on the <script> tag next.
+  console.log('[BB_DEBUG] engine.bundle.js build 2026-08-18T03:58:45Z (v68.3-techtree-final) — loaded and executing.');
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
     try {
@@ -629,6 +636,14 @@ var BrokerBossEngine = (() => {
     "techTrackReducer.js"(exports, module) {
       var { adjustWallet, adjustTrack, adjustOfficeSlots, awardMeeple, adjustMarketShare } = require_cardEffectHelpers();
       var { MARKET_SHARE_TRACK_SPACES } = require_boardConfigLoader();
+      // [v68.2-techtree] Lazy-required (called only inside resolveTargetedMilestone's
+      // SILICON_VALLEY_SWEEP branch below, never at module-init time) so this can't
+      // introduce a load-order/circular-require issue with cardEffectRegistry.js —
+      // same pattern already used elsewhere in this bundle (see the inline
+      // `({ resolveShiftCardEffect } = require_cardEffectRegistry())` reassignment).
+      function getActionCardEffectResolver() {
+        return require_cardEffectRegistry().resolveActionCardEffect;
+      }
       function getAgentStats(state, catalogId) {
         return (state.cardCatalog && state.cardCatalog.agentCards || {})[catalogId] || null;
       }
@@ -1129,12 +1144,35 @@ var BrokerBossEngine = (() => {
             };
           }
           if (playCatalogId) {
-            nextState = appendLog(nextState, {
-              type: "MILESTONE_SILICON_VALLEY_SWEEP_FREE_PLAY_NOT_IMPLEMENTED",
-              playerId,
-              catalogId: playCatalogId,
-              reason: "Free-play (bypassing cost/requirements) is not yet wired to a real effect-execution path \u2014 flagged, not silently dropped."
-            });
+            // [v68.2-techtree] "Play 1 Free: Execute its printed text
+            // immediately, ignoring all costs and requirements." This card was
+            // drawn straight from the deck for this choice, never added to
+            // the player's hand and never paid for \u2014 so it must resolve
+            // through the same resolveActionCardEffect the real hand-play
+            // path calls AFTER its own cost/requirement/hand-removal checks
+            // already passed (see cardEffectRegistry.js's own spec comment:
+            // handlers are pure effect-execution, cost/hand bookkeeping is
+            // the CALLER's job) \u2014 calling it directly here is exactly how to
+            // get "ignore all costs and requirements" without duplicating
+            // per-card logic or faking a hand membership that never existed.
+            const freePlayCardInstanceId = `ac-${playerId}-svs-freeplay-r${state.phase.round}`;
+            const resolveActionCardEffect2 = getActionCardEffectResolver();
+            try {
+              nextState = resolveActionCardEffect2(nextState, playerId, playCatalogId, freePlayCardInstanceId, null);
+              nextState = appendLog(nextState, {
+                type: "MILESTONE_SILICON_VALLEY_SWEEP_FREE_PLAY_APPLIED",
+                playerId,
+                catalogId: playCatalogId,
+                message: `${playerId}'s Silicon Valley Sweep executes ${playCatalogId} for free, ignoring its cost and requirements.`
+              });
+            } catch (freePlayError) {
+              nextState = appendLog(nextState, {
+                type: "MILESTONE_SILICON_VALLEY_SWEEP_FREE_PLAY_FAILED",
+                playerId,
+                catalogId: playCatalogId,
+                error: freePlayError && freePlayError.message ? freePlayError.message : String(freePlayError)
+              });
+            }
           }
           nextState = clearInterrupt(nextState);
           nextState = appendLog(nextState, {
@@ -5425,6 +5463,11 @@ var BrokerBossEngine = (() => {
           (playCardSpaceResume ? playCardSpaceResume.occupiedBy : []).filter((entry) => entry.playerId === playerId).map((entry) => entry.meepleInstanceId)
         );
         const recallIds = extra.meepleInstanceIds.filter((id) => !activeMeepleInstanceIdsResume.has(id)).slice(0, 3);
+        console.log('[BB_DEBUG][handleS6] BEFORE RECALL', {
+          playerId,
+          recallIds: [...recallIds],
+          wasInPlayersWithMeeplesRemaining: state.phase.playersWithMeeplesRemaining.includes(playerId)
+        });
         let nextState = {
           ...state,
           players: {
@@ -7597,7 +7640,13 @@ var BrokerBossEngine = (() => {
       }
       function advanceActivePlayer(state) {
         const { turnOrder, playersWithMeeplesRemaining, activePlayerId } = state.phase;
+        console.log('[BB_DEBUG][advanceActivePlayer] ENTRY', {
+          activePlayerId,
+          playersWithMeeplesRemainingLength: playersWithMeeplesRemaining.length,
+          playersWithMeeplesRemaining: [...playersWithMeeplesRemaining]
+        });
         if (playersWithMeeplesRemaining.length === 0) {
+          console.log('[BB_DEBUG][advanceActivePlayer] EXIT — playersWithMeeplesRemaining is empty, round-end path will trigger next settleGameLoop pass.');
           return state;
         }
         const currentIndex = turnOrder.indexOf(activePlayerId);
@@ -7605,6 +7654,7 @@ var BrokerBossEngine = (() => {
         for (let step = 1; step <= turnOrder.length; step += 1) {
           const candidateId = turnOrder[(startIndex + step) % turnOrder.length];
           if (playersWithMeeplesRemaining.includes(candidateId)) {
+            console.log('[BB_DEBUG][advanceActivePlayer] EXIT — advancing to', candidateId, 'from', activePlayerId);
             return {
               ...state,
               phase: {
@@ -7643,6 +7693,12 @@ var BrokerBossEngine = (() => {
         const occupantOrder = startingOrder;
         const remainingInSupply = updatedActive.filter((m) => m.status === "in_supply").length;
         const updatedPlayersWithMeeplesRemaining = remainingInSupply === 0 ? state.phase.playersWithMeeplesRemaining.filter((id) => id !== playerId) : state.phase.playersWithMeeplesRemaining;
+        console.log('[BB_DEBUG][placeMeeple] EXHAUSTION CHECK', {
+          playerId,
+          spaceId,
+          remainingInSupply,
+          wasDroppedFromPlayersWithMeeplesRemaining: remainingInSupply === 0
+        });
         let nextState = {
           ...state,
           players: {
@@ -9465,9 +9521,18 @@ var BrokerBossEngine = (() => {
   // endOfRoundReducer.js
   var require_endOfRoundReducer = __commonJS({
     "endOfRoundReducer.js"(exports, module) {
-      var { adjustWallet, getSharedRng } = require_cardEffectHelpers();
+      var { adjustWallet, adjustMarketShare, getSharedRng } = require_cardEffectHelpers();
       var { endOfRoundShiftImmunitySweep } = require_immunityReducer();
       var { isGameOver, runFinalScoring } = require_scoringEngine();
+      // [v68.3-techtree-final] Lazy-required inside the functions below (never
+      // at module-init time) — same load-order-safe pattern already used for
+      // require_cardEffectRegistry() in techTrackReducer.js.
+      function getResolveActionSpace() {
+        return require_workerPlacementReducer().resolveActionSpace;
+      }
+      function getUseLiquidationEngine() {
+        return require_techTrackReducer().useLiquidationEngine;
+      }
       function appendLog(state, entry) {
         const logEntry = {
           seq: state.log.length + 1,
@@ -9501,6 +9566,7 @@ var BrokerBossEngine = (() => {
       }
       var MEEPLE_TAX_RATE = 4;
       var MEEPLE_TAX_FREE_THRESHOLD = 3;
+      var UNION_BUSTER_TAX_REDUCTION = 2;
       function byHiredRoundDescending(entries) {
         return [...entries].sort((a, b) => {
           const aKey = a.meeple.hiredRound ?? a.originalIndex;
@@ -9535,9 +9601,21 @@ var BrokerBossEngine = (() => {
       function meepleTaxSweep(state) {
         let nextState = { ...state, phase: { ...state.phase, current: "END_OF_ROUND_MEEPLE_TAX" } };
         Object.keys(nextState.players).forEach((playerId) => {
-          const activeCount = nextState.players[playerId].timeMeeples.active.length;
+          const player = nextState.players[playerId];
+          const activeCount = player.timeMeeples.active.length;
           const taxableCount = Math.max(0, activeCount - MEEPLE_TAX_FREE_THRESHOLD);
-          const taxOwed = taxableCount * MEEPLE_TAX_RATE;
+          const grossTaxOwed = taxableCount * MEEPLE_TAX_RATE;
+          const hasUnionBusterReduction = player.tracks.training.branch === "B" && player.tracks.training.value >= 5;
+          const taxOwed = Math.max(0, grossTaxOwed - (hasUnionBusterReduction ? UNION_BUSTER_TAX_REDUCTION : 0));
+          if (grossTaxOwed > 0 && hasUnionBusterReduction) {
+            nextState = appendLog(nextState, {
+              type: "UNION_BUSTER_TAX_REDUCTION_APPLIED",
+              playerId,
+              grossTaxOwed,
+              reducedTaxOwed: taxOwed,
+              message: `${playerId}'s Union Buster reduces Meeple Tax from ${grossTaxOwed} to ${taxOwed} PT.`
+            });
+          }
           if (taxOwed === 0) {
             return;
           }
@@ -9985,6 +10063,180 @@ var BrokerBossEngine = (() => {
         nextState = meepleTaxSweep(nextState);
         return { ...nextState, phase: { ...nextState.phase, current: "TURN_ORDER_BIDDING" } };
       }
+      // ---------------------------------------------------------------------
+      // [v68.3-techtree-final] END_OF_ROUND_TECH_BONUSES phase.
+      //
+      // New game-loop phase inserted between "all players exhausted their
+      // meeples" and the pre-bidding income/tax sweep, giving Recognition
+      // Path A (The Liquidation Engine) and Recognition Path B (Copycat
+      // Marketing) their real rulebook-specified window: "Passive (End of
+      // Round Phase). Before the board resets..." — a dedicated resolution
+      // step, not something usable any time during normal turns.
+      //
+      // Each seated player (turnOrder order) gets asked exactly once per
+      // round via a real pendingInterrupt (same mechanism every other choice
+      // in this engine already uses) — human players see a modal prompt,
+      // bots resolve through resolveBotInterrupt (botInterruptResolver.js)
+      // exactly like any other interrupt type. Players with no real option
+      // available (ability locked, no valid opponent-occupied space, empty
+      // roster, or already used this round) are skipped silently — no dead
+      // prompt with nothing to click.
+      // ---------------------------------------------------------------------
+      function getEndOfRoundTechBonusOptions(state, playerId) {
+        const player = state.players[playerId];
+        if (!player) {
+          return { copycatOption: null, liquidationOption: null };
+        }
+        const recognition = player.tracks.recognition;
+        let copycatOption = null;
+        if (recognition.branch === "B" && recognition.value >= 5 && player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.status === "in_supply") {
+          const validTargetSpaceIds = state.board.actionSpaces.filter(
+            (space) => space.status !== "blocked" && space.status !== "void" && space.occupiedBy.some((entry) => entry.playerId !== playerId)
+          ).map((space) => space.spaceId);
+          if (validTargetSpaceIds.length > 0) {
+            copycatOption = { validTargetSpaceIds };
+          }
+        }
+        let liquidationOption = null;
+        if (recognition.branch === "A" && recognition.value >= 5 && !player.oncePerRoundAbilitiesUsed.includes("LIQUIDATION_ENGINE")) {
+          const validTargetAgentInstanceIds = player.roster.filter((r) => !r.isVoided).map((r) => r.agentInstanceId);
+          if (validTargetAgentInstanceIds.length > 0) {
+            liquidationOption = { validTargetAgentInstanceIds };
+          }
+        }
+        return { copycatOption, liquidationOption };
+      }
+      function getNextUnprocessedTechBonusPlayerId(state) {
+        const prompted = state.phase.techBonusPromptedPlayerIds || [];
+        const found = state.phase.turnOrder.find((playerId) => !prompted.includes(playerId));
+        return found === void 0 ? null : found;
+      }
+      function openEndOfRoundTechBonusPrompt(state, playerId) {
+        const { copycatOption, liquidationOption } = getEndOfRoundTechBonusOptions(state, playerId);
+        const prompted = [...state.phase.techBonusPromptedPlayerIds || [], playerId];
+        if (!copycatOption && !liquidationOption) {
+          return { ...state, phase: { ...state.phase, techBonusPromptedPlayerIds: prompted } };
+        }
+        const nextState = {
+          ...state,
+          phase: {
+            ...state.phase,
+            techBonusPromptedPlayerIds: prompted,
+            pendingInterrupt: {
+              type: "END_OF_ROUND_TECH_BONUS_CHOICE",
+              sourcePlayerId: playerId,
+              data: { copycatOption, liquidationOption }
+            }
+          }
+        };
+        return appendLog(nextState, {
+          type: "END_OF_ROUND_TECH_BONUS_AWAITING_CHOICE",
+          playerId,
+          hasCopycatOption: !!copycatOption,
+          hasLiquidationOption: !!liquidationOption
+        });
+      }
+      function executeCopycatEndOfRoundPlacement(state, playerId, targetSpaceId) {
+        const player = state.players[playerId];
+        const recognition = player.tracks.recognition;
+        if (!(recognition.branch === "B" && recognition.value >= 5)) {
+          return { state, error: "COPYCAT_MARKETING_NOT_UNLOCKED", detail: null };
+        }
+        const copycatMeeple = player.timeMeeples.copycatMeeple;
+        if (!copycatMeeple || copycatMeeple.status !== "in_supply") {
+          return { state, error: "COPYCAT_MEEPLE_NOT_AVAILABLE", detail: null };
+        }
+        const space = state.board.actionSpaces.find((s) => s.spaceId === targetSpaceId);
+        if (!space) {
+          return { state, error: "SPACE_NOT_FOUND", detail: { targetSpaceId } };
+        }
+        if (space.status === "blocked" || space.status === "void") {
+          return { state, error: "SPACE_BLOCKED", detail: { targetSpaceId, status: space.status } };
+        }
+        // Rulebook: "place your Copycat Meeple onto any single action space
+        // occupied by an opponent this round" — re-verified here against the
+        // real board state (never trusted from client-supplied input alone).
+        const occupiedByOpponent = space.occupiedBy.some((entry) => entry.playerId !== playerId);
+        if (!occupiedByOpponent) {
+          return { state, error: "SPACE_NOT_OPPONENT_OCCUPIED", detail: { targetSpaceId } };
+        }
+        const occupantOrder = space.occupiedBy.length + 1;
+        const updatedCopycatMeeple = { ...copycatMeeple, status: "on_board", locationSpaceId: targetSpaceId };
+        const updatedOccupiedBy = [...space.occupiedBy, { playerId, meepleInstanceId: copycatMeeple.instanceId, order: occupantOrder }];
+        let nextState = {
+          ...state,
+          players: {
+            ...state.players,
+            [playerId]: { ...player, timeMeeples: { ...player.timeMeeples, copycatMeeple: updatedCopycatMeeple } }
+          },
+          board: {
+            ...state.board,
+            // Deliberately unconditional — this IS "bypassing occupancy
+            // limits" (never checked against space.capacity like a normal
+            // placeMeeple call would).
+            actionSpaces: state.board.actionSpaces.map((s) => s.spaceId === targetSpaceId ? { ...s, occupiedBy: updatedOccupiedBy } : s)
+          }
+        };
+        nextState = appendLog(nextState, {
+          type: "COPYCAT_MARKETING_END_OF_ROUND_PLACED",
+          playerId,
+          targetSpaceId,
+          message: `${playerId}'s Copycat Marketing places the Copycat Meeple on ${targetSpaceId} (occupied by an opponent this round), bypassing occupancy limits.`
+        });
+        if (player.hasMarketHijack) {
+          nextState = adjustMarketShare(nextState, playerId, 1);
+          nextState = appendLog(nextState, {
+            type: "MARKET_HIJACK_TRIGGERED",
+            playerId,
+            message: `${playerId}'s Market Hijack advances the Market Share Track by 1 for free (Copycat Meeple placed).`
+          });
+        }
+        const updatedSpace = nextState.board.actionSpaces.find((s) => s.spaceId === targetSpaceId);
+        const resolveActionSpace2 = getResolveActionSpace();
+        const resolution = resolveActionSpace2(nextState, playerId, updatedSpace, updatedCopycatMeeple, null, occupantOrder);
+        nextState = resolution.state;
+        return { state: nextState, error: null, detail: { deferred: resolution.deferred } };
+      }
+      function resolveEndOfRoundTechBonusChoice(state, playerId, decision = {}) {
+        const interrupt = state.phase.pendingInterrupt;
+        if (!interrupt || interrupt.type !== "END_OF_ROUND_TECH_BONUS_CHOICE" || interrupt.sourcePlayerId !== playerId) {
+          return { state, error: "NO_PENDING_TECH_BONUS_CHOICE", detail: { playerId, pendingInterrupt: interrupt || null } };
+        }
+        const clearInterrupt = (s) => ({ ...s, phase: { ...s.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } });
+        const ability = decision.ability;
+        if (!ability) {
+          return {
+            state: appendLog(clearInterrupt(state), { type: "END_OF_ROUND_TECH_BONUS_DECLINED", playerId }),
+            error: null,
+            detail: null
+          };
+        }
+        if (ability === "LIQUIDATION_ENGINE") {
+          const useLiquidationEngine2 = getUseLiquidationEngine();
+          const result = useLiquidationEngine2(state, playerId, decision.targetAgentInstanceId);
+          if (result.error) {
+            return result;
+          }
+          return { state: clearInterrupt(result.state), error: null, detail: null };
+        }
+        if (ability === "COPYCAT_MARKETING") {
+          const result = executeCopycatEndOfRoundPlacement(state, playerId, decision.targetSpaceId);
+          if (result.error) {
+            return result;
+          }
+          // If the copied space was itself deferred (e.g. it needs the player
+          // to pick which Agent to recruit), resolveActionSpace already left
+          // a real pendingInterrupt of THAT space's own type on the returned
+          // state — do not clear it here. The normal interrupt-resolution
+          // machinery (human modal or resolveBotInterrupt) picks it up from
+          // here exactly like any deferred space reached during a real turn.
+          if (result.detail && result.detail.deferred) {
+            return { state: result.state, error: null, detail: result.detail };
+          }
+          return { state: clearInterrupt(result.state), error: null, detail: null };
+        }
+        return { state, error: "UNKNOWN_TECH_BONUS_ABILITY", detail: { ability } };
+      }
       function runEndOfRoundSequence(state) {
         let nextState = incomeCollectionSweep(state);
         nextState = meepleTaxSweep(nextState);
@@ -10006,7 +10258,12 @@ var BrokerBossEngine = (() => {
         endOfRoundShiftImmunitySweep,
         meepleReturnSweep,
         advanceRoundTracker,
-        advanceToNextRoundOrFinalScoring
+        advanceToNextRoundOrFinalScoring,
+        getEndOfRoundTechBonusOptions,
+        getNextUnprocessedTechBonusPlayerId,
+        openEndOfRoundTechBonusPrompt,
+        executeCopycatEndOfRoundPlacement,
+        resolveEndOfRoundTechBonusChoice
       };
     }
   });
@@ -10553,7 +10810,15 @@ var BrokerBossEngine = (() => {
           stashOptions: Array.isArray(data.stashOptions) ? data.stashOptions.map((o) => ({ stashInstanceId: o.stashInstanceId, catalogId: o.catalogId })) : [],
           candidates: resolvedCandidates,
           agentCandidates: resolvedAgentCandidates,
-          deskStatus
+          deskStatus,
+          // [v68.3-techtree-final] END_OF_ROUND_TECH_BONUS_CHOICE — same
+          // explicit-field pattern as everything else in this block.
+          // copycatOption.validTargetSpaceIds / liquidationOption.
+          // validTargetAgentInstanceIds are pre-computed server-side by
+          // getEndOfRoundTechBonusOptions so the client only ever renders
+          // buttons for already-validated legal targets.
+          copycatOption: data.copycatOption && Array.isArray(data.copycatOption.validTargetSpaceIds) ? { validTargetSpaceIds: [...data.copycatOption.validTargetSpaceIds] } : null,
+          liquidationOption: data.liquidationOption && Array.isArray(data.liquidationOption.validTargetAgentInstanceIds) ? { validTargetAgentInstanceIds: [...data.liquidationOption.validTargetAgentInstanceIds] } : null
         };
       }
       var GLOBAL_MILESTONE_DEFINITIONS = [
@@ -11187,6 +11452,18 @@ var BrokerBossEngine = (() => {
             milestoneKey: interrupt.milestoneKey
           };
         }
+        if (interrupt.type === "END_OF_ROUND_TECH_BONUS_CHOICE") {
+          return {
+            active: true,
+            mode: "END_OF_ROUND_TECH_BONUS_HINT",
+            sourcePlayerId: interrupt.sourcePlayerId,
+            sourcePlayerDisplayName: interrupt.sourcePlayerDisplayName,
+            headerText,
+            promptText: "End of Round Tech Bonus — resolve your Level 5 Recognition power before the board resets.",
+            copycatOption: interrupt.copycatOption,
+            liquidationOption: interrupt.liquidationOption
+          };
+        }
         if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.choiceType === "CRM_UPDATE_RECRUIT") {
           return {
             active: true,
@@ -11801,6 +12078,7 @@ var BrokerBossEngine = (() => {
       var { resolveRecruitFromGrowthHub, resolvePoachFromGrowthHub, resolveLoyaltyFromGrowthHub } = require_agentRecruitmentReducer();
       var { playActionCard, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
       var { resolveShiftEffectStage2 } = require_shiftReducer();
+      var { resolveEndOfRoundTechBonusChoice } = require_endOfRoundReducer();
       var DEAD_CARD_TRACK_LEVEL_THRESHOLD = 3;
       function appendLog(state, entry) {
         const logEntry = {
@@ -12588,6 +12866,44 @@ var BrokerBossEngine = (() => {
           }
           return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
+        if (interrupt.type === "END_OF_ROUND_TECH_BONUS_CHOICE") {
+          const { copycatOption, liquidationOption } = interrupt.data || {};
+          let decision = {};
+          let rationale = "DECLINED_NO_OPTION_AVAILABLE";
+          if (liquidationOption && liquidationOption.validTargetAgentInstanceIds && liquidationOption.validTargetAgentInstanceIds.length > 0) {
+            decision = { ability: "LIQUIDATION_ENGINE", targetAgentInstanceId: liquidationOption.validTargetAgentInstanceIds[0] };
+            rationale = "LIQUIDATION_ENGINE_FIRST_AGENT";
+          } else if (copycatOption && copycatOption.validTargetSpaceIds && copycatOption.validTargetSpaceIds.length > 0) {
+            decision = { ability: "COPYCAT_MARKETING", targetSpaceId: copycatOption.validTargetSpaceIds[0] };
+            rationale = "COPYCAT_MARKETING_FIRST_VALID_SPACE";
+          }
+          const loggedState2 = appendLog(state, {
+            type: "BOT_INTERRUPT_DECISION_MADE",
+            playerId: interrupt.sourcePlayerId,
+            archetype: player.archetype || null,
+            interruptType: interrupt.type,
+            choiceType: "END_OF_ROUND_TECH_BONUS_CHOICE",
+            decision,
+            rationale
+          });
+          const result2b = resolveEndOfRoundTechBonusChoice(loggedState2, interrupt.sourcePlayerId, decision);
+          if (result2b.error) {
+            const clearedState = {
+              ...loggedState2,
+              phase: { ...loggedState2.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } }
+            };
+            return {
+              state: appendLog(clearedState, {
+                type: "END_OF_ROUND_TECH_BONUS_CHOICE_FAILED",
+                playerId: interrupt.sourcePlayerId,
+                error: result2b.error
+              }),
+              action: "BOT_INTERRUPT_RESOLUTION_FAILED",
+              reason: result2b.error
+            };
+          }
+          return { state: result2b.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
         const resolverKey = `${interrupt.type}:${interrupt.data && interrupt.data.choiceType}`;
         const computeChoice = BOT_CHOICE_COMPUTERS[resolverKey];
         if (!computeChoice) {
@@ -12973,7 +13289,13 @@ var BrokerBossEngine = (() => {
         deployBankedBonusToken
       } = require_agentRecruitmentReducer();
       var { handleInterruptResolution } = require_interruptResolutionReducer();
-      var { runEndOfRoundSequence, runPreBiddingSequence } = require_endOfRoundReducer();
+      var {
+        runEndOfRoundSequence,
+        runPreBiddingSequence,
+        getNextUnprocessedTechBonusPlayerId,
+        openEndOfRoundTechBonusPrompt,
+        resolveEndOfRoundTechBonusChoice
+      } = require_endOfRoundReducer();
       var { acknowledgeShiftCardResolution, resolveShiftEffectStage2 } = require_shiftReducer();
       var { submitTurnOrderBid } = require_turnOrderBiddingReducer();
       var { evaluateTurnOrderBid } = require_botDecisionEngine();
@@ -13305,6 +13627,13 @@ var BrokerBossEngine = (() => {
             const result = handleInterruptResolution(state, payload.respondingPlayerId, payload.payload);
             return { state: result.state, error: result.error, detail: result.detail };
           }
+          case "RESOLVE_END_OF_ROUND_TECH_BONUS_CHOICE": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = resolveEndOfRoundTechBonusChoice(state, userIntent.playerId, userIntent.decision || {});
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
           default:
             return { state, error: "UNKNOWN_USER_INTENT_TYPE", detail: { type: userIntent.type } };
         }
@@ -13330,7 +13659,10 @@ var BrokerBossEngine = (() => {
               continue;
             }
             if (current.phase.playersWithMeeplesRemaining.length === 0) {
-              current = runPreBiddingSequence(current);
+              current = {
+                ...current,
+                phase: { ...current.phase, current: "END_OF_ROUND_TECH_BONUSES", techBonusPromptedPlayerIds: [] }
+              };
               continue;
             }
             const activePlayer = current.players[current.phase.activePlayerId];
@@ -13340,6 +13672,31 @@ var BrokerBossEngine = (() => {
               continue;
             }
             return { state: current, settled: true, reason: "WAITING_ON_HUMAN_TURN" };
+          }
+          if (current.phase.current === "END_OF_ROUND_TECH_BONUSES") {
+            // [v68.3-techtree-final] Dedicated End-of-Round window for
+            // Recognition Path A (The Liquidation Engine) and Recognition
+            // Path B (Copycat Marketing) — inserted after standard player
+            // turn exhaustion, but before runPreBiddingSequence's income
+            // collection (END_OF_ROUND_INCOME) and meeple tax
+            // (END_OF_ROUND_MEEPLE_TAX) sweeps run.
+            const interrupt = current.phase.pendingInterrupt;
+            if (interrupt && interrupt.type !== "NULL") {
+              const owner = current.players[interrupt.sourcePlayerId];
+              if (!owner || !owner.isBot) {
+                return { state: current, settled: true, reason: "WAITING_ON_HUMAN_INTERRUPT" };
+              }
+              const result = triggerBotTurnIfActive(current);
+              current = result.state;
+              continue;
+            }
+            const nextTechBonusPlayerId = getNextUnprocessedTechBonusPlayerId(current);
+            if (nextTechBonusPlayerId === null) {
+              current = runPreBiddingSequence(current);
+              continue;
+            }
+            current = openEndOfRoundTechBonusPrompt(current, nextTechBonusPlayerId);
+            continue;
           }
           if (current.phase.current === "TURN_ORDER_BIDDING") {
             const unsubmittedBot = Object.values(current.players).find((p) => p.isBot && !p.turnOrderBid.submitted);
