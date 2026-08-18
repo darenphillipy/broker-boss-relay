@@ -11,12 +11,7 @@
  * it never mutates game state directly.
  */
 
-// [DEBUG v68.1-debug] Build/version banner — same purpose as the one in
-// engine.bundle.js: if this exact line isn't in the live console after a
-// hard refresh, the browser/CDN/cPanel is serving a stale cached app.js,
-// not this build.
-console.log('[BB_DEBUG] app.js build 2026-08-18T03:58:45Z (v68.3-techtree-final) — loaded and executing.');
-
+console.log('[BB_DEBUG] app.js build 2026-08-18T19:37:36Z (v68.5-notifications) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 
 const BOT_ARCHETYPE_TITLES = {
@@ -106,6 +101,13 @@ const REAL_STARTING_HAND = ['S1', 'S2', 'S3', 'S4', 'S5'];
 const REAL_STARTING_DRAW_PILE = ['S6', 'S7'];
 const RESERVED_STARTING_DECK_CATALOG_IDS = new Set([...REAL_STARTING_HAND, ...REAL_STARTING_DRAW_PILE]);
 
+// Video modal buttons — Welcome Video (lobby landing screen) and Video
+// Tutorial (in-game header, alongside Player Aid / Report Feedback).
+// Both are plain YouTube embeds opened through the shared openVideoModal
+// helper below (see buildVideoModalOverlay).
+const WELCOME_VIDEO_EMBED_URL = 'https://www.youtube.com/embed/56W0UiJwwZ4';
+const TUTORIAL_VIDEO_EMBED_URL = 'https://www.youtube.com/embed/znCU3vFb5mM';
+
 let state = null;
 let pendingFreeAction = false;
 // Epic 3: same toggle-mode pattern as pendingFreeAction — when active,
@@ -113,6 +115,10 @@ let pendingFreeAction = false;
 // normal PLACE_MEEPLE.
 let pendingOvertimeManager = false;
 let pendingLiquidityStaffPT = false;
+// [v68.6] Same toggle-mode pattern — Executive Overdrive (SPEC_9)
+// resolves 1 Action Space a 2nd time, so it needs a target space click
+// just like Overtime Manager above.
+let pendingExecutiveOverdrive = false;
 // Epic 3: a client-driven modal for abilities that aren't triggered by
 // a server-side pendingInterrupt at all (Liquidation Engine, Proprietary
 // Algorithm are free-standing, player-initiated actions, not choices the
@@ -395,6 +401,26 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
       showToast(`Could not use a Liquidity Staff token there: ${result.error}`);
     } else {
       showToast('Venture Liquidation: 1 Liquidity Staff token spent, action performed for free.');
+    }
+    state = result.state;
+    render();
+    return;
+  }
+  if (pendingExecutiveOverdrive) {
+    dismissedInterruptKey = null;
+    logLine('');
+    showToast('');
+    pendingExecutiveOverdrive = false;
+    const result = BrokerBossEngine.executeUserAction(state, {
+      type: 'USE_EXECUTIVE_OVERDRIVE',
+      playerId: HUMAN_PLAYER_ID,
+      spaceId,
+    });
+    if (result.error) {
+      logLine(`Executive Overdrive rejected: ${result.error}`);
+      showToast(`Could not resolve that space again: ${result.error}`);
+    } else {
+      showToast('Executive Overdrive used — that space resolved a 2nd time, free.');
     }
     state = result.state;
     render();
@@ -862,6 +888,9 @@ function translateCardPlayError(errorCode, detail) {
   if (errorCode === 'REQUIREMENT_NOT_MET' && detail && detail.track) {
     return `Requires ${detail.track} Level ${detail.required} (you have ${detail.current}).`;
   }
+  if (errorCode === 'REACTIVE_ONLY_CARD') {
+    return "This card can only be played in response to a rival's recruitment attempt — that response window isn't available yet, so it can't be played as a normal turn action. It stays in your hand.";
+  }
   return `Card play rejected: ${errorCode}`;
 }
 
@@ -1183,54 +1212,320 @@ function handleShellCompanySecondRecruit(stashInstanceId) {
  * engine previously auto-picked the hub with the most open spaces with
  * no way for the player to actually decide.
  */
+// [v68.6] SPEC_2/SPEC_12 need agent name/stats to render a real card for
+// opponent roster entries and hidden-stash entries — both only carry a
+// bare catalogId over the wire (no instanceId-based resolved entry exists
+// server-side for these, unlike vm.board.openMarketAgents). Same raw
+// catalog.agentCards lookup + shape used by resolveOpenMarketAgent
+// engine-side, done client-side since there's no reason to round-trip
+// this through the server for data the client already has.
+function resolveAgentForDisplay(catalogId, agentInstanceId) {
+  const entry = (catalog && catalog.agentCards && catalog.agentCards[catalogId]) || null;
+  return {
+    agentInstanceId: agentInstanceId || catalogId,
+    catalogId,
+    name: entry ? entry.name : catalogId,
+    title: entry ? entry.title : null,
+    culture: entry ? entry.culture : null,
+    training: entry ? entry.training : null,
+    technology: entry ? entry.technology : null,
+    recognition: entry ? entry.recognition : null,
+    totalProfit: entry ? entry.totalProfit : null,
+    image: entry ? entry.image : null,
+    network: entry && entry.network ? entry.network : null,
+    resolved: !!entry,
+  };
+}
+
+/**
+ * submitSpecialistCardChoice(extra, successMessage)
+ * Shared submit path for every SPEC_x targeted choice below — mirrors
+ * the SPEC_3 (Lobbyist) submit pattern that already worked, just
+ * factored out so the 5 new choiceTypes don't each re-duplicate it.
+ */
+function submitSpecialistCardChoice(extra, successMessage) {
+  const result = BrokerBossEngine.executeUserAction(state, {
+    type: 'RESOLVE_SPECIALIST_CARD_EFFECT_CHOICE',
+    playerId: HUMAN_PLAYER_ID,
+    extra,
+  });
+  if (result.error) {
+    console.warn('[BB_DEBUG][specialistCardChoice] rejected', { extra, error: result.error });
+    showToast(`Could not resolve that choice: ${result.error}`);
+  } else if (successMessage) {
+    showToast(successMessage);
+  }
+  state = result.state;
+  render();
+}
+
+/**
+ * renderSpecialistCardChoiceModal(overlayEl, vm, humanDash)
+ * [v68.6] Real UI for all 6 targeted specialist-card choiceTypes the
+ * engine can open (SPEC_1/2/3/4/11/12) — previously only SPEC3_HUB_TARGET
+ * (The Lobbyist) had any handling here; every other targeted specialist
+ * card (The Snoop, The Whistleblower, The Inside Source, Ghost in the
+ * Machine, The Shell Company) fell through to a dead-end "Unrecognized
+ * specialist card choice" modal with no buttons — the exact freeze
+ * reported in the v68.6 bug report. The bot-side decision logic for all
+ * 6 already existed and worked (botInterruptResolver.js); this was purely
+ * a missing human-facing renderer.
+ *
+ * An unrecognized choiceType now falls back to a safe, dismissable
+ * "Skip" (declines the specialist effect via an empty `extra`, which
+ * every handleSpecN function above already treats as "no valid
+ * selection" / a clean no-op) instead of a dead-end — so a future
+ * specialist card added without matching client UI degrades gracefully
+ * instead of hard-freezing the turn loop again.
+ */
 function renderSpecialistCardChoiceModal(overlayEl, vm, humanDash) {
   overlayEl.style.display = 'flex';
   const interrupt = vm.pendingInterrupt;
   const isChoosingPlayer = HUMAN_PLAYER_ID === interrupt.sourcePlayerId;
 
-  if (interrupt.choiceType !== 'SPEC3_HUB_TARGET') {
-    overlayEl.innerHTML = `<div class="modal-box"><p class="empty-hand-message">Unrecognized specialist card choice.</p></div>`;
+  if (!isChoosingPlayer) {
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>Specialist Card Choice</h3>
+        <p class="modal-acquire-label">Waiting for ${escapeAttr(interrupt.sourcePlayerDisplayName || interrupt.sourcePlayerId)} to make a choice…</p>
+      </div>
+    `;
     return;
   }
 
-  const HUB_LABELS = {
-    GROWTH: 'Growth',
-    LEADERSHIP: 'Leadership',
-    OPERATIONS: 'Operations',
-    EXECUTIVE_DECISIONS: 'Executive Decisions',
-    EXECUTIVE_SEARCH: 'Executive Search',
-  };
+  if (interrupt.choiceType === 'SPEC3_HUB_TARGET') {
+    const HUB_LABELS = {
+      GROWTH: 'Growth',
+      LEADERSHIP: 'Leadership',
+      OPERATIONS: 'Operations',
+      EXECUTIVE_DECISIONS: 'Executive Decisions',
+      EXECUTIVE_SEARCH: 'Executive Search',
+    };
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>🔒 The Lobbyist</h3>
+        <p class="modal-acquire-label">Choose which Hub to block for the rest of this round.</p>
+        <div class="track-boost-picker">${(interrupt.availableHubs || [])
+          .map((hub) => `<button type="button" class="track-boost-btn spec3-hub-btn" data-hub="${escapeAttr(hub)}">${escapeAttr(HUB_LABELS[hub] || hub)}</button>`)
+          .join('')}</div>
+      </div>
+    `;
+    overlayEl.querySelectorAll('.spec3-hub-btn').forEach((el) => {
+      el.addEventListener('click', () => {
+        submitSpecialistCardChoice({ targetHub: el.dataset.hub }, `${HUB_LABELS[el.dataset.hub] || el.dataset.hub} hub blocked for the rest of the round.`);
+      });
+    });
+    return;
+  }
 
+  if (interrupt.choiceType === 'SPEC1_STEAL_CARD') {
+    const stealOptions = interrupt.stealOptions || [];
+    const catalogActionCards = (catalog && catalog.actionCards) || {};
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>🕵️ The Snoop</h3>
+        <p class="modal-acquire-label">Choose 1 Action Card to steal from an opponent's hand.</p>
+        ${stealOptions
+          .map((opt) => {
+            const displayName = (vm.players[opt.targetPlayerId] && vm.players[opt.targetPlayerId].displayName) || opt.targetPlayerId;
+            return `
+              <p class="modal-acquire-label">From ${escapeAttr(displayName)}:</p>
+              <div class="modal-hand-cards" data-steal-target-player-id="${escapeAttr(opt.targetPlayerId)}">
+                ${opt.cards
+                  .map((c) => {
+                    const entry = catalogActionCards[c.catalogId];
+                    const cardObj = {
+                      instanceId: c.instanceId,
+                      catalogId: c.catalogId,
+                      name: entry ? entry.name : c.catalogId,
+                      cost: entry ? entry.cost : null,
+                      cardImage: entry ? entry.cardImage : null,
+                      description: entry ? entry.description : null,
+                      playRequirement: entry ? entry.playRequirement : null,
+                      resolved: !!entry,
+                    };
+                    return buildHandCardHtml(cardObj, humanDash, false);
+                  })
+                  .join('')}
+              </div>
+            `;
+          })
+          .join('')}
+      </div>
+    `;
+    overlayEl.querySelectorAll('[data-steal-target-player-id] [data-instance-id]').forEach((el) => {
+      el.classList.add('hand-card-playable');
+      el.addEventListener('click', () => {
+        const targetPlayerId = el.closest('[data-steal-target-player-id]').dataset.stealTargetPlayerId;
+        submitSpecialistCardChoice({ targetPlayerId, stolenCardInstanceId: el.dataset.instanceId }, 'Card stolen.');
+      });
+    });
+    return;
+  }
+
+  if (interrupt.choiceType === 'SPEC2_RELEASE_AGENT') {
+    const releaseOptions = interrupt.releaseOptions || [];
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>📣 The Whistleblower</h3>
+        <p class="modal-acquire-label">Choose 1 opponent Agent to terminate — the bank pays that opponent Profit Tokens equal to the Agent's Profit.</p>
+        ${releaseOptions
+          .map((opt) => {
+            const displayName = (vm.players[opt.targetPlayerId] && vm.players[opt.targetPlayerId].displayName) || opt.targetPlayerId;
+            return `
+              <p class="modal-acquire-label">${escapeAttr(displayName)}'s roster:</p>
+              <div class="agent-candidate-grid" data-release-target-player-id="${escapeAttr(opt.targetPlayerId)}">
+                ${opt.agents
+                  .map((a) => {
+                    const resolved = resolveAgentForDisplay(a.catalogId, a.agentInstanceId);
+                    return buildAgentCardHtml(resolved, { clickable: true, dataAttr: `data-release-agent-instance-id="${escapeAttr(a.agentInstanceId)}"`, tooltip: resolved.name });
+                  })
+                  .join('')}
+              </div>
+            `;
+          })
+          .join('')}
+      </div>
+    `;
+    overlayEl.querySelectorAll('[data-release-agent-instance-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const targetPlayerId = el.closest('[data-release-target-player-id]').dataset.releaseTargetPlayerId;
+        submitSpecialistCardChoice({ targetPlayerId, agentInstanceId: el.dataset.releaseAgentInstanceId }, 'Agent terminated — opponent paid out.');
+      });
+    });
+    return;
+  }
+
+  if (interrupt.choiceType === 'SPEC4_AGENT_SELECTION') {
+    const candidates = interrupt.resolvedDrawnCandidates || [];
+    if (candidates.length === 0) {
+      overlayEl.innerHTML = `
+        <div class="modal-box">
+          <h3>🗂️ The Inside Source</h3>
+          <p class="empty-hand-message">No Agents were drawn — this effect resolves with no recruits.</p>
+          <div class="modal-actions"><button type="button" class="modal-skip-btn" id="spec4-confirm-btn">Continue</button></div>
+        </div>
+      `;
+      const btn = overlayEl.querySelector('#spec4-confirm-btn');
+      if (btn) btn.addEventListener('click', () => submitSpecialistCardChoice({ selectedCatalogIds: [] }, 'The Inside Source resolved.'));
+      return;
+    }
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>🗂️ The Inside Source</h3>
+        <p class="modal-acquire-label">Select up to 2 to recruit for free (requirements waived). The rest return to the bottom of the deck.</p>
+        <div class="agent-candidate-grid">
+          ${candidates
+            .map(
+              (a, i) =>
+                `<label class="master-algorithm-card-option agent-card-checkbox-option"><input type="checkbox" class="spec4-select-checkbox" value="${escapeAttr(a.catalogId)}" data-index="${i}" />${buildAgentCardHtml(a, { tooltip: a.name })}</label>`
+            )
+            .join('')}
+        </div>
+        <div class="modal-actions"><button type="button" class="modal-skip-btn" id="spec4-confirm-btn">Confirm</button></div>
+      </div>
+    `;
+    const checkboxes = overlayEl.querySelectorAll('.spec4-select-checkbox');
+    checkboxes.forEach((el) => {
+      el.addEventListener('change', () => {
+        const checkedCount = Array.from(checkboxes).filter((c) => c.checked).length;
+        if (checkedCount > 2) {
+          el.checked = false;
+          showToast('You can only select up to 2.');
+        }
+      });
+    });
+    const confirmBtn = overlayEl.querySelector('#spec4-confirm-btn');
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', () => {
+        const selectedCatalogIds = Array.from(checkboxes)
+          .filter((c) => c.checked)
+          .map((c) => c.value);
+        submitSpecialistCardChoice({ selectedCatalogIds }, selectedCatalogIds.length > 0 ? `Recruited ${selectedCatalogIds.length} Agent(s) for free.` : 'The Inside Source resolved with no recruits.');
+      });
+    }
+    return;
+  }
+
+  if (interrupt.choiceType === 'SPEC11_COPY_TARGET') {
+    const copyOptions = interrupt.copyOptions || [];
+    const PASSIVE_NAME_BY_BRANCH = { A: 'Overtime Manager', B: 'Proprietary Algorithm' };
+    if (copyOptions.length === 0) {
+      overlayEl.innerHTML = `
+        <div class="modal-box">
+          <h3>👻 Ghost in the Machine</h3>
+          <p class="empty-hand-message">No opponent has reached Level 5 Technology yet — nothing to copy.</p>
+          <div class="modal-actions"><button type="button" class="modal-skip-btn" id="spec11-confirm-btn">Continue</button></div>
+        </div>
+      `;
+      const btn = overlayEl.querySelector('#spec11-confirm-btn');
+      if (btn) btn.addEventListener('click', () => submitSpecialistCardChoice({}, 'Ghost in the Machine resolved.'));
+      return;
+    }
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>👻 Ghost in the Machine</h3>
+        <p class="modal-acquire-label">Choose an opponent to copy their Technology passive for the rest of this round.</p>
+        <div class="track-boost-picker">
+          ${copyOptions
+            .map((opt) => {
+              const displayName = (vm.players[opt.targetPlayerId] && vm.players[opt.targetPlayerId].displayName) || opt.targetPlayerId;
+              const passiveName = PASSIVE_NAME_BY_BRANCH[opt.branch] || `Technology-${opt.branch}`;
+              return `<button type="button" class="track-boost-btn spec11-copy-btn" data-target-player-id="${escapeAttr(opt.targetPlayerId)}">${escapeAttr(displayName)} — ${escapeAttr(passiveName)} (Lv${opt.value})</button>`;
+            })
+            .join('')}
+        </div>
+      </div>
+    `;
+    overlayEl.querySelectorAll('.spec11-copy-btn').forEach((el) => {
+      el.addEventListener('click', () => {
+        submitSpecialistCardChoice({ targetPlayerId: el.dataset.targetPlayerId }, 'Copied — passive active for the rest of this round.');
+      });
+    });
+    return;
+  }
+
+  if (interrupt.choiceType === 'SPEC12_FIRST_RECRUIT') {
+    const stashOptions = interrupt.stashOptions || [];
+    overlayEl.innerHTML = `
+      <div class="modal-box">
+        <h3>🏢 The Shell Company</h3>
+        <p class="modal-acquire-label">Choose 1 Agent from your hidden stash to recruit now, free — all requirements waived.</p>
+        <div class="agent-candidate-grid">
+          ${stashOptions
+            .map((entry) => {
+              const resolved = resolveAgentForDisplay(entry.catalogId, entry.stashInstanceId);
+              return buildAgentCardHtml(resolved, { clickable: true, dataAttr: `data-stash-instance-id="${escapeAttr(entry.stashInstanceId)}"`, tooltip: resolved.name });
+            })
+            .join('')}
+        </div>
+        <div class="modal-actions"><button type="button" class="modal-skip-btn" id="spec12-skip-btn">Skip — recruit none now</button></div>
+      </div>
+    `;
+    overlayEl.querySelectorAll('[data-stash-instance-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        submitSpecialistCardChoice({ stashInstanceId: el.dataset.stashInstanceId }, 'Recruited from the hidden stash for free.');
+      });
+    });
+    const skipBtn = overlayEl.querySelector('#spec12-skip-btn');
+    if (skipBtn) skipBtn.addEventListener('click', () => submitSpecialistCardChoice({ skipFirstRecruit: true }, 'The Shell Company’s first recruit skipped.'));
+    return;
+  }
+
+  // Safe fallback for any specialist choiceType without matching UI yet —
+  // logs for diagnosis and lets the player cleanly decline rather than
+  // hitting a dead-end modal with no way out (the exact bug this patch
+  // fixes for the 5 choiceTypes above).
+  console.warn('[BB_DEBUG][renderSpecialistCardChoiceModal] Unrecognized specialist card choiceType — falling back to a safe skip.', { choiceType: interrupt.choiceType, catalogId: interrupt.catalogId });
   overlayEl.innerHTML = `
     <div class="modal-box">
-      <h3>🔒 The Lobbyist</h3>
-      <p class="modal-acquire-label">${isChoosingPlayer ? 'Choose which Hub to block for the rest of this round.' : `Waiting for ${escapeAttr(interrupt.sourcePlayerDisplayName || interrupt.sourcePlayerId)} to choose a Hub to block…`}</p>
-      ${
-        isChoosingPlayer
-          ? `<div class="track-boost-picker">${interrupt.availableHubs
-              .map((hub) => `<button type="button" class="track-boost-btn spec3-hub-btn" data-hub="${escapeAttr(hub)}">${escapeAttr(HUB_LABELS[hub] || hub)}</button>`)
-              .join('')}</div>`
-          : ''
-      }
+      <h3>Specialist Card Choice</h3>
+      <p class="empty-hand-message">This choice type (${escapeAttr(interrupt.choiceType || 'unknown')}) isn't recognized by this client build yet — you can skip it safely.</p>
+      <div class="modal-actions"><button type="button" class="modal-skip-btn" id="spec-unknown-skip-btn">Skip</button></div>
     </div>
   `;
-
-  overlayEl.querySelectorAll('.spec3-hub-btn').forEach((el) => {
-    el.addEventListener('click', () => {
-      const result = BrokerBossEngine.executeUserAction(state, {
-        type: 'RESOLVE_SPECIALIST_CARD_EFFECT_CHOICE',
-        playerId: HUMAN_PLAYER_ID,
-        extra: { targetHub: el.dataset.hub },
-      });
-      if (result.error) {
-        showToast(`Could not block that hub: ${result.error}`);
-      } else {
-        showToast(`${HUB_LABELS[el.dataset.hub] || el.dataset.hub} hub blocked for the rest of the round.`);
-      }
-      state = result.state;
-      render();
-    });
-  });
+  const fallbackSkipBtn = overlayEl.querySelector('#spec-unknown-skip-btn');
+  if (fallbackSkipBtn) fallbackSkipBtn.addEventListener('click', () => submitSpecialistCardChoice({}, null));
 }
 
 function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
@@ -2419,6 +2714,155 @@ function checkForMarketShareBonusClaimEvents(currentState) {
 }
 
 /**
+ * [v68.5] Universal Tech Tree Bonus Unlocked notification.
+ *
+ * Maps every Level 5/7/9 tech track milestone (18 total: 3 tracks × 2
+ * branches × 3 levels) to its real name/description via
+ * TECH_TRACK_ABILITY_CATALOG, and fires a real on-screen banner + action-
+ * log entry the moment it's unlocked or claimed — for BOTH the human
+ * player and bots, so nobody's screen-visibility gap hides what just
+ * happened. Reuses the same "diff state.log against a per-feature last-
+ * announced length" pattern as checkForMarketShareBonusClaimEvents /
+ * checkForNetworkMagnetEvents above, so it never re-fires on a later
+ * re-render and never needs the engine to change what it already logs.
+ *
+ * Three distinct log signals cover all 18 abilities with no overlap:
+ *  - TRACK_BRANCH_CHOSEN: fired the instant a player commits to a
+ *    branch — this covers all 6 Level 5 powers (both the ones with an
+ *    immediate sub-effect, like Union Buster/Copycat Marketing, and the
+ *    pure-passive ones), since committing to the branch IS the unlock
+ *    moment regardless of whether an immediate effect also fires.
+ *  - MILESTONE_APPLIED with milestoneKey in INSTANT_MILESTONE_KEYS:
+ *    covers the 5 non-targeted Level 7/9 milestones, which auto-apply
+ *    the moment they're crossed (Executive Headroom, Cloud
+ *    Infrastructure, Venture Liquidation, Golden Parachute, Market
+ *    Hijack). MILESTONE_APPLIED is also reused elsewhere for per-use
+ *    logging (e.g. Overtime Manager's per-space usage) — filtering by
+ *    this specific key set is what excludes those unrelated reuses.
+ *  - TRACK_MILESTONE_AWAITING_CHOICE: covers the 7 targeted Level 7/9
+ *    milestones (Headhunter, Poison Pill, Ironclad Contract, Signal
+ *    Jammer, Silicon Valley Sweep, Master Algorithm, Hostile Buyout) —
+ *    fired the instant the choice becomes available, which is also
+ *    exactly when the real resolution modal opens.
+ */
+const MILESTONE_KEY_LOCATION = {
+  HEADHUNTER: { track: 'training', branch: 'A', level: 7 },
+  POISON_PILL: { track: 'training', branch: 'A', level: 9 },
+  EXECUTIVE_HEADROOM: { track: 'training', branch: 'B', level: 7 },
+  IRONCLAD_CONTRACT: { track: 'training', branch: 'B', level: 9 },
+  SIGNAL_JAMMER: { track: 'technology', branch: 'A', level: 7 },
+  SILICON_VALLEY_SWEEP: { track: 'technology', branch: 'A', level: 9 },
+  CLOUD_INFRASTRUCTURE: { track: 'technology', branch: 'B', level: 7 },
+  MASTER_ALGORITHM: { track: 'technology', branch: 'B', level: 9 },
+  VENTURE_LIQUIDATION: { track: 'recognition', branch: 'A', level: 7 },
+  GOLDEN_PARACHUTE: { track: 'recognition', branch: 'A', level: 9 },
+  HOSTILE_BUYOUT: { track: 'recognition', branch: 'B', level: 7 },
+  MARKET_HIJACK: { track: 'recognition', branch: 'B', level: 9 },
+};
+const INSTANT_MILESTONE_KEYS = new Set(['EXECUTIVE_HEADROOM', 'CLOUD_INFRASTRUCTURE', 'VENTURE_LIQUIDATION', 'GOLDEN_PARACHUTE', 'MARKET_HIJACK']);
+// Abilities with a real, clickable dashboard button/prompt (Overtime
+// Manager, Proprietary Algorithm, Liquidation Engine all render a
+// .milestone-ability-btn; Copycat Marketing claims a draggable token and
+// gets its own End-of-Round prompt) vs. abilities that simply apply
+// automatically with nothing to click.
+const TECH_BONUS_HAS_DASHBOARD_ACTION = new Set(['Overtime Manager', 'Proprietary Algorithm', 'The Liquidation Engine', 'Copycat Marketing']);
+
+function buildTechBonusWhereToFindText(abilityName, isTargetedChoice) {
+  if (isTargetedChoice) {
+    return 'Resolve your choice in the popup that just appeared — it is permanently forfeited if you don\'t.';
+  }
+  if (TECH_BONUS_HAS_DASHBOARD_ACTION.has(abilityName)) {
+    return 'Your special token / ability button is now active in your Personal Player Dashboard on the right panel.';
+  }
+  return 'This bonus applies automatically from now on — no action needed.';
+}
+
+let lastAnnouncedTechBonusLogLength = 0;
+// Set to a future timestamp whenever a new bonus unlocks for the human
+// player specifically — renderDashboards checks this to add a temporary
+// glowing pulse to the player's own dashboard panel, directing their eye
+// to the new asset. No timer/cleanup needed: it's just a plain
+// Date.now() comparison read fresh on every render, and the CSS
+// animation itself has a fixed, self-terminating duration.
+let dashboardNewAssetPulseUntil = 0;
+
+function checkForTechBonusUnlockEvents(currentState) {
+  const newEntries = currentState.log.slice(lastAnnouncedTechBonusLogLength);
+  lastAnnouncedTechBonusLogLength = currentState.log.length;
+  if (newEntries.length === 0) return;
+
+  const seats = (state.session && state.session.seats) || [];
+  const displayNameFor = (playerId) => (seats.find((s) => s.playerId === playerId) || {}).displayName || playerId;
+
+  const unlocks = [];
+  newEntries.forEach((e) => {
+    if (e.type === 'TRACK_BRANCH_CHOSEN') {
+      const branchInfo = TECH_TRACK_ABILITY_CATALOG[e.trackName] && TECH_TRACK_ABILITY_CATALOG[e.trackName][e.chosenBranch];
+      const ability = branchInfo && branchInfo[5];
+      if (ability) {
+        unlocks.push({ playerId: e.playerId, name: ability.name, text: ability.text, targeted: false });
+      }
+      return;
+    }
+    if (e.type === 'MILESTONE_APPLIED' && INSTANT_MILESTONE_KEYS.has(e.milestoneKey)) {
+      const loc = MILESTONE_KEY_LOCATION[e.milestoneKey];
+      const ability = loc && TECH_TRACK_ABILITY_CATALOG[loc.track][loc.branch][loc.level];
+      if (ability) {
+        unlocks.push({ playerId: e.playerId, name: ability.name, text: ability.text, targeted: false });
+      }
+      return;
+    }
+    if (e.type === 'TRACK_MILESTONE_AWAITING_CHOICE') {
+      const loc = MILESTONE_KEY_LOCATION[e.milestoneKey];
+      const ability = loc && TECH_TRACK_ABILITY_CATALOG[loc.track][loc.branch][loc.level];
+      if (ability) {
+        unlocks.push({ playerId: e.playerId, name: ability.name, text: ability.text, targeted: true });
+      }
+    }
+  });
+
+  if (unlocks.length === 0) return;
+
+  // Only one banner shown at a time — if several unlocked in the same
+  // batch of log entries (rare, but possible from a single card effect),
+  // show the most recent and let the others still have logged an action-
+  // log line (appendLog already ran engine-side; nothing lost).
+  const latest = unlocks[unlocks.length - 1];
+  const displayName = displayNameFor(latest.playerId);
+  const whereToFind = buildTechBonusWhereToFindText(latest.name, latest.targeted);
+  showBonusUnlockedBanner(`
+    <div class="bonus-unlocked-title">🎉 BONUS UNLOCKED: ${escapeAttr(latest.name)}</div>
+    <div class="bonus-unlocked-owner">${escapeAttr(displayName)}</div>
+    <div class="bonus-unlocked-desc">${escapeAttr(latest.text)}</div>
+    <div class="bonus-unlocked-where">📍 ${escapeAttr(whereToFind)}</div>
+  `);
+
+  if (latest.playerId === HUMAN_PLAYER_ID) {
+    dashboardNewAssetPulseUntil = Date.now() + 6000;
+  }
+}
+
+function showBonusUnlockedBanner(html) {
+  const el = document.getElementById('bonus-unlocked-banner');
+  if (!el) return;
+  el.innerHTML = html;
+  el.style.display = 'block';
+  el.classList.remove('bonus-unlocked-banner-visible');
+  // Force reflow so re-triggering the animation on back-to-back unlocks
+  // (e.g. two branch choices in quick succession) actually restarts it
+  // instead of silently no-op'ing because the class was already present.
+  void el.offsetWidth;
+  el.classList.add('bonus-unlocked-banner-visible');
+  clearTimeout(window.__bonusUnlockedBannerTimer);
+  window.__bonusUnlockedBannerTimer = setTimeout(() => {
+    el.classList.remove('bonus-unlocked-banner-visible');
+    setTimeout(() => {
+      el.style.display = 'none';
+    }, 400);
+  }, 7000);
+}
+
+/**
  * checkForTurnChangeNotification(vm)
  * Fires only on a genuine transition — the active player was someone
  * else last render, and is the human player now. Shows a visual
@@ -2779,6 +3223,7 @@ function render() {
   checkForNetworkMagnetEvents(state);
   checkForShiftTriggerEvents(state);
   checkForMarketShareBonusClaimEvents(state);
+  checkForTechBonusUnlockEvents(state);
   checkForTurnChangeNotification(vm);
   checkForRoundSummaryEvent(state);
   updateDebugHud(vm);
@@ -2818,6 +3263,71 @@ function buildClientModalOverlay() {
   return el;
 }
 const clientModalOverlay = buildClientModalOverlay();
+
+/**
+ * Video modal (Welcome Video + Video Tutorial buttons).
+ * Deliberately its own dedicated overlay element (same reasoning as
+ * clientModalOverlay above) — never touches #interrupt-overlay or
+ * `render()`, so it works identically whether a game is even in
+ * progress yet (the lobby landing screen has no `state` at all) or
+ * mid-turn (the in-game header button), and can never be clobbered by,
+ * or stack with, a genuine server pendingInterrupt.
+ */
+function buildVideoModalOverlay() {
+  const el = document.createElement('div');
+  el.id = 'video-modal-overlay';
+  el.className = 'video-modal-overlay';
+  el.style.display = 'none';
+  document.body.appendChild(el);
+  return el;
+}
+const videoModalOverlay = buildVideoModalOverlay();
+
+function handleVideoModalBackdropClick(evt) {
+  if (evt.target === videoModalOverlay) {
+    closeVideoModal();
+  }
+}
+
+/**
+ * openVideoModal(embedBaseUrl, title)
+ * Opens a responsive modal with an embedded YouTube iframe
+ * (autoplay=1, rel=0). Used by both the Welcome Video button (lobby
+ * landing screen) and the Video Tutorial button (in-game header) —
+ * players can open/close the tutorial at any point during gameplay
+ * without disrupting their active turn or game state, since this
+ * modal never reads or writes `state`.
+ */
+function openVideoModal(embedBaseUrl, title) {
+  const src = `${embedBaseUrl}?autoplay=1&rel=0`;
+  videoModalOverlay.innerHTML = `
+    <div class="video-modal-box">
+      <button type="button" class="video-modal-close-btn" id="video-modal-close-btn">✕ Close</button>
+      <div class="video-modal-iframe-wrap">
+        <iframe id="video-modal-iframe" width="100%" height="100%" src="${escapeAttr(src)}" title="${escapeAttr(title)}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+      </div>
+    </div>
+  `;
+  videoModalOverlay.style.display = 'flex';
+  videoModalOverlay.querySelector('#video-modal-close-btn').addEventListener('click', closeVideoModal);
+  videoModalOverlay.addEventListener('click', handleVideoModalBackdropClick);
+}
+
+/**
+ * closeVideoModal()
+ * Clears the iframe `src` (not just hides/removes the element) — that
+ * is what actually stops YouTube playback. Hiding the overlay without
+ * clearing `src` would leave audio playing invisibly behind it.
+ */
+function closeVideoModal() {
+  const iframe = document.getElementById('video-modal-iframe');
+  if (iframe) {
+    iframe.src = '';
+  }
+  videoModalOverlay.style.display = 'none';
+  videoModalOverlay.innerHTML = '';
+  videoModalOverlay.removeEventListener('click', handleVideoModalBackdropClick);
+}
 
 /**
  * renderClientModal(dash, vm)
@@ -3042,6 +3552,18 @@ const SPRINT_BONUS_TOKEN_LABELS = {
   FREE_ACTION: 'Free Action',
   FREE_LOYALTY_TOKEN: 'Free Loyalty Token',
 };
+// [v68.5] Explicit "how and when" text for the Banked Bonus Tokens
+// tooltip — these are Market Share Sprint Bonuses, playable any time on
+// the owner's own active WORKER_PLACEMENT turn (not tied to a specific
+// action space).
+const SPRINT_BONUS_TOKEN_HOW_TO_PLAY = {
+  FREE_5PT: 'Click to instantly gain +5 Profit Tokens from the bank.',
+  FREE_1PT: 'Click to instantly gain +1 Profit Token from the bank.',
+  FREE_OPEN_MARKET_AGENT: 'Click to instantly recruit an Agent from the Open Market for free.',
+  FREE_COACH_TOKEN: 'Click to assign a free Coach Token to an eligible Agent in your roster.',
+  FREE_ACTION: 'Click to instantly execute one free standard board action.',
+  FREE_LOYALTY_TOKEN: 'Click to assign a free Loyalty Token to an eligible Agent in your roster.',
+};
 
 // Real Specialist Card names/descriptions, transcribed from Rulebook v4.5's
 // own "EXECUTIVE SEARCH HUB SPECIALISTS" numbered list (cards 1-13).
@@ -3098,7 +3620,9 @@ function buildBankedTokensInventoryHtml(dash, vm) {
     .map((tokenType, index) => {
       const label = SPRINT_BONUS_TOKEN_LABELS[tokenType] || tokenType;
       const clickable = isHumanActiveTurn;
-      return `<button type="button" class="banked-token-chip${clickable ? ' banked-token-chip-clickable' : ''}" data-token-type="${tokenType}" data-token-index="${index}" ${clickable ? '' : 'disabled'} title="${clickable ? 'Click to activate' : 'Activate this on your own active turn'}">${label}</button>`;
+      const howToPlay = SPRINT_BONUS_TOKEN_HOW_TO_PLAY[tokenType] || 'Click to activate.';
+      const tooltip = clickable ? howToPlay : `${howToPlay} (playable on your own active turn only)`;
+      return `<button type="button" class="banked-token-chip${clickable ? ' banked-token-chip-clickable' : ''}" data-token-type="${tokenType}" data-token-index="${index}" ${clickable ? '' : 'disabled'} title="${escapeAttr(tooltip)}">${label}</button>`;
     })
     .join('');
 
@@ -3181,6 +3705,32 @@ function buildMilestoneAbilitiesHtml(dash, vm) {
     const disabled = already || realRoster.length === 0;
     buttons.push(
       `<button type="button" class="milestone-ability-btn" id="liquidation-engine-btn" ${disabled ? 'disabled' : ''} title="${already ? 'Already used this round' : 'Pick 1 Agent to activate a second time for its Profit payout'}">💧 Liquidation Engine</button>`
+    );
+  }
+
+  // [v68.6] SPEC_7 — The Automation Engineer: once per round, triggers
+  // the copied action space with no Meeple spent (standard resource/PT
+  // costs still apply). The engine dispatch (USE_AUTOMATION_ENGINEER)
+  // and the flag registration on claim (copiedActionSpaceId,
+  // automationEngineerUsedThisRound) already existed and worked — this
+  // was purely a missing button, the same class of gap as SPEC_9 below.
+  const rawPlayerForAbilities = vm.players && vm.players[dash.playerId];
+  if (rawPlayerForAbilities && rawPlayerForAbilities.copiedActionSpaceId) {
+    const already = !!rawPlayerForAbilities.automationEngineerUsedThisRound;
+    const disabled = already || !isHumanActiveTurn || pendingFreeAction || pendingOvertimeManager || pendingLiquidityStaffPT;
+    buttons.push(
+      `<button type="button" class="milestone-ability-btn" id="automation-engineer-btn" ${disabled ? 'disabled' : ''} title="${already ? 'Already used this round' : `Trigger ${rawPlayerForAbilities.copiedActionSpaceId.replace(/_/g, ' ')} with no Meeple spent — standard costs still apply`}">🤖 Automation Engineer</button>`
+    );
+  }
+
+  // [v68.6] SPEC_9 — The Executive Overdrive: once claimed, may resolve
+  // 1 Action Space twice back-to-back later in the round (2nd
+  // activation free). Same gap as SPEC_7 above — engine dispatch
+  // (USE_EXECUTIVE_OVERDRIVE) already existed with no client button.
+  if (rawPlayerForAbilities && rawPlayerForAbilities.executiveOverdriveAvailable) {
+    const disabled = !isHumanActiveTurn || pendingFreeAction || pendingOvertimeManager || pendingLiquidityStaffPT;
+    buttons.push(
+      `<button type="button" class="milestone-ability-btn${pendingExecutiveOverdrive ? ' milestone-ability-btn-active' : ''}" id="executive-overdrive-btn" ${disabled ? 'disabled' : ''} title="Resolve 1 Action Space twice back-to-back — the 2nd activation is free">⚡ Executive Overdrive${pendingExecutiveOverdrive ? ' (click a space)' : ''}</button>`
     );
   }
 
@@ -3461,9 +4011,28 @@ function renderEndGameSurveyModal() {
       .join('');
   }
 
+  // v=50: closing the survey (Skip, Submit, or the fallback X button) must
+  // explicitly hide AND clear #interrupt-overlay before handing off to
+  // renderGameOverModal. Previously every close path only flipped
+  // endGameSurveyCompleted and called render() — since render() deliberately
+  // skips the normal renderOverlay()/renderClientModal() cleanup path while
+  // vm.meta.phase === 'FINAL_SCORING' (nothing else manages #interrupt-overlay
+  // during that phase), the survey's markup and its display:flex style were
+  // never removed. #interrupt-overlay (z-index 9990) then sat permanently on
+  // top of #game-over-modal (z-index 200), which is what made Skip/Submit
+  // look like they "did nothing" and froze the screen — the game-over modal
+  // was actually rendering underneath the whole time, just fully obscured.
+  function closeSurvey() {
+    overlayEl.style.display = 'none';
+    overlayEl.innerHTML = '';
+    endGameSurveyCompleted = true;
+    render();
+  }
+
   function renderBody() {
     overlayEl.innerHTML = `
-      <div class="modal-box">
+      <div class="modal-box" style="position:relative;">
+        <button type="button" class="survey-close-x-btn" id="survey-close-x-btn" aria-label="Close survey">✕</button>
         <h3>Quick Playtest Survey</h3>
         <p>3 quick questions before your final score — this helps balance the game.</p>
         <label class="feedback-field-label">Game Balance (1 = way off, 5 = feels great)</label>
@@ -3488,9 +4057,14 @@ function renderEndGameSurveyModal() {
       });
     });
 
+    // Fallback manual-close: same effect as Skip, for players who get stuck
+    // for any reason (e.g. a rating click misfiring) and just want out.
+    overlayEl.querySelector('#survey-close-x-btn').addEventListener('click', () => {
+      closeSurvey();
+    });
+
     overlayEl.querySelector('#survey-skip-btn').addEventListener('click', () => {
-      endGameSurveyCompleted = true;
-      render();
+      closeSurvey();
     });
 
     overlayEl.querySelector('#survey-submit-btn').addEventListener('click', () => {
@@ -3511,10 +4085,11 @@ function renderEndGameSurveyModal() {
       try {
         window.localStorage.setItem(SURVEY_STORAGE_KEY, JSON.stringify(entries));
       } catch (e) {
-        // best-effort persistence, same reasoning as feedback storage
+        // best-effort persistence, same reasoning as feedback storage — a
+        // full localStorage or a private-browsing quota error here must
+        // never block the player from reaching their final score.
       }
-      endGameSurveyCompleted = true;
-      render();
+      closeSurvey();
     });
   }
 
@@ -3791,7 +4366,7 @@ function buildDraggableMeepleRowHtml(dash) {
   const copycatMeeple = state.players[dash.playerId] && state.players[dash.playerId].timeMeeples.copycatMeeple;
   const copycatToken =
     copycatMeeple && copycatMeeple.status === 'in_supply'
-      ? `<span class="draggable-meeple-token draggable-copycat-token" draggable="true" data-meeple-instance-id="${copycatMeeple.instanceId}" title="Copycat Meeple — drag onto ANY occupied opponent space to place there">${buildMeepleSvg('#e8842c')}</span>`
+      ? `<span class="draggable-meeple-token draggable-copycat-token" draggable="true" data-meeple-instance-id="${copycatMeeple.instanceId}" title="Copycat Meeple — drag onto any opponent-occupied space any time, or wait for the End of Round prompt to use it automatically">${buildMeepleSvg('#e8842c')}</span>`
       : '';
   const trainingBadge =
     dash.timeMeeples.staffInTrainingCount > 0
@@ -3870,7 +4445,7 @@ function renderBoard(board, vm) {
         !(state.players[HUMAN_PLAYER_ID].roster || []).some((a) => !a.isVoided);
       const isBlocked = space.status === 'blocked' || space.status === 'void' || isHireCoachWithNoAgents;
       const clickable =
-        pendingFreeAction || pendingLiquidityStaffPT
+        pendingFreeAction || pendingLiquidityStaffPT || pendingExecutiveOverdrive
           ? vm.meta.phase === 'WORKER_PLACEMENT' && vm.meta.activePlayerId === HUMAN_PLAYER_ID && !isBlocked
           : pendingOvertimeManager
             ? vm.meta.phase === 'WORKER_PLACEMENT' && vm.meta.activePlayerId === HUMAN_PLAYER_ID && !isBlocked && humanAvailableMeeples >= meepleCost
@@ -4347,8 +4922,16 @@ function renderDashboards(dashboards, vm) {
   }
 
   const isActive = dash.playerId === vm.meta.activePlayerId;
+  // [v68.5] Temporary glowing pulse directing the player's eye to a
+  // newly-unlocked asset (Banked Bonus Token, Copycat Meeple, a fresh
+  // milestone-ability-btn) on their own dashboard — set by
+  // checkForTechBonusUnlockEvents in render(), read fresh here so it
+  // needs no cleanup timer of its own. The CSS animation has a fixed,
+  // self-terminating duration, so simply omitting the class on the next
+  // render past the window is enough to stop it.
+  const showNewAssetPulse = Date.now() < dashboardNewAssetPulseUntil;
   const panel = document.createElement('div');
-  panel.className = `player-panel ${isActive ? 'player-panel-active' : ''}`;
+  panel.className = `player-panel ${isActive ? 'player-panel-active' : ''}${showNewAssetPulse ? ' player-panel-new-asset-pulse' : ''}`;
   panel.style.borderColor = colorSafe(dash.color);
   panel.style.setProperty('--player-accent', colorSafe(dash.color));
 
@@ -4509,6 +5092,44 @@ function renderDashboards(dashboards, vm) {
           pendingLiquidityStaffPT = !pendingLiquidityStaffPT;
           pendingOvertimeManager = false;
           pendingFreeAction = false;
+          render();
+        });
+      }
+      // [v68.6] Executive Overdrive (SPEC_9) — same toggle-mode pattern as
+      // Overtime Manager above: click the button, then click the target
+      // Action Space, which fires USE_EXECUTIVE_OVERDRIVE via the
+      // pendingExecutiveOverdrive branch in the space-click handler.
+      const executiveOverdriveBtn = panel.querySelector('#executive-overdrive-btn');
+      if (executiveOverdriveBtn) {
+        executiveOverdriveBtn.addEventListener('click', () => {
+          pendingExecutiveOverdrive = !pendingExecutiveOverdrive;
+          pendingOvertimeManager = false;
+          pendingLiquidityStaffPT = false;
+          pendingFreeAction = false;
+          render();
+        });
+      }
+      // [v68.6] The Automation Engineer (SPEC_7) — no target to pick (it
+      // always re-triggers the space it copied on claim), so this fires
+      // USE_AUTOMATION_ENGINEER immediately on click rather than entering
+      // a toggle mode.
+      const automationEngineerBtn = panel.querySelector('#automation-engineer-btn');
+      if (automationEngineerBtn) {
+        automationEngineerBtn.addEventListener('click', () => {
+          dismissedInterruptKey = null;
+          logLine('');
+          showToast('');
+          const result = BrokerBossEngine.executeUserAction(state, {
+            type: 'USE_AUTOMATION_ENGINEER',
+            playerId: HUMAN_PLAYER_ID,
+          });
+          if (result.error) {
+            logLine(`Automation Engineer rejected: ${result.error}`);
+            showToast(`Could not trigger the Automation Engineer: ${result.error}`);
+          } else {
+            showToast('Automation Engineer used — copied space triggered with no Meeple spent.');
+          }
+          state = result.state;
           render();
         });
       }
@@ -5348,6 +5969,7 @@ function renderLobby() {
   lobbyEl.innerHTML = `
     <div class="lobby-box lobby-landing-box">
       <h1>BROKER BOSS <span class="header-subtitle">ONLINE</span></h1>
+      <button type="button" id="welcome-video-btn" class="watch-welcome-video-btn">🎬 Watch Welcome Video</button>
       <p class="lobby-subtitle">Play locally against Bots, or connect to a live multiplayer room.</p>
       <div class="lobby-landing-choices">
         <button type="button" id="lobby-choice-offline-btn" class="lobby-landing-btn">
@@ -5359,6 +5981,9 @@ function renderLobby() {
       </div>
     </div>
   `;
+  document.getElementById('welcome-video-btn').addEventListener('click', () => {
+    openVideoModal(WELCOME_VIDEO_EMBED_URL, 'Broker Boss Online — Welcome Video');
+  });
   document.getElementById('lobby-choice-offline-btn').addEventListener('click', renderOfflineLobbySetup);
   document.getElementById('lobby-choice-online-btn').addEventListener('click', renderOnlineLandingScreen);
 }
@@ -6358,6 +6983,10 @@ document.getElementById('log-drawer-close-btn').addEventListener('click', () => 
 
 document.getElementById('player-aid-btn').addEventListener('click', () => {
   renderPlayerAidModal();
+});
+
+document.getElementById('video-tutorial-btn').addEventListener('click', () => {
+  openVideoModal(TUTORIAL_VIDEO_EMBED_URL, 'Broker Boss Online — Video Tutorial');
 });
 
 document.getElementById('export-telemetry-btn').addEventListener('click', () => {

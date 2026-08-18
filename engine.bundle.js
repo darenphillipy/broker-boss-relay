@@ -1,11 +1,5 @@
+console.log('[BB_DEBUG] engine.bundle.js build 2026-08-18T19:37:36Z (v68.5-notifications) — loaded and executing.');
 var BrokerBossEngine = (() => {
-  // [DEBUG v68.1-debug] Build/version banner — logs unconditionally the
-  // instant this script executes, before anything else runs. If the live
-  // site's console does NOT show this exact line after a hard refresh,
-  // the browser (or an intermediate CDN/cPanel cache) is still serving an
-  // old cached copy of engine.bundle.js, not this build — check cache
-  // headers / force a cache-busting query string on the <script> tag next.
-  console.log('[BB_DEBUG] engine.bundle.js build 2026-08-18T03:58:45Z (v68.3-techtree-final) — loaded and executing.');
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
     try {
@@ -2557,7 +2551,8 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw001(state, context) {
         const nextState = adjustWallet(state, context.playerId, 6, 0);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_001", message: `${context.playerId}'s Networking Brunch: Gain 6 Profit Tokens` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw002(state, context) {
         const { playerId } = context;
@@ -2572,23 +2567,27 @@ var BrokerBossEngine = (() => {
             }
           }
         };
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_002", message: `${context.playerId}'s Morning Huddle: Increase your Hand Limit by 1 for the rest of the game.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw005(state, context) {
         const nextState = adjustTrack(state, context.playerId, "recognition", 3);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_005", message: `${context.playerId}'s Social Media Post: Increase your Recognition level by 3.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw009(state, context) {
         let nextState = adjustWallet(state, context.playerId, 4, 0);
         nextState = adjustTrack(nextState, context.playerId, "training", 2);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_009", message: `${context.playerId}'s Referral Bonus: Gain 4 Profit Tokens and increase your Training level by 2.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw003(state, context) {
         const { playerId } = context;
         let nextState = adjustTrack(state, playerId, "training", 1);
         nextState = adjustTrack(nextState, playerId, "technology", 1);
         nextState = adjustTrack(nextState, playerId, "recognition", 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_003", message: `${context.playerId}'s Open House: Increase All your Broker values by 1.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw008(state, context) {
         const { playerId } = context;
@@ -2596,7 +2595,8 @@ var BrokerBossEngine = (() => {
         const targetLevel = 6;
         const delta = Math.max(0, targetLevel - player.tracks.recognition.value);
         const nextState = adjustTrack(state, playerId, "recognition", delta);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_008", message: `${context.playerId}'s Signage Upgrade: Increase your Recognition to level 6` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw014(state, context) {
         const { playerId, extra } = context;
@@ -2702,7 +2702,8 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw006(state, context) {
         const nextState = adjustWallet(state, context.playerId, 7, 0);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_006", message: `${context.playerId}'s Client Referral: Gain 7 Profit Tokens` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw011(state, context) {
         const { playerId } = context;
@@ -2719,7 +2720,8 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw012(state, context) {
         const nextState = adjustTrack(state, context.playerId, "technology", 2);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_012", message: `${context.playerId}'s Market Update: Increase your Technology level by 2.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw013(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -2813,22 +2815,26 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw017(state, context) {
         const nextState = adjustWallet(state, context.playerId, 7, 0);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_017", message: `${context.playerId}'s Community Sponsorship: Gain 7 Proift Tokens` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw018(state, context) {
         const nextState = adjustTrack(state, context.playerId, "recognition", 3);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_018", message: `${context.playerId}'s Team Meeting: Increase your Recognition level by 3` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw019(state, context) {
         const nextState = adjustTrack(state, context.playerId, "training", 3);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_019", message: `${context.playerId}'s Mentorship Program: Increase your Brokers Training level by 3.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw020(state, context) {
         const { playerId } = context;
         let nextState = adjustTrack(state, playerId, "training", 1);
         nextState = adjustTrack(nextState, playerId, "technology", 1);
         nextState = adjustTrack(nextState, playerId, "recognition", 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_020", message: `${context.playerId}'s Team Retreat: You may add 1+ to each of your Opporation Hub Values` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function localAddAgentToRoster(state, playerId, agentCatalogId, cardInstanceId) {
         const player = state.players[playerId];
@@ -3006,7 +3012,8 @@ var BrokerBossEngine = (() => {
         const { playerId } = context;
         let nextState = adjustWallet(state, playerId, 4, 0);
         nextState = adjustTrack(nextState, playerId, "recognition", 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_021", message: `${context.playerId}'s Local Event: Gain 4 Profit Tokens and increase your Recognition level by 1.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw022(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -3055,7 +3062,8 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw023(state, context) {
         const nextState = adjustTrack(state, context.playerId, "training", 3);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_023", message: `${context.playerId}'s Skill Seminar: Increase your Training level by 3.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw024(state, context) {
         const { playerId } = context;
@@ -3074,17 +3082,20 @@ var BrokerBossEngine = (() => {
         const { playerId } = context;
         let nextState = adjustWallet(state, playerId, 5, 0);
         nextState = advanceMarketShareWithBonusCheck(nextState, playerId, 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_025", message: `${context.playerId}'s Market Report: Gain 5 Profit Tokens and move your Market Share track +1 space.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw026(state, context) {
         const nextState = adjustWallet(state, context.playerId, 7, 0);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_026", message: `${context.playerId}'s Sales Rally: Gain 7 Profit Tokens` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw027(state, context) {
         const { playerId } = context;
         let nextState = adjustTrack(state, playerId, "training", 1);
         nextState = adjustTrack(nextState, playerId, "recognition", 2);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_027", message: `${context.playerId}'s Career Development: Increase your Training level by 1 and your Recognition level by 2.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw028(state, context) {
         const { playerId, extra } = context;
@@ -3117,11 +3128,13 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw029(state, context) {
         const nextState = adjustTrack(state, context.playerId, "recognition", 3);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_029", message: `${context.playerId}'s Agent Support Group: Increase your Recognition level by 3.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw030(state, context) {
         const nextState = adjustTrack(state, context.playerId, "recognition", 3);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_030", message: `${context.playerId}'s Brokerage Retreat: Increase your Recognition level by 3.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw031(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -3198,17 +3211,20 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw033(state, context) {
         const nextState = adjustOfficeSlots(state, context.playerId, 2);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_033", message: `${context.playerId}'s Advanced Training: Increase your Office expansion by 2` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw034(state, context) {
         const nextState = advanceMarketShareWithBonusCheck(state, context.playerId, 2);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_034", message: `${context.playerId}'s Brokerage App: Move up the Market Share track 2 spaces` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw035(state, context) {
         const { playerId } = context;
         let nextState = adjustWallet(state, playerId, 4, 0);
         nextState = advanceMarketShareWithBonusCheck(nextState, playerId, 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_035", message: `${context.playerId}'s Industry Leadership: Gain 4 Profit Tokens and move your Market Share track +1 space.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw036(state, context) {
         const { playerId } = context;
@@ -3416,7 +3432,8 @@ var BrokerBossEngine = (() => {
       }
       function handleGrw042(state, context) {
         const nextState = adjustWallet(state, context.playerId, 10, 0);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_042", message: `${context.playerId}'s AI Integration: Gain 10 Profit Tokens` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw043(state, context) {
         const { playerId } = context;
@@ -3494,17 +3511,20 @@ var BrokerBossEngine = (() => {
         const { playerId } = context;
         let nextState = adjustTrack(state, playerId, "training", 2);
         nextState = adjustTrack(nextState, playerId, "recognition", 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_045", message: `${context.playerId}'s Skill Mastery: Increase your Training level by 2 and Recognition level by 1.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw046(state, context) {
         const nextState = advanceMarketShareWithBonusCheck(state, context.playerId, 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_046", message: `${context.playerId}'s New-School Tech Master: Move up the Market Share track 1 space` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw047(state, context) {
         const { playerId } = context;
         let nextState = adjustWallet(state, playerId, 15, 0);
         nextState = advanceMarketShareWithBonusCheck(nextState, playerId, 1);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_047", message: `${context.playerId}'s Franchise Expansion: Gain 15 Income andmove up the Market Share Track 1 space` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw048(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -3946,7 +3966,8 @@ var BrokerBossEngine = (() => {
         const { playerId } = context;
         let nextState = adjustTrack(state, playerId, "recognition", 4);
         nextState = adjustWallet(nextState, playerId, 5, 0);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_058", message: `${context.playerId}'s Industry Awards: Increase your Recognition by 4 and gain 5 Profit Tokens.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw059(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -4030,7 +4051,8 @@ var BrokerBossEngine = (() => {
         const targetLevel = 5;
         const delta = Math.max(0, targetLevel - player.tracks.technology.value);
         const nextState = adjustTrack(state, playerId, "technology", delta);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_062", message: `${context.playerId}'s New Software: Increase your Technology Level to 5` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw063(state, context) {
         const { playerId } = context;
@@ -4101,7 +4123,8 @@ var BrokerBossEngine = (() => {
         const { playerId } = context;
         let nextState = adjustWallet(state, playerId, 3, 0);
         nextState = adjustTrack(nextState, playerId, "recognition", 2);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "GRW_067", message: `${context.playerId}'s New Office Launch: Gain 3 Profit Tokens and increase your Recognition by 2` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleGrw068(state, context) {
         const { playerId } = context;
@@ -4251,11 +4274,13 @@ var BrokerBossEngine = (() => {
       }
       function handleStr071(state, context) {
         const nextState = adjustOfficeSlots(state, context.playerId, 2);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "STR_071", message: `${context.playerId}'s Office Morale Boost: Immediately increase your Office Size by 2.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr075(state, context) {
         const nextState = grantShiftImmunity(state, context.playerId, context.cardInstanceId);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "STR_075", message: `${context.playerId}'s Staff Party: You are protected from the shift this round` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr070(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -4337,7 +4362,8 @@ var BrokerBossEngine = (() => {
       }
       function handleStr073(state, context) {
         const nextState = grantShiftImmunity(state, context.playerId, context.cardInstanceId);
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "STR_073", message: `${context.playerId}'s Legal Protection: Play this card to Protect your brokerage from 1 shift card` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr074(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -4521,7 +4547,8 @@ var BrokerBossEngine = (() => {
             [playerId]: { ...player, roster: player.roster.map((r) => r.isVoided ? r : { ...r, recruitmentProtectedUntilRound: state.phase.round }) }
           }
         };
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "STR_085", message: `${context.playerId}'s Market Leader Status: All Agents in your brokerage are immune to recruitment this round.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr086(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -4565,12 +4592,51 @@ var BrokerBossEngine = (() => {
           if (pid === playerId) return;
           nextState = { ...nextState, players: { ...nextState.players, [pid]: { ...nextState.players[pid], recruitBannedUntilRound: nextState.phase.round } } };
         });
-        return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
+        const nextState__logged = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "STR_088", message: `${context.playerId}'s Market Dominance: All rivals are banned from taking any Recruit action this turn.` });
+        return { state: nextState__logged, effectOutcome: DEFAULT_OUTCOME };
+      }
+      // [v68.7] STR_084 "Advanced Training" ("Take 2 Actions immediately
+      // without spending a Time Meeple") had NO handler registered at all —
+      // playing it silently no-opped (ACTION_CARD_PLAYED fired,
+      // ACTION_CARD_EFFECT_APPLIED never did) exactly like the bug reported
+      // for GRW_012. Implemented via the engine's existing, already-tested
+      // FREE_ACTION banked-token mechanic (see deployBankedToken's
+      // "acquire"/"acquire_from_open_market"/"play" modes and the dashboard
+      // UI already built for it) rather than a new "free board-space
+      // action" system: awarding 2 FREE_ACTION tokens is a reasonable,
+      // functional reading of "2 actions without spending a Time Meeple"
+      // that reuses fully-working code end-to-end. Note this is scoped to
+      // drawing/acquiring/playing a card for free, not placing on an
+      // arbitrary board space for free — flagged here in case the physical
+      // card intends the broader reading.
+      function handleStr084(state, context) {
+        const { playerId } = context;
+        const player = state.players[playerId];
+        const nextState = {
+          ...state,
+          players: {
+            ...state.players,
+            [playerId]: {
+              ...player,
+              bankedBonusTokens: [...player.bankedBonusTokens, "FREE_ACTION", "FREE_ACTION"]
+            }
+          }
+        };
+        return {
+          state: appendLog(nextState, {
+            type: "ACTION_CARD_EFFECT_APPLIED",
+            playerId,
+            catalogId: "STR_084",
+            message: `${playerId}'s Advanced Training grants 2 banked Free Action tokens (draw / acquire / play a card without spending a Time Meeple) — deploy them anytime from your dashboard.`
+          }),
+          effectOutcome: DEFAULT_OUTCOME
+        };
       }
       function handleStr090(state, context) {
         const { playerId } = context;
         const drawResult = forceDrawAndDiscardShiftCard(state);
-        return { state: drawResult.state, effectOutcome: DEFAULT_OUTCOME };
+        const drawResult_state__logged = appendLog(drawResult.state, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "STR_090", message: `${context.playerId}'s Strategic Planning: Draw a Shift card, your brokerage is safe.` });
+        return { state: drawResult_state__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr091(state, context) {
         const { playerId } = context;
@@ -4598,7 +4664,8 @@ var BrokerBossEngine = (() => {
             }
           }
         };
-        return { state: protectedState, effectOutcome: DEFAULT_OUTCOME };
+        const protectedState__logged = appendLog(protectedState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId: context.playerId, catalogId: "STR_091", message: `${context.playerId}'s Franchise Agreement: Grant Unrecruitable status to your Agent with the lowest Technology Value.` });
+        return { state: protectedState__logged, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr092(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -4723,6 +4790,7 @@ var BrokerBossEngine = (() => {
         handleStr078,
         handleStr079,
         handleStr080,
+        handleStr084,
         handleStr085,
         handleStr086,
         handleStr088,
@@ -5462,12 +5530,8 @@ var BrokerBossEngine = (() => {
         const activeMeepleInstanceIdsResume = new Set(
           (playCardSpaceResume ? playCardSpaceResume.occupiedBy : []).filter((entry) => entry.playerId === playerId).map((entry) => entry.meepleInstanceId)
         );
+        console.log('[BB_DEBUG][handleS6] BEFORE RECALL', { playerId, requestedMeepleInstanceIds: extra.meepleInstanceIds, playersWithMeeplesRemaining: state.phase.playersWithMeeplesRemaining });
         const recallIds = extra.meepleInstanceIds.filter((id) => !activeMeepleInstanceIdsResume.has(id)).slice(0, 3);
-        console.log('[BB_DEBUG][handleS6] BEFORE RECALL', {
-          playerId,
-          recallIds: [...recallIds],
-          wasInPlayersWithMeeplesRemaining: state.phase.playersWithMeeplesRemaining.includes(playerId)
-        });
         let nextState = {
           ...state,
           players: {
@@ -7046,7 +7110,7 @@ var BrokerBossEngine = (() => {
         const defaultSpaceId = "OPS_TRAINING";
         const nextState = { ...state, players: { ...state.players, [playerId]: { ...state.players[playerId], copiedActionSpaceId: defaultSpaceId, automationEngineerUsedThisRound: false } } };
         return {
-          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_AUTOMATION_ENGINEER_CLAIMED", playerId, catalogId: "SPEC_7", copiedSpaceId: defaultSpaceId, message: `${playerId} claims The Automation Engineer, copying ${defaultSpaceId} \u2014 once-per-round free trigger is not yet enforced by this engine.` }),
+          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_AUTOMATION_ENGINEER_CLAIMED", playerId, catalogId: "SPEC_7", copiedSpaceId: defaultSpaceId, message: `${playerId} claims The Automation Engineer, copying ${defaultSpaceId} \u2014 use the Automation Engineer button on your dashboard once per round to trigger it with no Meeple spent (standard costs still apply).` }),
           effectOutcome: DEFAULT_OUTCOME
         };
       }
@@ -7197,6 +7261,18 @@ var BrokerBossEngine = (() => {
         STR_078: strategyHandlers.handleStr078,
         STR_079: strategyHandlers.handleStr079,
         STR_080: strategyHandlers.handleStr080,
+        // [v68.7] STR_081 (Agent Retention Plan) and STR_087 (Advanced
+        // Security) are intentionally NOT registered here — both are
+        // reactive "Play when rival recruits" response cards, a
+        // response-window mechanic this engine does not implement yet
+        // (same scale of gap as SPEC_13's back-to-back turn, out of scope
+        // for this pass). Registering a normal-turn handler for them would
+        // be actively wrong — it would let a player burn the card for an
+        // effect that doesn't match its real trigger. verifyPlayRequirement
+        // below now rejects playing them from hand with a clear
+        // REACTIVE_ONLY_CARD error instead of silently discarding them for
+        // nothing (the exact bug pattern reported for GRW_012).
+        STR_084: strategyHandlers.handleStr084,
         STR_085: strategyHandlers.handleStr085,
         STR_086: strategyHandlers.handleStr086,
         STR_088: strategyHandlers.handleStr088,
@@ -7544,7 +7620,40 @@ var BrokerBossEngine = (() => {
           resolution: "immediate",
           reward
         });
-        return { state: nextState, deferred: false };
+        // [v68.5 BUGFIX] This used to hardcode deferred: false, even though
+        // applyRewardConfig's "track" case (via checkTrackMilestonesIfEligible)
+        // can open a real TRACK_BRANCH_CHOICE (Level 5) or TRACK_MILESTONE_CHOICE
+        // (Level 7/9) pendingInterrupt right here — e.g. placing on OPS_RECOGNITION
+        // and crossing the Level 5 threshold. Because deferred stayed false,
+        // placeMeeple's `if (!resolution.deferred) advanceActivePlayer(...)`
+        // fired immediately, handing the turn to the NEXT player (often a bot,
+        // which would then take a full out-of-turn action) while the CURRENT
+        // player's branch/milestone choice sat open and unresolved — a real
+        // turn-order corruption that read as a game-loop freeze once the
+        // human's choice and the bot's phantom turn got tangled together.
+        // Deriving deferred from whether a real interrupt now exists fixes
+        // this at the source for every reward type, present and future.
+        //
+        // [v68.5 BUGFIX — reintegration follow-up] A plain "does an interrupt
+        // exist on exit" check breaks when this function is invoked while a
+        // DIFFERENT interrupt was already open on entry — e.g. the new
+        // END_OF_ROUND_TECH_BONUSES phase's Copycat Marketing placement
+        // calls resolveActionSpace() for the copied space while its own
+        // END_OF_ROUND_TECH_BONUS_CHOICE interrupt is still on the state
+        // (the caller clears it only after checking `deferred`). Without
+        // this identity comparison, that pre-existing interrupt gets
+        // misread as "newly opened by this space," resolveEndOfRoundTechBonusChoice
+        // never clears it, and the same stale prompt is shown a second time
+        // instead of the phase advancing. Comparing type+sourcePlayerId
+        // against what was already there on entry correctly distinguishes
+        // "this space just opened something new" from "an unrelated
+        // interrupt the caller already knows about is still sitting there."
+        const incomingInterrupt = state.phase.pendingInterrupt;
+        const outgoingInterrupt = nextState.phase.pendingInterrupt;
+        const incomingIsReal = !!(incomingInterrupt && incomingInterrupt.type !== "NULL");
+        const outgoingIsReal = !!(outgoingInterrupt && outgoingInterrupt.type !== "NULL");
+        const deferred = outgoingIsReal && (!incomingIsReal || outgoingInterrupt.type !== incomingInterrupt.type || outgoingInterrupt.sourcePlayerId !== incomingInterrupt.sourcePlayerId);
+        return { state: nextState, deferred };
       }
       function resolveSpecialistAction(state, playerId, space) {
         const statusToken = {
@@ -7599,7 +7708,25 @@ var BrokerBossEngine = (() => {
             reason: "NO_ACTIVE_SPECIALIST_CARD"
           });
         }
-        return { state: nextState, deferred: false };
+        // [v68.5 BUGFIX] Same class of bug as resolveImmediateSpace above —
+        // specialist card effects (SPEC1 steal, SPEC2 release, SPEC4 agent
+        // selection, SPEC11 copy target, SPEC12 first recruit, SPEC3 hub
+        // target, etc.) can open a real targeted-choice pendingInterrupt via
+        // resolveSpecialistCardEffect. Hardcoding deferred: false here meant
+        // placeMeeple would advance the turn away from the player whose
+        // specialist choice was still open.
+        //
+        // [v68.5 BUGFIX — reintegration follow-up] Same identity comparison
+        // as resolveImmediateSpace above, for the same reason: this function
+        // can run while an unrelated interrupt (e.g. END_OF_ROUND_TECH_BONUS_CHOICE)
+        // was already open on entry, and a plain existence check would
+        // misattribute that pre-existing interrupt to this space.
+        const incomingInterrupt = state.phase.pendingInterrupt;
+        const outgoingInterrupt = nextState.phase.pendingInterrupt;
+        const incomingIsReal = !!(incomingInterrupt && incomingInterrupt.type !== "NULL");
+        const outgoingIsReal = !!(outgoingInterrupt && outgoingInterrupt.type !== "NULL");
+        const deferred = outgoingIsReal && (!incomingIsReal || outgoingInterrupt.type !== incomingInterrupt.type || outgoingInterrupt.sourcePlayerId !== incomingInterrupt.sourcePlayerId);
+        return { state: nextState, deferred };
       }
       function resolveDeferredSpace(state, playerId, space, meeple, extra) {
         const nextState = {
@@ -7640,13 +7767,9 @@ var BrokerBossEngine = (() => {
       }
       function advanceActivePlayer(state) {
         const { turnOrder, playersWithMeeplesRemaining, activePlayerId } = state.phase;
-        console.log('[BB_DEBUG][advanceActivePlayer] ENTRY', {
-          activePlayerId,
-          playersWithMeeplesRemainingLength: playersWithMeeplesRemaining.length,
-          playersWithMeeplesRemaining: [...playersWithMeeplesRemaining]
-        });
+        console.log('[BB_DEBUG][advanceActivePlayer] ENTER', { activePlayerId, playersWithMeeplesRemainingLength: playersWithMeeplesRemaining.length, playersWithMeeplesRemaining });
         if (playersWithMeeplesRemaining.length === 0) {
-          console.log('[BB_DEBUG][advanceActivePlayer] EXIT — playersWithMeeplesRemaining is empty, round-end path will trigger next settleGameLoop pass.');
+          console.log('[BB_DEBUG][advanceActivePlayer] EXIT (no players with meeples remaining) — activePlayerId unchanged:', activePlayerId);
           return state;
         }
         const currentIndex = turnOrder.indexOf(activePlayerId);
@@ -7654,7 +7777,7 @@ var BrokerBossEngine = (() => {
         for (let step = 1; step <= turnOrder.length; step += 1) {
           const candidateId = turnOrder[(startIndex + step) % turnOrder.length];
           if (playersWithMeeplesRemaining.includes(candidateId)) {
-            console.log('[BB_DEBUG][advanceActivePlayer] EXIT — advancing to', candidateId, 'from', activePlayerId);
+            console.log('[BB_DEBUG][advanceActivePlayer] EXIT — activePlayerId advances', activePlayerId, '->', candidateId);
             return {
               ...state,
               phase: {
@@ -7664,6 +7787,7 @@ var BrokerBossEngine = (() => {
             };
           }
         }
+        console.log('[BB_DEBUG][advanceActivePlayer] EXIT (no eligible candidate found in turnOrder) — activePlayerId unchanged:', activePlayerId);
         return state;
       }
       function placeMeeple(state, playerId, meepleInstanceId, spaceId, extra = null) {
@@ -7693,12 +7817,7 @@ var BrokerBossEngine = (() => {
         const occupantOrder = startingOrder;
         const remainingInSupply = updatedActive.filter((m) => m.status === "in_supply").length;
         const updatedPlayersWithMeeplesRemaining = remainingInSupply === 0 ? state.phase.playersWithMeeplesRemaining.filter((id) => id !== playerId) : state.phase.playersWithMeeplesRemaining;
-        console.log('[BB_DEBUG][placeMeeple] EXHAUSTION CHECK', {
-          playerId,
-          spaceId,
-          remainingInSupply,
-          wasDroppedFromPlayersWithMeeplesRemaining: remainingInSupply === 0
-        });
+        console.log('[BB_DEBUG][placeMeeple][EXHAUSTION CHECK]', { playerId, remainingInSupply, playersWithMeeplesRemainingBefore: state.phase.playersWithMeeplesRemaining, playersWithMeeplesRemainingAfter: updatedPlayersWithMeeplesRemaining });
         let nextState = {
           ...state,
           players: {
@@ -7746,6 +7865,27 @@ var BrokerBossEngine = (() => {
           });
         }
         const updatedSpace = nextState.board.actionSpaces.find((s) => s.spaceId === space.spaceId);
+        // [v68.7] Empty Open Market guard: GRW_RECRUIT_AGENT's deferred
+        // choice has no legal target at all when state.board.openMarketAgents
+        // is genuinely empty (late-game, agent deck exhausted). Previously
+        // this always opened the ACTION_SPACE_DEFERRED_CHOICE interrupt
+        // anyway, and the client could only show "The Open Market is
+        // empty." with a manual Cancel button as the way out. Checked here
+        // BEFORE the interrupt is ever opened, so a truly-empty market never
+        // shows a dead-end choice screen at all — the meeple and any cost
+        // are auto-returned immediately and the turn continues normally.
+        if (updatedSpace.spaceId === "GRW_RECRUIT_AGENT" && (nextState.board.openMarketAgents || []).length === 0) {
+          const refundedState = refundMeeplePlacementCore(nextState, playerId, updatedSpace.spaceId, meeple.instanceId);
+          if (refundedState) {
+            const loggedState = appendLog(refundedState, {
+              type: "DEFERRED_ACTION_AUTO_SKIPPED_EMPTY_MARKET",
+              playerId,
+              spaceId: updatedSpace.spaceId,
+              message: `${playerId} placed on ${updatedSpace.spaceId} but the Open Market of Agents is empty — meeple and any cost auto-returned; turn continues.`
+            });
+            return { state: loggedState, error: null, detail: null, deferred: true };
+          }
+        }
         const resolution = resolveActionSpace(nextState, playerId, updatedSpace, meeple, extra, occupantOrder);
         nextState = resolution.state;
         if (!resolution.deferred) {
@@ -7774,6 +7914,41 @@ var BrokerBossEngine = (() => {
         return { state: nextState, error: null, detail: null, deferred: resolution.deferred };
       }
       var NULL_INTERRUPT = { type: "NULL", sourcePlayerId: null, data: {} };
+      // [v68.7] Shared core of "return this meeple (and any cost) to
+      // playerId, un-occupying spaceId" — factored out of
+      // cancelDeferredSpaceChoice so the new proactive empty-market guard in
+      // placeMeeple (above) can reuse the exact same, already-tested refund
+      // logic instead of re-deriving it. Returns null if the space can't be
+      // found (caller decides how to report that).
+      function refundMeeplePlacementCore(state, playerId, spaceId, meepleInstanceId) {
+        const space = state.board.actionSpaces.find((s) => s.spaceId === spaceId);
+        if (!space) {
+          return null;
+        }
+        const player = state.players[playerId];
+        const updatedActive = player.timeMeeples.active.map(
+          (m) => m.instanceId === meepleInstanceId ? { ...m, status: "in_supply", locationSpaceId: null } : m
+        );
+        const updatedCopycatMeeple = player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.instanceId === meepleInstanceId ? { ...player.timeMeeples.copycatMeeple, status: "in_supply", locationSpaceId: null } : player.timeMeeples.copycatMeeple;
+        const updatedOccupiedBy = space.occupiedBy.filter((o) => o.meepleInstanceId !== meepleInstanceId);
+        const updatedSpaces = state.board.actionSpaces.map((s) => s.spaceId === spaceId ? { ...s, occupiedBy: updatedOccupiedBy } : s);
+        let nextState = {
+          ...state,
+          players: {
+            ...state.players,
+            [playerId]: { ...player, timeMeeples: { ...player.timeMeeples, active: updatedActive, copycatMeeple: updatedCopycatMeeple } }
+          },
+          board: { ...state.board, actionSpaces: updatedSpaces },
+          phase: {
+            ...state.phase,
+            playersWithMeeplesRemaining: state.phase.playersWithMeeplesRemaining.includes(playerId) ? state.phase.playersWithMeeplesRemaining : [...state.phase.playersWithMeeplesRemaining, playerId]
+          }
+        };
+        if (space.cost && (space.cost.profitTokens || space.cost.priorityTokens)) {
+          nextState = adjustWallet(nextState, playerId, space.cost.profitTokens || 0, space.cost.priorityTokens || 0);
+        }
+        return nextState;
+      }
       function cancelDeferredSpaceChoice(state, playerId) {
         const interrupt = state.phase.pendingInterrupt;
         if (!interrupt || interrupt.type !== "ACTION_SPACE_DEFERRED_CHOICE" || interrupt.sourcePlayerId !== playerId) {
@@ -8458,9 +8633,56 @@ var BrokerBossEngine = (() => {
         }
         return { ok: true };
       }
+      // [v68.7] Cards whose catalog text is "Play when rival recruits..."
+      // (a reactive response to an OPPONENT's action, not a normal on-your-
+      // turn play) — this engine doesn't implement a response-window
+      // mechanic yet. Blocked here, ahead of cost deduction / hand removal
+      // in playActionCard, so attempting to play one from hand gives an
+      // honest rejection instead of silently discarding the card for no
+      // effect (STR_081/STR_087 previously had no registered handler at
+      // all, so playing them burned the card with zero effect).
+      var REACTIVE_ONLY_CATALOG_IDS = /* @__PURE__ */ new Set(["STR_081", "STR_087"]);
       function verifyPlayRequirement(state, playerId, catalogId) {
+        if (REACTIVE_ONLY_CATALOG_IDS.has(catalogId)) {
+          return {
+            ok: false,
+            error: "REACTIVE_ONLY_CARD",
+            detail: { catalogId, reason: "This card can only be played in response to a rival's recruitment attempt — a response-window mechanic not yet implemented in this engine. Playing it as a normal turn action is disabled so it isn't silently discarded for no effect." }
+          };
+        }
         const card = state.cardCatalog.actionCards[catalogId];
-        const requirement = card.playRequirement;
+        let requirement = card.playRequirement;
+        // [v68.7] Two catalog.json playRequirement.raw strings failed to
+        // parse into a structured requirement during the CSV -> JSON
+        // catalog build, which meant these cards fell into the
+        // "unparsed"/default case below and were PERMANENTLY unplayable —
+        // every attempt rejected with REQUIREMENT_TYPE_NOT_SUPPORTED
+        // regardless of the player's actual stats. Both corrections are
+        // high-confidence and applied here (engine-side only — catalog.json
+        // itself, the CSV-derived source of truth, is left untouched):
+        //  - GRW_063's raw text is "Recognition Levle 4" — a source-data
+        //    typo for "Recognition Level 4"; recognition is a real,
+        //    existing player track.
+        //  - INF_102's raw text is "Choose one competing broker" — that's
+        //    describing the card's TARGET selection (handled separately via
+        //    its own extra/choiceType flow, same as every other targeted
+        //    card in this deck), not a precondition to gate play on, so it
+        //    is treated as no requirement at all (matches the null
+        //    playRequirement already used by other targeted cards, e.g.
+        //    STR_074).
+        // GRW_020's raw text ("Culture Level 4") is deliberately NOT
+        // corrected here: this engine has no player-level "culture" track
+        // at all (culture is currently only an per-Agent stat, not
+        // something tracked per-player) — inventing a mapping would be
+        // guessing at an unimplemented rule rather than fixing a parsing
+        // bug, so GRW_020 is left honestly blocked pending rulebook
+        // clarification, the same judgment applied to STR_081/STR_087/
+        // SPEC_13 elsewhere in this codebase.
+        if (catalogId === "GRW_063" && requirement && requirement.type === "unparsed") {
+          requirement = { type: "track", track: "recognition", level: 4 };
+        } else if (catalogId === "INF_102" && requirement && requirement.type === "unparsed") {
+          requirement = null;
+        }
         if (requirement === null || requirement === void 0) {
           return { ok: true };
         }
@@ -8640,7 +8862,23 @@ var BrokerBossEngine = (() => {
           return { state, error: "NO_PENDING_SPECIALIST_CARD_CHOICE", detail: { playerId, pendingInterrupt: interrupt || null } };
         }
         const { catalogId, cardInstanceId } = interrupt.data;
-        const nextState = resolveSpecialistCardEffect(state, playerId, catalogId, cardInstanceId, extra || {});
+        let nextState = resolveSpecialistCardEffect(state, playerId, catalogId, cardInstanceId, extra || {});
+        // [v68.6 BUGFIX] All 6 targeted specialist choice resolvers (SPEC_1
+        // Snoop, SPEC_2 Whistleblower, SPEC_3 Lobbyist, SPEC_4 Inside Source,
+        // SPEC_11 Ghost in the Machine, SPEC_12 Shell Company) clear
+        // pendingInterrupt themselves on completion but never call
+        // advanceActivePlayer — this function was the one place that should
+        // have done it (exactly mirroring resolveActionCardEffectChoice
+        // immediately above, which already gets this right for ordinary
+        // action cards) but didn't. The result: after a human or bot
+        // resolved a specialist card's targeted choice, the SAME player
+        // stayed active and was immediately prompted for another meeple
+        // placement instead of the turn passing on — turn-order corruption,
+        // not a hard freeze, but a real bug hiding behind the same root
+        // cause as the v68.5 branch/milestone fix.
+        if (nextState.phase.pendingInterrupt.type === "NULL") {
+          nextState = advanceActivePlayer(nextState);
+        }
         return { state: nextState, error: null, detail: null };
       }
       module.exports = {
@@ -9524,14 +9762,25 @@ var BrokerBossEngine = (() => {
       var { adjustWallet, adjustMarketShare, getSharedRng } = require_cardEffectHelpers();
       var { endOfRoundShiftImmunitySweep } = require_immunityReducer();
       var { isGameOver, runFinalScoring } = require_scoringEngine();
-      // [v68.3-techtree-final] Lazy-required inside the functions below (never
-      // at module-init time) — same load-order-safe pattern already used for
-      // require_cardEffectRegistry() in techTrackReducer.js.
+      // [v68.3] Lazy requires (not top-of-module) to avoid the circular
+      // dependency workerPlacementReducer.js/techTrackReducer.js already
+      // have with each other — endOfRoundReducer.js only needs these two
+      // functions inside the END_OF_ROUND_TECH_BONUSES phase resolvers
+      // below, well after every module has finished its own top-level
+      // initialization.
+      var _resolveActionSpaceRef = null;
       function getResolveActionSpace() {
-        return require_workerPlacementReducer().resolveActionSpace;
+        if (!_resolveActionSpaceRef) {
+          _resolveActionSpaceRef = require_workerPlacementReducer().resolveActionSpace;
+        }
+        return _resolveActionSpaceRef;
       }
+      var _useLiquidationEngineRef = null;
       function getUseLiquidationEngine() {
-        return require_techTrackReducer().useLiquidationEngine;
+        if (!_useLiquidationEngineRef) {
+          _useLiquidationEngineRef = require_techTrackReducer().useLiquidationEngine;
+        }
+        return _useLiquidationEngineRef;
       }
       function appendLog(state, entry) {
         const logEntry = {
@@ -9601,19 +9850,24 @@ var BrokerBossEngine = (() => {
       function meepleTaxSweep(state) {
         let nextState = { ...state, phase: { ...state.phase, current: "END_OF_ROUND_MEEPLE_TAX" } };
         Object.keys(nextState.players).forEach((playerId) => {
-          const player = nextState.players[playerId];
-          const activeCount = player.timeMeeples.active.length;
+          const taxPlayer = nextState.players[playerId];
+          const activeCount = taxPlayer.timeMeeples.active.length;
           const taxableCount = Math.max(0, activeCount - MEEPLE_TAX_FREE_THRESHOLD);
           const grossTaxOwed = taxableCount * MEEPLE_TAX_RATE;
-          const hasUnionBusterReduction = player.tracks.training.branch === "B" && player.tracks.training.value >= 5;
-          const taxOwed = Math.max(0, grossTaxOwed - (hasUnionBusterReduction ? UNION_BUSTER_TAX_REDUCTION : 0));
-          if (grossTaxOwed > 0 && hasUnionBusterReduction) {
+          // [v68.2 BUGFIX] The Union Buster (Training Path B, Lv5): "your
+          // total Meeple Tax owed... is permanently reduced by -$2 (minimum
+          // tax of $0)". This reduction was previously never applied here —
+          // meepleTaxSweep charged the full rate regardless of the player's
+          // branch/level.
+          const unionBusterActive = taxPlayer.tracks.training.branch === "B" && taxPlayer.tracks.training.value >= 5;
+          const taxOwed = unionBusterActive ? Math.max(0, grossTaxOwed - UNION_BUSTER_TAX_REDUCTION) : grossTaxOwed;
+          if (unionBusterActive && grossTaxOwed > 0) {
             nextState = appendLog(nextState, {
               type: "UNION_BUSTER_TAX_REDUCTION_APPLIED",
               playerId,
               grossTaxOwed,
               reducedTaxOwed: taxOwed,
-              message: `${playerId}'s Union Buster reduces Meeple Tax from ${grossTaxOwed} to ${taxOwed} PT.`
+              message: `${playerId}'s Union Buster reduces Meeple Tax from $${grossTaxOwed} to $${taxOwed}.`
             });
           }
           if (taxOwed === 0) {
@@ -10257,13 +10511,13 @@ var BrokerBossEngine = (() => {
         endOfRoundHandDiscardSweep,
         endOfRoundShiftImmunitySweep,
         meepleReturnSweep,
-        advanceRoundTracker,
-        advanceToNextRoundOrFinalScoring,
         getEndOfRoundTechBonusOptions,
         getNextUnprocessedTechBonusPlayerId,
         openEndOfRoundTechBonusPrompt,
         executeCopycatEndOfRoundPlacement,
-        resolveEndOfRoundTechBonusChoice
+        resolveEndOfRoundTechBonusChoice,
+        advanceRoundTracker,
+        advanceToNextRoundOrFinalScoring
       };
     }
   });
@@ -10800,6 +11054,13 @@ var BrokerBossEngine = (() => {
           // only forwards fields it names here, so this needed adding rather
           // than assuming a generic passthrough existed.
           drawnCatalogIds: Array.isArray(data.drawnCatalogIds) ? [...data.drawnCatalogIds] : [],
+          // [v68.6] SPEC_4 (The Inside Source) — drawnCatalogIds above is
+          // just raw catalogIds; the client needs real name/stats/image to
+          // render actual agent cards for the up-to-2 selection, so resolve
+          // them the same way GRW_RECRUIT_AGENT's resolvedAgentCandidates
+          // does (same resolveOpenMarketAgent helper, same shape
+          // buildAgentCardHtml already expects on the client).
+          resolvedDrawnCandidates: Array.isArray(data.drawnCatalogIds) ? data.drawnCatalogIds.map((catalogId) => resolveOpenMarketAgent(state, { catalogId })) : [],
           // v=56: SPEC_1/SPEC_2/SPEC_11's new real-choice options — same
           // explicit-field pattern as drawnCatalogIds immediately above.
           stealOptions: Array.isArray(data.stealOptions) ? data.stealOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, cards: [...o.cards || []] })) : [],
@@ -11835,6 +12096,7 @@ var BrokerBossEngine = (() => {
   var require_interruptResolutionReducer = __commonJS({
     "interruptResolutionReducer.js"(exports, module) {
       var specialistCards = require_specialistCards();
+      var { advanceActivePlayer } = require_workerPlacementReducer();
       var NULL_INTERRUPT = { type: "NULL", sourcePlayerId: null, data: {} };
       function appendLog(state, entry) {
         const logEntry = {
@@ -11927,6 +12189,19 @@ var BrokerBossEngine = (() => {
           choiceType: interrupt.data && interrupt.data.choiceType,
           respondingPlayerId
         });
+        // [v68.6 BUGFIX] Same class of bug as resolveSpecialistCardEffectChoice
+        // (SPEC_6 / The Clean Slate's SELECT_TRASH_CARDS goes through this
+        // generic CHOICE_RESOLVERS path, not resolveSpecialistCardEffectChoice) —
+        // this always cleared the interrupt but never advanced the turn,
+        // leaving the resolving player stuck as the active player instead of
+        // control passing on. Unconditional advance here is safe: this
+        // resolver table has exactly one entry today (SELECT_TRASH_CARDS)
+        // and its apply() never opens a follow-up interrupt of its own — if
+        // a future resolver needs to chain into another choice, it should
+        // set pendingInterrupt itself and this function will need updating
+        // to respect that, matching the pattern already used elsewhere
+        // (resolveSpecialistCardEffectChoice, advanceIfInterruptClear).
+        nextState = advanceActivePlayer(nextState);
         return { state: nextState, error: null, detail: null };
       }
       module.exports = {
@@ -12079,6 +12354,18 @@ var BrokerBossEngine = (() => {
       var { playActionCard, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
       var { resolveShiftEffectStage2 } = require_shiftReducer();
       var { resolveEndOfRoundTechBonusChoice } = require_endOfRoundReducer();
+      // [v68.5 BUGFIX] Same fix as gameLoopController.js's advanceIfInterruptClear
+      // — resolveTrackBranchChoice/resolveTargetedMilestone never call
+      // advanceActivePlayer themselves, so the bot's own branch/milestone
+      // choices need the turn explicitly completed here once resolved,
+      // unless resolving it opened a brand-new interrupt of its own.
+      function advanceIfInterruptClear(resultState) {
+        const interrupt = resultState.phase.pendingInterrupt;
+        if (interrupt && interrupt.type !== "NULL") {
+          return resultState;
+        }
+        return advanceActivePlayer(resultState);
+      }
       var DEAD_CARD_TRACK_LEVEL_THRESHOLD = 3;
       function appendLog(state, entry) {
         const logEntry = {
@@ -12644,7 +12931,7 @@ var BrokerBossEngine = (() => {
               reason: result2.error
             };
           }
-          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+          return { state: advanceIfInterruptClear(result2.state), action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
         if (interrupt.type === "TRACK_MILESTONE_CHOICE") {
           const { milestoneKey } = interrupt.data;
@@ -12666,17 +12953,20 @@ var BrokerBossEngine = (() => {
               phase: { ...loggedState2.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } }
             };
             return {
-              state: appendLog(clearedState, {
+              // [v68.5 BUGFIX] The interrupt is force-cleared right above as
+              // part of the auto-forfeit — advanceActivePlayer must run here
+              // too, or the bot's turn never actually completes.
+              state: advanceActivePlayer(appendLog(clearedState, {
                 type: "TRACK_MILESTONE_FORFEITED",
                 playerId: interrupt.sourcePlayerId,
                 milestoneKey,
                 reason: result2.error
-              }),
+              })),
               action: "TRACK_MILESTONE_FORFEITED",
               reason: result2.error
             };
           }
-          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+          return { state: advanceIfInterruptClear(result2.state), action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
         if (interrupt.type === "ACTION_SPACE_DEFERRED_CHOICE" && interrupt.data && interrupt.data.spaceType === "draft_open_market_agent") {
           if (interrupt.data.spaceId === "GRW_RECRUIT_AGENT") {
@@ -13274,7 +13564,7 @@ var BrokerBossEngine = (() => {
       var { renderPlayerDashboard } = require_playerDashboardRenderer();
       var { renderInterruptOverlay } = require_interruptOverlayRenderer();
       var { dispatchAction, triggerBotTurnIfActive } = require_gameActionDispatcher();
-      var { cancelDeferredSpaceChoice, resolveDualTrackChoice, resolveHireCoachChoice, resolveClearOpenMarketChoice, resolveClearOpenMarketFreeCardPick, executeFreeBoardAction, useExecutiveOverdrive, useAutomationEngineer } = require_workerPlacementReducer();
+      var { cancelDeferredSpaceChoice, resolveDualTrackChoice, resolveHireCoachChoice, resolveClearOpenMarketChoice, resolveClearOpenMarketFreeCardPick, executeFreeBoardAction, useExecutiveOverdrive, useAutomationEngineer, advanceActivePlayer } = require_workerPlacementReducer();
       var { resolveShellCompanySecondRecruit } = require_specialistCards();
       var { resolveTrackBranchChoice, resolveTargetedMilestone, forfeitTargetedMilestone, useProprietaryAlgorithm, useLiquidationEngine } = require_techTrackReducer();
       var { resolveDeficitTrackChoice } = require_cardEffectHelpers();
@@ -13301,6 +13591,27 @@ var BrokerBossEngine = (() => {
       var { evaluateTurnOrderBid } = require_botDecisionEngine();
       var { revealNextSpecialist } = require_specialistRevealReducer();
       var DEFAULT_MAX_SETTLE_ITERATIONS = 500;
+      // [v68.5 BUGFIX] resolveTrackBranchChoice / resolveTargetedMilestone /
+      // forfeitTargetedMilestone never called advanceActivePlayer themselves
+      // (unlike every other ACTION_SPACE_DEFERRED_CHOICE resolver in
+      // workerPlacementReducer.js, e.g. resolveDualTrackChoice,
+      // resolveHireCoachChoice). Combined with resolveImmediateSpace's old
+      // hardcoded deferred: false, the turn used to advance too EARLY (at
+      // placement time, before the choice was even opened) and then never
+      // advance again once the choice was actually resolved — corrupting
+      // turn order. Now that placeMeeple correctly skips advancing when
+      // these interrupts open, this helper completes the turn-advance once
+      // the choice is actually resolved, but ONLY if resolving it didn't
+      // itself open a new interrupt (e.g. Silicon Valley Sweep's "Play 1
+      // Free" targeting a card that needs its own choice) — in which case
+      // that new interrupt takes over exactly like a real deferred space.
+      function advanceIfInterruptClear(resultState) {
+        const interrupt = resultState.phase.pendingInterrupt;
+        if (interrupt && interrupt.type !== "NULL") {
+          return resultState;
+        }
+        return advanceActivePlayer(resultState);
+      }
       function dispatchHumanAction(state, userIntent) {
         if (!userIntent || typeof userIntent.type !== "string") {
           return { state, error: "MALFORMED_USER_INTENT", detail: null };
@@ -13416,7 +13727,7 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_BRANCH_CHOICE_PARAMS", detail: null };
             }
             const result = resolveTrackBranchChoice(state, userIntent.playerId, userIntent.trackName, userIntent.chosenBranch);
-            return { state: result.state, error: result.error, detail: result.detail };
+            return { state: result.error ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
           }
           case "ACKNOWLEDGE_SHIFT_CARD": {
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
@@ -13494,14 +13805,14 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = resolveTargetedMilestone(state, userIntent.playerId, userIntent.options || {});
-            return { state: result.state, error: result.error, detail: result.detail };
+            return { state: result.error ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
           }
           case "FORFEIT_TRACK_MILESTONE": {
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = forfeitTargetedMilestone(state, userIntent.playerId);
-            return { state: result.state, error: result.error, detail: result.detail };
+            return { state: result.error ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
           }
           case "DEPLOY_BANKED_BONUS_TOKEN": {
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Broker Boss Online — Prototype</title>
-  <link rel="stylesheet" href="style.css?v=45" />
+  <link rel="stylesheet" href="style.css?v=50" />
 </head>
 <body>
 
@@ -20,6 +20,7 @@
       <span id="phase-info">—</span>
       <span>Active: <strong id="active-player-info">—</strong></span>
       <button type="button" id="player-aid-btn" class="player-aid-btn">📖 Player Aid / Tech Tree</button>
+      <button type="button" id="video-tutorial-btn" class="video-tutorial-btn" title="Watch the video tutorial — safe to open any time, won't disrupt your turn">📖 Video Tutorial</button>
       <button type="button" id="export-telemetry-btn" class="player-aid-btn" title="Export round-by-round decision log and timing data as CSV">📊 Export Telemetry CSV</button>
       <button type="button" id="report-feedback-btn" class="report-feedback-btn">🐞 Report / Feedback</button>
     </div>
@@ -33,6 +34,8 @@
   <div id="your-turn-banner" class="your-turn-banner" style="display:none;">
     <div class="your-turn-banner-text">IT'S YOUR TURN!</div>
   </div>
+
+  <div id="bonus-unlocked-banner" class="bonus-unlocked-banner" style="display:none;"></div>
 
   <div id="round-summary-modal" class="round-summary-modal" style="display:none;"></div>
 
@@ -92,7 +95,7 @@
 
   </div>
 
-  <script src="engine.bundle.js?v=45"></script>
-  <script src="app.js?v=45"></script>
+  <script src="engine.bundle.js?v=50"></script>
+  <script src="app.js?v=50"></script>
 </body>
 </html>

@@ -100,6 +100,58 @@ body {
   border: 2px solid #fff3d6;
 }
 
+/* [v68.5] Universal Tech Tree Bonus Unlocked notification banner —
+   same fixed/centered/slide-in pattern as .your-turn-banner above, but
+   multi-line and auto-dismissing (no click-through needed) since it's
+   purely informational and must never block gameplay. */
+.bonus-unlocked-banner {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  z-index: 9997;
+  max-width: 420px;
+  width: 92vw;
+  opacity: 0;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  pointer-events: none;
+  background: linear-gradient(135deg, #1c2a3a, #24384c);
+  border: 2px solid #4ade80;
+  border-radius: 14px;
+  padding: 14px 18px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.65), 0 0 20px 2px rgba(74, 222, 128, 0.35);
+}
+.bonus-unlocked-banner-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.bonus-unlocked-title {
+  color: #4ade80;
+  font-weight: 900;
+  font-size: 1.05em;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+.bonus-unlocked-owner {
+  color: var(--text-dim);
+  font-size: 0.78em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.bonus-unlocked-desc {
+  color: var(--text-light);
+  font-size: 0.88em;
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+.bonus-unlocked-where {
+  color: var(--hub-decisions, #e8b64c);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
 .round-summary-modal {
   position: fixed;
   inset: 0;
@@ -1211,6 +1263,28 @@ body {
   }
 }
 
+/* [v68.5] Personal Player Dashboard indicator highlight — a distinct
+   green (matches .free-action-space-highlight's "something new/
+   actionable" language elsewhere on the board) repeating pulse directing
+   the player's eye to a newly-unlocked Bonus Token / Copycat Meeple /
+   milestone ability button. Deliberately a different color from the
+   gold .player-panel-active glow so the two are never confused —
+   "it's your turn" vs. "you just got something new" are different
+   signals. Fixed 3-iteration duration; the class itself may remain
+   applied past that (see dashboardNewAssetPulseUntil in app.js) but the
+   animation has already naturally stopped by then. */
+.player-panel-new-asset-pulse {
+  animation: new-asset-pulse 1.3s ease-in-out 3;
+}
+@keyframes new-asset-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px #4ade80, 0 0 4px 1px rgba(74, 222, 128, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 3px #4ade80, 0 0 24px 8px rgba(74, 222, 128, 0.75);
+  }
+}
+
 .player-header {
   display: flex;
   align-items: center;
@@ -1722,6 +1796,31 @@ body {
   overflow-y: auto;
 }
 .modal-box h3 { margin-top: 0; color: var(--accent); }
+
+/* v=50: fallback manual-close button for the end-of-game survey modal
+   (#interrupt-overlay) — top-right corner, same visual language as
+   .video-modal-close-btn. Lets a stuck player dismiss the survey even if
+   Skip/Submit somehow don't fire. */
+.survey-close-x-btn {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  background: var(--accent);
+  color: #201a0a;
+  border: none;
+  border-radius: 20px;
+  width: 30px;
+  height: 30px;
+  font-weight: 700;
+  font-size: 0.9em;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+.survey-close-x-btn:hover {
+  filter: brightness(1.1);
+}
 
 .candidate-list {
   display: flex;
@@ -2696,6 +2795,23 @@ body {
   cursor: pointer;
 }
 
+/* [v68.6] SPEC_4 (The Inside Source) wraps a full buildAgentCardHtml
+   card — not a short text label like the other .master-algorithm-
+   card-option checkboxes above — in a checkbox <label>. The flex-row
+   layout above squashes a full card image next to a checkbox; this
+   override stacks the checkbox above the card instead, keeping the
+   card at its normal size within the existing .agent-candidate-grid. */
+.agent-card-checkbox-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px;
+}
+.agent-card-checkbox-option input[type="checkbox"] {
+  align-self: flex-start;
+}
+
 /* Phase 4 Stage 2 — physical player board: the real board artwork as a
    true background, with track steps, office slots, and staff reservoir
    counts positioned at coordinates measured directly against that
@@ -3032,6 +3148,121 @@ body {
 }
 .player-aid-btn:hover {
   background: rgba(232, 182, 76, 0.15);
+}
+
+/* Video Tutorial button (in-game header) — same visual family as
+   .player-aid-btn but deliberately WITHOUT margin-left: auto, since
+   .player-aid-btn already claims that role to push the nav-button
+   group to the right; a second auto margin here would just add an
+   uneven gap between it and the buttons around it. */
+.video-tutorial-btn {
+  background: var(--bg-panel-light);
+  color: var(--text-light);
+  border: 1px solid var(--hub-decisions, #e8b64c);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+.video-tutorial-btn:hover {
+  background: rgba(232, 182, 76, 0.15);
+}
+
+/* Welcome Video button (lobby landing screen) */
+.watch-welcome-video-btn {
+  display: block;
+  margin: 6px auto 16px;
+  background: var(--bg-panel-light);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 18px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 700;
+  text-align: center;
+  transition: background 0.15s, transform 0.1s;
+}
+.watch-welcome-video-btn:hover {
+  background: rgba(232, 182, 76, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Video modal (Welcome Video + Video Tutorial) */
+.video-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 9999;
+  padding: 20px;
+}
+.video-modal-box {
+  position: relative;
+  width: 100%;
+  max-width: 960px;
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 16px;
+}
+.video-modal-close-btn {
+  position: absolute;
+  top: -16px;
+  right: -16px;
+  background: var(--accent);
+  color: #201a0a;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-weight: 700;
+  font-size: 0.9em;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+.video-modal-close-btn:hover {
+  filter: brightness(1.1);
+}
+.video-modal-iframe-wrap {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 */
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+.video-modal-iframe-wrap iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+@media (max-width: 767px) {
+  .video-modal-overlay {
+    padding: 10px;
+  }
+  .video-modal-box {
+    padding: 10px;
+  }
+  .video-modal-close-btn {
+    top: 6px;
+    right: 6px;
+    padding: 6px 12px;
+    font-size: 0.8em;
+  }
+  .watch-welcome-video-btn {
+    font-size: 0.82em;
+    padding: 7px 14px;
+  }
+  .video-tutorial-btn {
+    font-size: 0.72em;
+    padding: 3px 8px;
+  }
 }
 
 .player-aid-modal-box {
