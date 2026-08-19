@@ -1306,6 +1306,33 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* v68.11: Active Specialty Card badge row — one chip per claimed
+   Specialist Card whose passive effect is still relevant (see
+   buildActiveSpecialtyBadgesHtml in app.js). Sits directly under the
+   player-header banner so it reads as "currently in effect" status,
+   distinct from the roster/hand summaries below it. */
+.specialty-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.specialty-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--bg-dark);
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  border-radius: 999px;
+  cursor: default;
+}
+
 /* Still used in the scoreboard table, on a neutral background (not the
    player-header, which is now filled with the player's own accent
    color, making a same-color dot there redundant and invisible). */

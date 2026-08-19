@@ -136,6 +136,15 @@ var BrokerBossEngine = (() => {
           },
           roster: [],
           bankedBonusTokens: [],
+          // v68.11: catalogIds of every Specialist Card this player has
+          // claimed at the Executive Search Specialty Agent Hub, in claim
+          // order — the single source of truth the new dashboard "Active
+          // Specialty Card" badge row (app.js) is built from. Previously
+          // nothing tracked this on the player at all; each card's own
+          // *effect* (ventureCapitalistActive, bridgedTracks, etc.) was
+          // tracked individually, but there was no general list a UI badge
+          // could just read, so no badge existed for any of the 13 cards.
+          claimedSpecialistCards: [],
           // GRW_043 "Market Dominance": for 2 rounds, rivals pay the card
           // player 2 PT whenever THEY (a rival) take the main Growth Hub
           // Recruit action. Tracked per-target (this array lives on the
@@ -156,10 +165,14 @@ var BrokerBossEngine = (() => {
           // the rest of the game — every real track-cube move (via
           // cardEffectHelpers.js's adjustTrack, the single shared primitive
           // every track-moving card/space in this project already goes
-          // through) that lands the cube on a bonus space (5/7/9 — DEVIATION,
-          // explicit user direction 2026: Level 3 no longer counts, see
-          // cardEffectHelpers.js's own comment) grants +3 PT, continuously,
-          // not just a one-time claim-time snapshot.
+          // through) that lands the cube on a bonus space (3/5/7/9, matching
+          // the card's own printed rules text) grants +3 PT per bonus space
+          // crossed, continuously, not just a one-time claim-time snapshot.
+          // [v68.11] A prior version of this comment claimed Level 3 was
+          // intentionally excluded per "explicit user direction 2026" — no
+          // such direction is recorded in the catalog or any patch note, and
+          // it contradicted SPEC_8's own printed card text, so it was
+          // reverted; see the v68.11 patch notes for the full writeup.
           ventureCapitalistActive: false,
           // SPEC_11 "The Ghost in the Machine": copies an opponent's Level 5
           // Technology branch passive (Overtime Manager / Proprietary
@@ -1496,7 +1509,19 @@ var BrokerBossEngine = (() => {
         };
         return { ...state, log: [...state.log, logEntry] };
       }
-      var VENTURE_CAPITALIST_BONUS_SPACES = /* @__PURE__ */ new Set([5, 7, 9]);
+      // v68.11 FIX: restored to the full {3, 5, 7, 9} set the specialist
+      // card catalog (SPEC_8's own printed description, the source of
+      // truth for this card's real effect) explicitly specifies. A prior
+      // in-code comment on the player-state shape (initialGameState.js,
+      // near `ventureCapitalistActive`) claimed Level 3 was intentionally
+      // excluded per "explicit user direction 2026," but no such direction
+      // is recorded anywhere else (not in this catalog, not in any prior
+      // patch note), and it directly contradicts both the catalog text and
+      // the v68.11 bug report asking for {3, 5, 7, 9}. Treating the catalog
+      // + the current explicit report as the stronger, corroborated source
+      // of truth and reverting that one uncorroborated comment's exclusion
+      // — flagged explicitly in the v68.11 patch notes for visibility.
+      var VENTURE_CAPITALIST_BONUS_SPACES = /* @__PURE__ */ new Set([3, 5, 7, 9]);
       function adjustTrack(state, playerId, trackName, delta) {
         const player = getPlayerOrThrow(state, playerId, "adjustTrack");
         if (!LEVELED_TRACKS.has(trackName)) {
@@ -1522,14 +1547,33 @@ var BrokerBossEngine = (() => {
             }
           }
         };
-        if (delta > 0 && player.ventureCapitalistActive && newTrack.value !== track.value && VENTURE_CAPITALIST_BONUS_SPACES.has(newTrack.value)) {
-          nextState = adjustWallet(nextState, playerId, 3, 0);
-          nextState = appendLog(nextState, {
-            type: "SPECIALIST_EFFECT_VENTURE_CAPITALIST_TRIGGERED",
-            playerId,
-            trackName,
-            landedValue: newTrack.value,
-            message: `${playerId}'s ${trackName} track lands on odd space ${newTrack.value} \u2014 The Venture Capitalist grants +3 PT.`
+        // v68.11 FIX: multi-step track moves (e.g. a +3 Action Card taking a
+        // track from Level 2 straight to Level 5) used to only check the
+        // FINAL landed value against VENTURE_CAPITALIST_BONUS_SPACES,
+        // silently skipping any odd bonus space passed through along the
+        // way (Level 2 -> 5 would check only "5", missing "3" entirely).
+        // Now every integer in (track.value, newTrack.value] is walked and
+        // every bonus space crossed pays out and logs its own entry \u2014 a
+        // Level 2 -> 5 move now correctly triggers twice (at 3 and at 5)
+        // for +3 PT each, +6 PT total, matching the card's printed rules
+        // text ("whenever you advance a track cube ONTO any odd number").
+        if (delta > 0 && player.ventureCapitalistActive && newTrack.value !== track.value) {
+          const crossedBonusValues = [];
+          for (let v = track.value + 1; v <= newTrack.value; v += 1) {
+            if (VENTURE_CAPITALIST_BONUS_SPACES.has(v)) {
+              crossedBonusValues.push(v);
+            }
+          }
+          crossedBonusValues.forEach((value) => {
+            nextState = adjustWallet(nextState, playerId, 3, 0);
+            nextState = appendLog(nextState, {
+              type: "SPECIALIST_EFFECT_VENTURE_CAPITALIST_TRIGGERED",
+              playerId,
+              trackName,
+              value,
+              totalPayout: 3,
+              message: `${playerId}'s ${trackName} track advances onto odd space ${value} \u2014 The Venture Capitalist grants +3 PT.`
+            });
           });
         }
         const bridgeActive = player.bridgedTracks && player.bridgedTracksUntilRound === state.phase.round && player.bridgedTracks.includes(trackName) && newTrack.value !== track.value;
@@ -1980,7 +2024,8 @@ var BrokerBossEngine = (() => {
         resolveDeficitTrackChoice,
         fireAgentFromRoster,
         fireAgentBySelector,
-        pickRosterExtremeBy
+        pickRosterExtremeBy,
+        VENTURE_CAPITALIST_BONUS_SPACES
       };
     }
   });
@@ -6406,7 +6451,7 @@ var BrokerBossEngine = (() => {
   // handlers/specialistCards/specialistCards.js
   var require_specialistCards = __commonJS({
     "handlers/specialistCards/specialistCards.js"(exports, module) {
-      var { adjustWallet, adjustOfficeSlots, getSharedRng } = require_cardEffectHelpers();
+      var { adjustWallet, adjustOfficeSlots, getSharedRng, VENTURE_CAPITALIST_BONUS_SPACES } = require_cardEffectHelpers();
       var DEFAULT_OUTCOME = { skipDefaultDiscard: false, customDestination: null };
       var _instanceCounter = 0;
       function resetSpecialistCardInstanceCounter() {
@@ -6765,9 +6810,13 @@ var BrokerBossEngine = (() => {
       function handleSpec8(state, context) {
         const { playerId } = context;
         const player = state.players[playerId];
-        const bonusSpaces = /* @__PURE__ */ new Set([5, 7, 9]);
+        // v68.11 FIX: was a separate local Set([5, 7, 9]) literal, drifted
+        // from cardEffectHelpers.js's own VENTURE_CAPITALIST_BONUS_SPACES
+        // (missing Level 3, and a second copy that could silently diverge
+        // again in the future). Now imports the single shared constant so
+        // the claim-time snapshot and every later track move agree.
         const trackNames = ["training", "technology", "recognition"];
-        const matchingTracks = trackNames.filter((t) => bonusSpaces.has(player.tracks[t].value));
+        const matchingTracks = trackNames.filter((t) => VENTURE_CAPITALIST_BONUS_SPACES.has(player.tracks[t].value));
         const payout = matchingTracks.length * 3;
         let nextState = { ...state, players: { ...state.players, [playerId]: { ...player, ventureCapitalistActive: true } } };
         if (payout > 0) {
@@ -7690,6 +7739,24 @@ var BrokerBossEngine = (() => {
             revealedRound: activeCard.revealedRound,
             effectDispatched: true
           });
+          // v68.11: record the claim on the player itself — previously
+          // nothing tracked "which Specialist Cards has this player
+          // claimed" as a general list (only each card's own individual
+          // effect flag existed), so the dashboard had no data source to
+          // build an Active Specialty Card badge from. Applied last, after
+          // resolveSpecialistCardEffect, using nextState's own freshest
+          // player reference so it's never clobbered by the effect's own
+          // player-state update.
+          nextState = {
+            ...nextState,
+            players: {
+              ...nextState.players,
+              [playerId]: {
+                ...nextState.players[playerId],
+                claimedSpecialistCards: [...nextState.players[playerId].claimedSpecialistCards || [], activeCard.catalogId]
+              }
+            }
+          };
           nextState = {
             ...nextState,
             specialistDeck: {
@@ -11021,7 +11088,16 @@ var BrokerBossEngine = (() => {
             // for the UI to know the ability had been claimed at all.
             executiveOverdriveAvailable: !!player.executiveOverdriveAvailable,
             copiedActionSpaceId: player.copiedActionSpaceId || null,
-            automationEngineerUsedThisRound: !!player.automationEngineerUsedThisRound
+            automationEngineerUsedThisRound: !!player.automationEngineerUsedThisRound,
+            // v68.11: general claimed-Specialist-Card list (badge row data
+            // source) plus the remaining per-card passive flags that
+            // existed in engine state but, like SPEC_9/SPEC_7 above before
+            // v=49, were never actually surfaced to the client.
+            claimedSpecialistCards: [...player.claimedSpecialistCards || []],
+            ventureCapitalistActive: !!player.ventureCapitalistActive,
+            bridgedTracks: player.bridgedTracks ? [...player.bridgedTracks] : null,
+            bridgedTracksUntilRound: player.bridgedTracksUntilRound || null,
+            ghostInTheMachineBorrowedBranch: player.ghostInTheMachineBorrowedBranch || null
           };
         });
         return playerViewModels;
@@ -11619,7 +11695,18 @@ var BrokerBossEngine = (() => {
           hasMarketHijack: !!player.hasMarketHijack,
           hasGoldenParachute: !!player.hasGoldenParachute,
           liquidityStaffPT: player.liquidityStaffPT || 0,
-          liquidityStaffPTUsableRound: player.liquidityStaffPTUsableRound || null
+          liquidityStaffPTUsableRound: player.liquidityStaffPTUsableRound || null,
+          // v68.11: Active Specialty Card badge row data — the general
+          // claimed-cards list plus the per-card passive flags needed to
+          // describe *why* a badge is still active in its hover tooltip
+          // (app.js's buildActiveSpecialtyBadgesHtml).
+          claimedSpecialistCards: [...player.claimedSpecialistCards || []],
+          ventureCapitalistActive: !!player.ventureCapitalistActive,
+          bridgedTracks: player.bridgedTracks ? [...player.bridgedTracks] : null,
+          ghostInTheMachineBorrowedBranch: player.ghostInTheMachineBorrowedBranch || null,
+          copiedActionSpaceId: player.copiedActionSpaceId || null,
+          automationEngineerUsedThisRound: !!player.automationEngineerUsedThisRound,
+          executiveOverdriveAvailable: !!player.executiveOverdriveAvailable
         };
       }
       module.exports = {

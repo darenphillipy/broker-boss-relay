@@ -3579,7 +3579,7 @@ const SPECIALIST_CARD_INFO = {
   SPEC_5: { name: 'The Ghost Broker', description: 'Permanent: +1 Office capacity and +2 Hand Limit for the rest of the game.', image: 'SPEC_5.png' },
   SPEC_6: { name: 'The Clean Slate', description: 'Trash up to 3 cards from hand/discard; draw 1 replacement per card trashed.', image: 'SPEC_6.png' },
   SPEC_7: { name: 'The Automation Engineer', description: 'Permanently lock in 1 Action Space — trigger it once per round for free, no Meeple needed.', image: 'SPEC_7.png' },
-  SPEC_8: { name: 'The Venture Capitalist', description: 'Gain 3 PT whenever a track cube lands on space 5, 7, or 9.', image: 'SPEC_8.png' },
+  SPEC_8: { name: 'The Venture Capitalist', description: 'Gain 3 PT whenever a track cube lands on space 3, 5, 7, or 9.', image: 'SPEC_8.png' },
   SPEC_9: { name: 'The Executive Overdrive', description: 'Resolve 1 Action Space twice back-to-back; the 2nd resolution waives its cost.', image: 'SPEC_9.png' },
   SPEC_10: { name: 'The Corporate Merger', description: 'Bridge 2 tracks — advancing one grants a free +1 to the other, for the rest of the round.', image: 'SPEC_10.png' },
   SPEC_11: { name: 'The Ghost in the Machine', description: 'Copy an opponent\'s Level 5 Tech passive for the rest of the round.', image: 'SPEC_11.png' },
@@ -3606,6 +3606,75 @@ function buildSpecialistCardHtml(specialistHubPanel) {
       ${spentTile}
     </div>
   `;
+}
+
+// v68.11 — Active Specialty Card badge row (Required Fix #3): previously
+// nothing on the player dashboard indicated which Specialist Cards a
+// player had claimed, or whether their ongoing effects were still live —
+// a claimed SPEC_8, for instance, looked identical to never having
+// claimed it at all once its one-time claim toast scrolled away.
+//
+// Eligibility was originally derived by scanning the catalog's own
+// description text for the word "Passive" — but SPEC_9 ("Executive
+// Overdrive": stays usable until spent) and SPEC_13 ("Hostile Takeover":
+// the report's own explicit badge example) both describe their ongoing
+// effect under an "Effect:" header instead, with no literal word
+// "Passive" anywhere in the card text, so that heuristic silently missed
+// 2 of the 8 cards this feature is supposed to cover. Badge eligibility
+// is now the explicit set of catalogIds buildSpecialtyBadgeStatusText
+// below actually knows how to describe — SPEC_1/2/3/4/6 are pure one-shot
+// Immediate effects with nothing ongoing left to show once resolved, so
+// they're correctly excluded by having no case in that switch.
+const BADGE_ELIGIBLE_SPECIALIST_CATALOG_IDS = new Set(['SPEC_5', 'SPEC_7', 'SPEC_8', 'SPEC_9', 'SPEC_10', 'SPEC_11', 'SPEC_12', 'SPEC_13']);
+function isBadgeEligibleSpecialistCard(catalogId) {
+  return BADGE_ELIGIBLE_SPECIALIST_CATALOG_IDS.has(catalogId);
+}
+
+function buildSpecialtyBadgeStatusText(dash, catalogId) {
+  switch (catalogId) {
+    case 'SPEC_5':
+      return 'Permanent — +1 Office capacity, +2 Hand Limit';
+    case 'SPEC_7':
+      return dash.copiedActionSpaceId
+        ? `Locked to ${dash.copiedActionSpaceId.replace(/_/g, ' ')}${dash.automationEngineerUsedThisRound ? ' — used this round' : ' — ready this round'}`
+        : null;
+    case 'SPEC_8':
+      return dash.ventureCapitalistActive ? 'Active — +3 PT on every odd track space (3/5/7/9) for the rest of the game' : null;
+    case 'SPEC_9':
+      return dash.executiveOverdriveAvailable ? 'Available — next Action Space may resolve twice back-to-back' : 'Used';
+    case 'SPEC_10':
+      return dash.bridgedTracks && dash.bridgedTracks.length === 2
+        ? `Active this round — ${dash.bridgedTracks.join(' + ')} bridged`
+        : 'Expired (round-only effect)';
+    case 'SPEC_11':
+      return dash.ghostInTheMachineBorrowedBranch
+        ? `Active this round — copying Technology-${dash.ghostInTheMachineBorrowedBranch}`
+        : 'Expired (round-only effect)';
+    case 'SPEC_12': {
+      const used = dash.shellCompanyRecruitsUsed || 0;
+      const stashRemaining = (dash.shellCompanyStash || []).length;
+      return used < 2 && stashRemaining > 0 ? `${2 - used} free recruit(s) remaining this round` : 'Used up';
+    }
+    case 'SPEC_13':
+      return 'Claimed — guaranteed 1st player next round';
+    default:
+      return null;
+  }
+}
+
+function buildActiveSpecialtyBadgesHtml(dash) {
+  const claimed = dash.claimedSpecialistCards || [];
+  const passiveClaimed = claimed.filter(isBadgeEligibleSpecialistCard);
+  if (passiveClaimed.length === 0) return '';
+  const badges = passiveClaimed
+    .map((catalogId) => {
+      const info = SPECIALIST_CARD_INFO[catalogId] || { name: catalogId, description: '' };
+      const status = buildSpecialtyBadgeStatusText(dash, catalogId);
+      const tooltip = `${info.name}: ${info.description}${status ? ` (${status})` : ''}`;
+      return `<span class="specialty-badge" title="${escapeAttr(tooltip)}">${escapeAttr(info.name)}</span>`;
+    })
+    .join('');
+  return `<div class="specialty-badge-row">${badges}</div>`;
 }
 
 const SIMPLE_BANKED_TOKEN_TYPES = new Set(['FREE_5PT', 'FREE_1PT']);
@@ -4864,6 +4933,7 @@ function buildCondensedOpponentPanel(dash, dashboards) {
     <div class="player-header">
       <span class="player-name">${dash.displayName}${dash.isBot ? ` (${botArchetypeTitle(dash.archetype)})` : ""}</span>
     </div>
+    ${buildActiveSpecialtyBadgesHtml(dash)}
     <div class="wallet-row"><span class="resource-chip resource-chip-profit">💰 ${dash.wallet.profitTokens} PT</span> <span class="resource-chip resource-chip-priority">⭐ ${dash.wallet.priorityTokens} Priority</span></div>
     <div class="condensed-tracks">
       ${trackRow('training', 'Training')}
@@ -4937,12 +5007,13 @@ function renderDashboards(dashboards, vm) {
 
     const LEVELED_TRACK_KEYS = new Set(['training', 'technology', 'recognition']);
 
-    // DEVIATION (explicit user direction, 2026): must match the real
-    // engine's VENTURE_CAPITALIST_BONUS_SPACES in cardEffectHelpers.js
-    // exactly — Level 3 removed, see that file's own comment for the
-    // full context on this being a flagged deviation from the
-    // previously rulebook-verified rule.
-    const VC_BONUS_LEVELS = new Set([5, 7, 9]);
+    // v68.11 FIX: restored to {3, 5, 7, 9}, matching the real engine's
+    // VENTURE_CAPITALIST_BONUS_SPACES in cardEffectHelpers.js and SPEC_8's
+    // own printed card text. This client copy previously carried the same
+    // stale "Level 3 excluded" note the engine did — see cardEffectHelpers.js's
+    // v68.11 comment and the v68.11 patch notes for the full context on why
+    // that exclusion was reverted.
+    const VC_BONUS_LEVELS = new Set([3, 5, 7, 9]);
 
     function buildSplitTrackHtml(m) {
       const abilities = TECH_TRACK_ABILITY_CATALOG[m.key];
@@ -5037,6 +5108,7 @@ function renderDashboards(dashboards, vm) {
       <div class="player-header">
         <span class="player-name">${dash.displayName}${dash.isBot ? ` (${botArchetypeTitle(dash.archetype)})` : ""}</span>
       </div>
+      ${buildActiveSpecialtyBadgesHtml(dash)}
       <div class="player-board-graphic">
         ${physicalBoardStepsHtml}
         ${officeExpansionHtml}
