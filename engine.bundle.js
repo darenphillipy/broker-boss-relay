@@ -8338,6 +8338,25 @@ var BrokerBossEngine = (() => {
         if (state.shiftTracker.position < state.shiftTracker.max) {
           return state;
         }
+        // v68.10 FIX: previously the ONLY place shiftTracker.position ever
+        // reset to `min` was deep inside applyShiftEffectAndTransitionToConsequences
+        // — i.e. only once the full announcement -> (player_choices) ->
+        // consequences interrupt sequence had fully resolved. Meanwhile
+        // advanceMarketReport's Math.min(position + 1, max) CLAMPS at max
+        // rather than wrapping, so every recruit that happened before that
+        // resolution finished also computed position === max and landed
+        // back here. Without this guard, each of those recruits blindly
+        // drew ANOTHER shift card and overwrote phase.pendingInterrupt,
+        // silently discarding the still-unresolved one (and its already-
+        // drawn card) entirely — collapsing what should have been 2+
+        // separate 4-recruit cycles into a single applied shift effect.
+        // That's the actual mechanism behind "12 recruits, only 1 shift
+        // card" — not a round-boundary reset conflict (shiftTracker is
+        // never touched anywhere in the end-of-round sweeps; confirmed by
+        // auditing every write site).
+        if (state.phase.pendingInterrupt && state.phase.pendingInterrupt.type === "SHIFT_CARD_RESOLUTION") {
+          return state;
+        }
         let { shiftDeck } = state;
         let drawnCard = drawTopCard(shiftDeck.drawPile);
         let remainingDrawPile = shiftDeck.drawPile.slice(1);
@@ -8361,6 +8380,17 @@ var BrokerBossEngine = (() => {
         return {
           ...state,
           shiftDeck: { ...shiftDeck, drawPile: remainingDrawPile },
+          // Reset the moment the trigger actually fires, not only once the
+          // full multi-stage resolution completes later. This is the core
+          // fix: the very next recruit's advanceMarketReport call now sees
+          // a genuinely-reset counter (0, wrapping to 1) instead of a
+          // clamped max that would otherwise re-enter this function and
+          // draw a second card on top of the still-pending first one.
+          // applyShiftEffectAndTransitionToConsequences still resets this
+          // same field later too — harmless (min -> min), left in place
+          // rather than removed, since it's still the correct value to
+          // guarantee once the effect actually applies.
+          shiftTracker: { ...state.shiftTracker, position: state.shiftTracker.min },
           phase: {
             ...state.phase,
             pendingInterrupt: {
