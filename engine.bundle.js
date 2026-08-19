@@ -10106,6 +10106,22 @@ var BrokerBossEngine = (() => {
       function churnAgentMarketRowWithAutoRecruit(state, existingEntries, drawPile, discardPile = []) {
         const KEPT_COUNT = Math.max(0, existingEntries.length - 2);
         const kept = existingEntries.slice(0, KEPT_COUNT);
+        // v68.9 FIX: the 2 purged entries (existingEntries.slice(KEPT_COUNT))
+        // were previously dropped on the floor entirely — never added to
+        // agentDiscardPile, never seen again. Since nothing ANYWHERE in the
+        // engine ever wrote to agentDiscardPile, it stayed permanently empty,
+        // which meant drawAgentCardsWithAutoRecruitCheck's own
+        // reshuffle-when-drawPile-empty fallback (the exact
+        // AGENT_DECK_RESHUFFLED path) could never actually fire — there was
+        // never anything in the discard pile to reshuffle. Combined with this
+        // sweep unconditionally burning 2 real cards from agentDrawPile every
+        // single round (independent of how many recruits actually happened),
+        // the draw pile drained permanently over a handful of rounds and the
+        // Open Market row could never recover, matching the reported
+        // "market goes empty by round 2 and stays empty" symptom exactly.
+        // Fixed by actually discarding the purged cards so they become real,
+        // reshufflable inventory again once the draw pile runs dry.
+        const purgedCatalogIds = existingEntries.slice(KEPT_COUNT).filter(Boolean).map((entry) => entry.catalogId).filter(Boolean);
         const {
           state: nextState,
           marketEntries: drawn,
@@ -10116,7 +10132,12 @@ var BrokerBossEngine = (() => {
           state: nextState,
           newRow: [...drawn, ...kept],
           newDrawPile: remainingDrawPile,
-          newDiscardPile: remainingDiscardPile,
+          // Purged cards join the discard pile AFTER this round's draw
+          // resolves — they weren't available to be redrawn this round (a
+          // real physical discard pile wouldn't let you draw the card you
+          // just discarded a moment earlier either), only from next time the
+          // draw pile empties and reshuffles.
+          newDiscardPile: [...remainingDiscardPile, ...purgedCatalogIds],
           purgedCount: existingEntries.length - KEPT_COUNT
         };
       }
@@ -10174,6 +10195,49 @@ var BrokerBossEngine = (() => {
           }
         }
         return nextState;
+      }
+      // v68.9: explicit end-of-round safety net (Required Fix #3 —
+      // "verifyAndRefillMarket") guaranteeing the Open Market Agent row is
+      // always topped back up to TARGET_SIZE before the next round's active
+      // player gets control, using whatever combination of agentDrawPile +
+      // agentDiscardPile is actually available (reshuffling via the same
+      // drawAgentCardsWithAutoRecruitCheck helper openMarketChurnSweep
+      // already uses). A true no-op once openMarketChurnSweep's own purge/
+      // discard fix (above) is in place under normal play, but this covers
+      // any other path that might drain the row below 5 (e.g. SFT_038
+      // Market Crash, a specialist card pulling agents out) without needing
+      // its own bespoke refill logic. Genuinely running out — every Agent
+      // card in the catalog either recruited onto a roster or otherwise
+      // removed from the game — is not itself a bug, so this silently no-ops
+      // rather than erroring when fewer than TARGET_SIZE cards exist at all.
+      function agentMarketRefillGuaranteeSweep(state) {
+        const TARGET_SIZE = 5;
+        const currentRow = (state.board.openMarketAgents || []).filter(Boolean);
+        if (currentRow.length >= TARGET_SIZE) return state;
+        const needed = TARGET_SIZE - currentRow.length;
+        const drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
+        const discardPile = state.board.decks && state.board.decks.agentDiscardPile || [];
+        const {
+          state: nextState,
+          marketEntries: drawn,
+          remainingDrawPile,
+          remainingDiscardPile
+        } = drawAgentCardsWithAutoRecruitCheck(state, drawPile, needed, discardPile);
+        if (drawn.length === 0) return nextState;
+        const refilledState = {
+          ...nextState,
+          board: {
+            ...nextState.board,
+            openMarketAgents: [...currentRow, ...drawn],
+            decks: { ...nextState.board.decks, agentDrawPile: remainingDrawPile, agentDiscardPile: remainingDiscardPile }
+          }
+        };
+        return appendLog(refilledState, {
+          type: "OPEN_MARKET_AGENT_REFILL_GUARANTEE",
+          refilledCount: drawn.length,
+          rowSizeAfter: currentRow.length + drawn.length,
+          message: `Open Market Agent row was short (${currentRow.length}/${TARGET_SIZE}) — topped up with ${drawn.length} card(s) before the next round begins.`
+        });
       }
       function onboardingTokenClearSweep(state) {
         let nextState = state;
@@ -10284,6 +10348,7 @@ var BrokerBossEngine = (() => {
         nextState = endOfRoundShiftImmunitySweep(nextState);
         nextState = onboardingTokenClearSweep(nextState);
         nextState = openMarketChurnSweep(nextState);
+        nextState = agentMarketRefillGuaranteeSweep(nextState);
         nextState = shellCompanyStashDiscardSweep(nextState);
         nextState = graduateStaffInTrainingSweep(nextState);
         nextState = meepleReturnSweep(nextState);
@@ -10508,6 +10573,8 @@ var BrokerBossEngine = (() => {
         resolveTurnOrderBidding,
         compareBids,
         runCleanupSweeps,
+        openMarketChurnSweep,
+        agentMarketRefillGuaranteeSweep,
         endOfRoundHandDiscardSweep,
         endOfRoundShiftImmunitySweep,
         meepleReturnSweep,
