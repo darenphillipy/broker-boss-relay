@@ -11,8 +11,14 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-08-18T19:37:36Z (v68.5-notifications) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-09 (v68.18-batch2) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
+
+// [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
+// raw any more — uiMessages.js turns them into plain English.
+function uiErr(code, detail) {
+  return window.BrokerBossUiMessages ? window.BrokerBossUiMessages.friendlyError(code, detail) : String(code || '');
+}
 
 const BOT_ARCHETYPE_TITLES = {
   Aggressive: 'Aggressive / Shark',
@@ -347,8 +353,8 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
       spaceId,
     });
     if (result.error) {
-      logLine(`Free Action rejected: ${result.error}`);
-      showToast(`Could not perform that space for free: ${result.error}`);
+      logLine(`Free Action: ${uiErr(result.error, result.detail)}`);
+      showToast(`Could not perform that space for free: ${uiErr(result.error, result.detail)}`);
     } else {
       showToast('Free Action performed — no Time Meeple spent.');
     }
@@ -377,8 +383,8 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
       useOvertimeManager: true,
     });
     if (result.error) {
-      logLine(`Overtime Manager placement rejected: ${result.error}`);
-      showToast(`Could not place there with Overtime Manager: ${result.error}`);
+      logLine(`Overtime Manager placement: ${uiErr(result.error, result.detail)}`);
+      showToast(`Could not place there with Overtime Manager: ${uiErr(result.error, result.detail)}`);
     } else {
       showToast('Overtime Manager used — placed on an occupied space for $2 PT.');
     }
@@ -397,8 +403,8 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
       spaceId,
     });
     if (result.error) {
-      logLine(`Venture Liquidation action rejected: ${result.error}`);
-      showToast(`Could not use a Liquidity Staff token there: ${result.error}`);
+      logLine(`Venture Liquidation action: ${uiErr(result.error, result.detail)}`);
+      showToast(`Could not use a Liquidity Staff token there: ${uiErr(result.error, result.detail)}`);
     } else {
       showToast('Venture Liquidation: 1 Liquidity Staff token spent, action performed for free.');
     }
@@ -417,8 +423,8 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
       spaceId,
     });
     if (result.error) {
-      logLine(`Executive Overdrive rejected: ${result.error}`);
-      showToast(`Could not resolve that space again: ${result.error}`);
+      logLine(`Executive Overdrive: ${uiErr(result.error, result.detail)}`);
+      showToast(`Could not resolve that space again: ${uiErr(result.error, result.detail)}`);
     } else {
       showToast('Executive Overdrive used — that space resolved a 2nd time, free.');
     }
@@ -451,8 +457,8 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
       spaceId,
     });
     if (result.error) {
-      logLine(`Copycat Meeple placement rejected: ${result.error}`);
-      showToast(`Could not place the Copycat Meeple there: ${result.error}`);
+      logLine(`Copycat Meeple placement: ${uiErr(result.error, result.detail)}`);
+      showToast(`Could not place the Copycat Meeple there: ${uiErr(result.error, result.detail)}`);
     } else {
       showToast('Copycat Meeple placed.');
     }
@@ -488,7 +494,7 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
   });
 
   if (result.error) {
-    logLine(`Action rejected: ${result.error}`);
+    logLine(uiErr(result.error, result.detail));
     if (result.error === 'MEEPLE_NOT_IN_SUPPLY') {
       // FIX (Item 4): a stale meeple reference (e.g. from a drag that
       // started before a state change, or a frontend cache that
@@ -891,7 +897,7 @@ function translateCardPlayError(errorCode, detail) {
   if (errorCode === 'REACTIVE_ONLY_CARD') {
     return "This card can only be played in response to a rival's recruitment attempt — that response window isn't available yet, so it can't be played as a normal turn action. It stays in your hand.";
   }
-  return `Card play rejected: ${errorCode}`;
+  return uiErr(errorCode, detail);
 }
 
 function handleHandCardClick(cardInstanceId) {
@@ -959,7 +965,7 @@ function handleAcquireActionCard(marketCatalogId) {
   });
 
   if (result.error) {
-    logLine(`Acquire rejected: ${result.error}`);
+    logLine(`Acquire: ${uiErr(result.error, result.detail)}`);
   } else if (acquiredCard && acquiredCard.resolved) {
     showToast(`Acquired ${acquiredCard.name} ($${acquiredCard.cost} PT) from the Open Market.`);
   }
@@ -998,7 +1004,7 @@ function handleRecruitAgent(agentCatalogId) {
   });
 
   if (result.error) {
-    logLine(`Recruit rejected: ${result.error}`);
+    logLine(`Recruit: ${uiErr(result.error, result.detail)}`);
   } else if (agent && agent.resolved) {
     showToast(`Recruited ${agent.name} (+$${agent.totalProfit} Net Profit).`);
   }
@@ -1028,7 +1034,7 @@ function handlePoachAgent(targetPlayerId, targetAgentInstanceId) {
   });
 
   if (result.error) {
-    logLine(`Poach rejected: ${result.error}`);
+    logLine(`Poach: ${uiErr(result.error, result.detail)}`);
   } else if (agent && agent.resolved) {
     showToast(`Poached ${agent.name} from ${targetDash.displayName} — no PT cost, no Market Report triggered.`);
   }
@@ -1058,7 +1064,7 @@ function handlePlaceLoyaltyToken(agentInstanceId, fromAgentInstanceId) {
   });
 
   if (result.error) {
-    logLine(`Loyalty Token rejected: ${result.error}`);
+    logLine(`Loyalty Token: ${uiErr(result.error, result.detail)}`);
   } else if (agent && agent.resolved) {
     showToast(`Loyalty Token placed on ${agent.name} — unrecruitable.`);
   }
@@ -1081,7 +1087,7 @@ function handleCrmUpdateChoice(chosenCatalogId) {
   });
 
   if (result.error) {
-    logLine(`CRM Update choice rejected: ${result.error}`);
+    logLine(`CRM Update choice: ${uiErr(result.error, result.detail)}`);
   } else if (agent && agent.resolved) {
     showToast(`CRM Update: recruited ${agent.name} — the other 2 Agents return to the top of the deck.`);
   }
@@ -1101,7 +1107,7 @@ function handleStartCardChoice(extra) {
   });
 
   if (result.error) {
-    logLine(`Choice rejected: ${result.error}`);
+    logLine(`Choice: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast('Choice resolved.');
   }
@@ -1121,7 +1127,7 @@ function handleHireCoachChoice(targetAgentInstanceId) {
   });
 
   if (result.error) {
-    logLine(`Coach assignment rejected: ${result.error}`);
+    logLine(`Coach assignment: ${uiErr(result.error, result.detail)}`);
   } else if (targetAgentInstanceId) {
     showToast('Coach Token assigned — Profit permanently +3.');
   } else {
@@ -1143,7 +1149,7 @@ function handleClearOpenMarketChoice(choice) {
   });
 
   if (result.error) {
-    logLine(`Clear Open Market rejected: ${result.error}`);
+    logLine(`Clear Open Market: ${uiErr(result.error, result.detail)}`);
   } else if (choice === 'wipe_both') {
     showToast('Both Open Market rows cleared and refreshed.');
   } else if (choice === 'wipe_action_and_take_free') {
@@ -1167,7 +1173,7 @@ function handleClearOpenMarketFreeCardPick(pickedCatalogId) {
   });
 
   if (result.error) {
-    logLine(`Free card pick rejected: ${result.error}`);
+    logLine(`Free card pick: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(`${pickedCatalogId} taken for free.`);
   }
@@ -1186,8 +1192,8 @@ function handleShellCompanySecondRecruit(stashInstanceId) {
   });
 
   if (result.error) {
-    logLine(`Shell Company recruit rejected: ${result.error}`);
-    showToast(`Cannot recruit: ${result.error}`);
+    logLine(`Shell Company recruit: ${uiErr(result.error, result.detail)}`);
+    showToast(`Cannot recruit: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast('Recruited from the Shell Company stash.');
   }
@@ -1251,7 +1257,7 @@ function submitSpecialistCardChoice(extra, successMessage) {
   });
   if (result.error) {
     console.warn('[BB_DEBUG][specialistCardChoice] rejected', { extra, error: result.error });
-    showToast(`Could not resolve that choice: ${result.error}`);
+    showToast(`Could not resolve that choice: ${uiErr(result.error, result.detail)}`);
   } else if (successMessage) {
     showToast(successMessage);
   }
@@ -1564,7 +1570,7 @@ function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
       resolveBtn.addEventListener('click', () => {
         const result = BrokerBossEngine.executeUserAction(state, { type: 'RESOLVE_SHIFT_EFFECT', playerId: HUMAN_PLAYER_ID });
         if (result.error) {
-          showToast(`Could not resolve shift effect: ${result.error}`);
+          showToast(`Could not resolve shift effect: ${uiErr(result.error, result.detail)}`);
         }
         state = result.state;
         render();
@@ -1615,7 +1621,7 @@ function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
     ackBtn.addEventListener('click', () => {
       const result = BrokerBossEngine.executeUserAction(state, { type: 'ACKNOWLEDGE_SHIFT_CARD', playerId: HUMAN_PLAYER_ID });
       if (result.error) {
-        showToast(`Could not acknowledge: ${result.error}`);
+        showToast(`Could not acknowledge: ${uiErr(result.error, result.detail)}`);
       }
       state = result.state;
       render();
@@ -1689,15 +1695,23 @@ function handleSubmitTurnOrderBid(priorityTokensBid, profitTokensBid) {
   logLine('');
   showToast('');
 
+  // [v68.17 FIX #10] The human bid is what ends a round offline. Ask the
+  // engine to stop at the start of the next round (before any bot moves)
+  // so the Round Summary is shown first; resumeAfterRoundSummary() lets
+  // the bots go once the player dismisses it. Online play never pauses.
   const result = BrokerBossEngine.executeUserAction(state, {
     type: 'SUBMIT_TURN_ORDER_BID',
     playerId: HUMAN_PLAYER_ID,
     profitTokensBid,
     priorityTokensBid,
-  });
+  }, { pauseAtRoundBoundary: true });
+
+  if (!result.error && result.settleReason === 'ROUND_BOUNDARY_PAUSE') {
+    roundBoundaryPaused = true;
+  }
 
   if (result.error) {
-    logLine(`Bid rejected: ${result.error}`);
+    logLine(`Bid: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(`Bid submitted — ${priorityTokensBid} Priority, ${profitTokensBid} PT.`);
     pendingBidPriority = 0;
@@ -1716,8 +1730,8 @@ function dispatchDeployBankedToken(tokenType, options) {
   });
 
   if (result.error) {
-    logLine(`Bonus token activation rejected: ${result.error}`);
-    showToast(`Could not activate token: ${result.error}`);
+    logLine(`Bonus token activation: ${uiErr(result.error, result.detail)}`);
+    showToast(`Could not activate token: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(`${SPRINT_BONUS_TOKEN_LABELS[tokenType] || tokenType} activated!`);
   }
@@ -2027,7 +2041,7 @@ function buildStartCardChoiceBodyHtml(modal, playerDash, vm) {
       <div class="modal-hand-cards">
         ${cards.map((c) => `<label class="master-algorithm-card-option"><input type="checkbox" class="s1-discard-checkbox" value="${c.instanceId}" /> ${c.name}</label>`).join('')}
       </div>
-      <p class="modal-acquire-label">For each card discarded, click a track once (in order).</p>
+      <p class="modal-acquire-label" id="s1-raise-hint">Pick cards to discard first — you get 1 track raise per card.</p>
       <div class="track-boost-picker" id="s1-track-picker">
         ${Object.keys(TRACK_LABELS)
           .map((t) => `<button type="button" class="track-boost-btn" data-track="${t}">${TRACK_LABELS[t]} <span class="track-boost-count" data-track-count="${t}">0</span></button>`)
@@ -2178,23 +2192,45 @@ function wireStartCardChoiceHandlers(choiceType, requiredCount) {
       skipBtn.addEventListener('click', () => handleStartCardChoice({ discardInstanceIds: [], trackChoices: [] }));
       return;
     }
+    // [v68.18 UI] New Year Strategic Planning: you get exactly 1 raise per
+    // card discarded (max 2). Raises are capped by the number of checked
+    // cards, a 3rd card can't be checked, unchecking a card removes the
+    // last raise, and Confirm only unlocks when raises === discards.
     const picker = document.getElementById('s1-track-picker');
-    const counts = { training: 0, technology: 0, recognition: 0 };
+    const confirmBtn = document.getElementById('s1-confirm-btn');
+    const hint = document.getElementById('s1-raise-hint');
+    const boxes = Array.from(document.querySelectorAll('.s1-discard-checkbox'));
+    const picks = [];
+    const discardCount = () => boxes.filter((b) => b.checked).length;
+    const refresh = () => {
+      const allowed = discardCount();
+      while (picks.length > allowed) picks.pop();
+      ['training', 'technology', 'recognition'].forEach((t) => {
+        const countEl = picker.querySelector(`[data-track-count="${t}"]`);
+        if (countEl) countEl.textContent = picks.filter((p) => p === t).length;
+      });
+      picker.querySelectorAll('.track-boost-btn').forEach((btn) => { btn.disabled = picks.length >= allowed; });
+      boxes.forEach((b) => { b.disabled = !b.checked && allowed >= 2; });
+      confirmBtn.disabled = picks.length !== allowed;
+      if (hint) {
+        hint.textContent = allowed === 0
+          ? 'Pick cards to discard first — you get 1 track raise per card (or Confirm to discard nothing).'
+          : `Choose ${allowed} track raise${allowed === 1 ? '' : 's'} (${picks.length}/${allowed} chosen).`;
+      }
+    };
+    boxes.forEach((b) => b.addEventListener('change', refresh));
     picker.querySelectorAll('.track-boost-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const total = Object.values(counts).reduce((a, b) => a + b, 0);
-        if (total >= 2) return;
-        counts[btn.dataset.track] += 1;
-        picker.querySelector(`[data-track-count="${btn.dataset.track}"]`).textContent = counts[btn.dataset.track];
+        if (picks.length >= discardCount()) return;
+        picks.push(btn.dataset.track);
+        refresh();
       });
     });
-    document.getElementById('s1-confirm-btn').addEventListener('click', () => {
-      const discardInstanceIds = Array.from(document.querySelectorAll('.s1-discard-checkbox:checked')).map((el) => el.value);
-      const trackChoices = [];
-      Object.keys(counts).forEach((t) => {
-        for (let i = 0; i < counts[t]; i += 1) trackChoices.push(t);
-      });
-      handleStartCardChoice({ discardInstanceIds, trackChoices: trackChoices.slice(0, discardInstanceIds.length) });
+    refresh();
+    confirmBtn.addEventListener('click', () => {
+      const discardInstanceIds = boxes.filter((b) => b.checked).map((el) => el.value);
+      if (picks.length !== discardInstanceIds.length) return;
+      handleStartCardChoice({ discardInstanceIds, trackChoices: [...picks] });
     });
   }
 }
@@ -2214,7 +2250,7 @@ function handleDualTrackChoice(trackA, trackB) {
   });
 
   if (result.error) {
-    logLine(`2x Combo choice rejected: ${result.error}`);
+    logLine(`2x Combo choice: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(
       trackA === trackB
@@ -2239,7 +2275,7 @@ function handleDeficitTrackChoice(chosenTrack) {
   });
 
   if (result.error) {
-    logLine(`Deficit choice rejected: ${result.error}`);
+    logLine(`Deficit choice: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(`Insolvency: ${TRACK_LABELS[chosenTrack]} drops by 1 space to cover the deficit.`);
   }
@@ -2261,7 +2297,7 @@ function handleTrackBranchChoice(trackName, chosenBranch) {
   });
 
   if (result.error) {
-    logLine(`Branch choice rejected: ${result.error}`);
+    logLine(`Branch choice: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(`${trackName[0].toUpperCase()}${trackName.slice(1)}: permanently committed to Path ${chosenBranch} (${abilityName}).`);
   }
@@ -2282,8 +2318,8 @@ function handleTrackMilestoneChoice(milestoneKey, options) {
   });
 
   if (result.error) {
-    logLine(`${abilityName} could not resolve: ${result.error}`);
-    showToast(`${abilityName} forfeited — ${result.error}`);
+    logLine(`${abilityName} could not resolve: ${uiErr(result.error, result.detail)}`);
+    showToast(`${abilityName} forfeited — ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(`${abilityName} resolved.`);
   }
@@ -2304,7 +2340,7 @@ function handleForfeitTrackMilestone(milestoneKey) {
   });
 
   if (result.error) {
-    logLine(`Forfeit rejected: ${result.error}`);
+    logLine(`Forfeit: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast(`${abilityName} forfeited.`);
   }
@@ -2336,8 +2372,8 @@ function handleEndOfRoundTechBonusChoice(decision) {
   });
 
   if (result.error) {
-    logLine(`End of Round Tech Bonus choice rejected: ${result.error}`);
-    showToast(`Tech Bonus failed: ${result.error}`);
+    logLine(`End of Round Tech Bonus choice: ${uiErr(result.error, result.detail)}`);
+    showToast(`Tech Bonus: ${uiErr(result.error, result.detail)}`);
   } else if (decision && decision.ability === 'LIQUIDATION_ENGINE') {
     showToast('Liquidation Engine used — Agent activated a second time for its Profit payout.');
   } else if (decision && decision.ability === 'COPYCAT_MARKETING') {
@@ -2558,7 +2594,7 @@ function handleCancelDeferredAction() {
   });
 
   if (result.error) {
-    logLine(`Cancel failed: ${result.error}`);
+    logLine(`Cancel: ${uiErr(result.error, result.detail)}`);
   } else {
     showToast('Action cancelled — meeple and any cost returned.');
   }
@@ -2578,7 +2614,7 @@ function handleInterruptConfirm(selectedInstanceIds) {
   });
 
   if (result.error) {
-    logLine(`Choice rejected: ${result.error}`);
+    logLine(`Choice: ${uiErr(result.error, result.detail)}`);
   }
   state = result.state;
   render();
@@ -2620,6 +2656,23 @@ function showNetworkMagnetBanner(text) {
 // real card resolves, so players see the shift happened before the
 // tracker visually resets to 0.
 let lastAnnouncedShiftLogLength = 0;
+// v=58 BUGFIX: tracks whether the real, blocking SHIFT_CARD_RESOLUTION
+// modal (renderShiftCardResolutionModal, in renderOverlay's Priority-1
+// tier) has actually been rendered at least once for the shift card
+// currently in flight. This is ONLY true when the triggering player was
+// human-paced enough for a render to land while the interrupt was still
+// open. When the triggering (active) player is a BOT, settleGameLoop's
+// resolveBotInterrupt auto-resolves the ENTIRE announcement ->
+// consequences -> acknowledgment sequence synchronously inside a single
+// executeUserAction/settleGameLoop pass (see engine.bundle.js) — the
+// interrupt opens and fully closes before this client (or, in
+// multiplayer, ANY connected client) ever renders it, so the blocking
+// modal never gets a chance to appear even though real SHIFT_EFFECT_APPLIED
+// log entries were produced. checkForShiftTriggerEvents below uses this
+// flag to fall back to the passive shift-reveal banner exactly in that
+// gap, without re-showing a redundant banner on top of a modal a human
+// player genuinely already saw.
+let shiftModalShownForCurrentTrigger = false;
 let lastAnnouncedRoundSummaryRound = null;
 // FIX: the round summary used to be a one-time "flash" — computed and
 // shown once, then never re-shown or tracked on subsequent renders. Any
@@ -2630,6 +2683,16 @@ let lastAnnouncedRoundSummaryRound = null;
 // explicitly dismisses it, and renderOverlay checks it BEFORE the
 // bidding modal so the board genuinely doesn't unlock until then.
 let pendingRoundSummary = null;
+// [v68.17 FIX #10] true while the engine is holding the new round's bot
+// turns until the Round Summary is dismissed (offline only).
+let roundBoundaryPaused = false;
+
+function resumeAfterRoundSummary() {
+  if (!roundBoundaryPaused) return;
+  roundBoundaryPaused = false;
+  const resumed = BrokerBossEngine.settleGameLoop(state);
+  state = resumed.state;
+}
 
 // MODAL PRIORITY STACK (v=40): true whenever any Priority 1-3 blocking
 // modal (Shift Card Resolution, Round Summary Wizard, Turn Order
@@ -2946,7 +3009,8 @@ function checkForRoundSummaryEvent(currentState) {
 function renderRoundSummaryModal(roundNumber, entries, currentState) {
   const el = document.getElementById('round-summary-modal');
   if (!el) return;
-  const displayName = (playerId) => (currentState.players[playerId] && currentState.players[playerId].displayName) || playerId;
+  // [v68.18 UI] names live in session.seats — this used to fall back to "p1".
+  const displayName = (playerId) => (window.BrokerBossUiMessages ? window.BrokerBossUiMessages.playerName(currentState, playerId) : ((currentState.players[playerId] && currentState.players[playerId].displayName) || playerId));
 
   const discardEntries = entries.filter((e) => e.type === 'HAND_DISCARDED_END_OF_ROUND');
   const redrawEntries = entries.filter((e) => e.type === 'HAND_REDRAWN_END_OF_ROUND');
@@ -2988,7 +3052,7 @@ function renderRoundSummaryModal(roundNumber, entries, currentState) {
   const STEPS = [
     { title: 'Hand Cleanup & Redraws', html: step1Html, nextLabel: 'Next: Market Churn' },
     { title: 'Market Churn', html: step2Html, nextLabel: 'Next: Dividends & Taxes' },
-    { title: 'Financial Settlement', html: step3Html, nextLabel: `Proceed to Bidding` },
+    { title: 'Financial Settlement', html: step3Html, nextLabel: `Start Round ${roundNumber + 1}` },
   ];
   const stepIndex = Math.min(Math.max((pendingRoundSummary && pendingRoundSummary.currentStep) || 1, 1), STEPS.length) - 1;
   const step = STEPS[stepIndex];
@@ -3012,6 +3076,8 @@ function renderRoundSummaryModal(roundNumber, entries, currentState) {
       pendingRoundSummary = null;
       el.style.display = 'none';
       el.innerHTML = '';
+      // [v68.17 FIX #10] Only now do the new round's bot turns run.
+      resumeAfterRoundSummary();
     } else {
       pendingRoundSummary = { roundNumber, entries, currentStep: stepIndex + 2 };
     }
@@ -3020,16 +3086,23 @@ function renderRoundSummaryModal(roundNumber, entries, currentState) {
 }
 
 function checkForShiftTriggerEvents(currentState) {
-  // SUPERSEDED: Shift Card resolution is now handled entirely by the
-  // real, blocking SHIFT_CARD_RESOLUTION interrupt and its full-screen
-  // modal (renderShiftCardResolutionModal) — the engine genuinely
-  // pauses now, so this auto-dismissing banner would show duplicate,
-  // redundant UI for the exact same event. Still advances the log
-  // pointer so a later re-enable wouldn't replay a backlog of old
-  // entries.
-  lastAnnouncedShiftLogLength = currentState.log.length;
-  return;
-  // eslint-disable-next-line no-unreachable
+  // v=58 BUGFIX: previously fully disabled ("SUPERSEDED") on the
+  // assumption that the real, blocking SHIFT_CARD_RESOLUTION interrupt
+  // and its full-screen modal (renderShiftCardResolutionModal) always
+  // shows for every shift trigger, making this banner permanently
+  // redundant. That assumption doesn't hold: when the triggering (active)
+  // player is a BOT, engine.bundle.js's settleGameLoop auto-resolves the
+  // entire announcement -> consequences -> acknowledgment sequence
+  // synchronously inside one executeUserAction pass (resolveBotInterrupt
+  // treats every stage as "bots don't need to pause") — so the interrupt
+  // opens and fully closes before this client (or, in multiplayer, any
+  // connected client) ever renders it. Real SHIFT_EFFECT_APPLIED log
+  // entries land, but the blocking modal never appears — reported as
+  // "the shift card was executed silently... no Shift Card modal/overlay
+  // popped up." Re-enabled here as a fallback, gated on
+  // shiftModalShownForCurrentTrigger (set by renderOverlay's Priority-1
+  // tier) so a human who genuinely saw the real modal never also gets
+  // this redundant banner — it only fires in the bot-collapsed gap.
   const newEntries = currentState.log.slice(lastAnnouncedShiftLogLength);
   lastAnnouncedShiftLogLength = currentState.log.length;
 
@@ -3062,6 +3135,12 @@ function checkForShiftTriggerEvents(currentState) {
     return;
   }
 
+  // The trigger's lifecycle (whichever it was) has now fully resolved —
+  // reset for the next one, whether or not we show the fallback banner
+  // below.
+  const modalAlreadyShownForThisTrigger = shiftModalShownForCurrentTrigger;
+  shiftModalShownForCurrentTrigger = false;
+
   // All entries from the same trigger share the same catalogId — one
   // real card resolves per trigger, applied once per player.
   const catalogId = relevantEntries[0].catalogId;
@@ -3069,8 +3148,66 @@ function checkForShiftTriggerEvents(currentState) {
   const cardName = cardStats ? cardStats.name : catalogId;
   const cardDescription = cardStats ? cardStats.description : '';
 
-  showShiftTriggerBanner(catalogId, cardName, cardDescription);
+  // Always keep the persistent Active Shift slot in sync — it's a
+  // separate, non-modal reference display (see renderActiveShiftSlot)
+  // that should reflect the most recent trigger regardless of whether a
+  // human ever saw a modal or banner for it.
   setActiveShiftCard(catalogId, cardName, cardDescription, cardStats ? cardStats.cardImage : null);
+
+  if (modalAlreadyShownForThisTrigger) {
+    // A human genuinely watched the real blocking modal for this exact
+    // trigger — showing the passive banner on top would be the
+    // duplicate, redundant UI the original SUPERSEDED note was avoiding.
+    return;
+  }
+
+  showShiftTriggerBanner(catalogId, cardName, cardDescription);
+  // v=59 BUGFIX: record the log length at the moment this banner opened,
+  // so forceCloseOrphanedShiftBanner (called every render()) can
+  // guarantee it never outlives real further game progress — see that
+  // function for why the banner's own timer/pin mechanism alone isn't
+  // enough for this bot-collapsed case.
+  shiftBannerOpenedAtLogLength = currentState.log.length;
+}
+
+// v=59 BUGFIX: reported live-playtest freeze — a bot-triggered shift
+// card's fallback banner (above) has its own "click anywhere on the box
+// pins it, cancelling the 6s auto-dismiss timer" behavior (see
+// showShiftTriggerBanner's Dismiss/pin handlers), designed for a human
+// who deliberately triggered their OWN card and wants to read it at
+// their own pace. That's the wrong default for THIS banner's actual
+// use case: by construction, it only ever shows for a trigger the
+// engine has ALREADY fully resolved server-side before anyone saw it
+// (see checkForShiftTriggerEvents) — there is no real interrupt left
+// to "read at your own pace" for. A single accidental click anywhere on
+// the box (easy to do — it sits centered over the board, and the
+// squished-image bug this same patch fixes made it look like a broken
+// element worth clicking) permanently cancelled the timer, leaving only
+// the small Dismiss button as an exit — reported as the game "freezing"
+// with players "completely frozen out of interacting with the board."
+// This is a hard, state-driven safety net independent of that
+// timer/pin logic entirely: the moment the real game state provably
+// advances past where it was when the banner opened (a new log entry
+// of ANY kind — another placement, another bot's turn, anything),
+// the banner is forced closed outright, regardless of whether it was
+// pinned. Called at the top of every render() — covers a local
+// dispatch, an online STATE_UPDATE, and a FORCE_STATE_SYNC resync
+// identically, since all three funnel through the same render() call.
+let shiftBannerOpenedAtLogLength = null;
+function forceCloseOrphanedShiftBanner(currentState) {
+  if (shiftBannerOpenedAtLogLength === null) return;
+  const el = document.getElementById('shift-reveal-modal');
+  if (!el || !el.classList.contains('shift-reveal-visible')) {
+    // Already closed (timer fired normally, or the player used the real
+    // Dismiss button) — nothing left to guard.
+    shiftBannerOpenedAtLogLength = null;
+    return;
+  }
+  if (currentState.log.length > shiftBannerOpenedAtLogLength) {
+    clearTimeout(shiftRevealAutoDismissTimer);
+    el.classList.remove('shift-reveal-visible');
+    shiftBannerOpenedAtLogLength = null;
+  }
 }
 
 /**
@@ -3135,13 +3272,13 @@ function showShiftTriggerBanner(catalogId, cardName, cardDescription) {
   el.innerHTML = `
     <div class="shift-reveal-box">
       <div class="shift-reveal-header">⚡ Market Shift Triggered</div>
-      ${buildFullCardImageHtml(
+      <div class="shift-reveal-card-art">${buildFullCardImageHtml(
         cardImage,
         'shift-cards',
         `${buildPortraitHtml(null, cardName, 'shift-cards')}
          <div class="shift-reveal-name">${escapeAttr(cardName)}</div>
          <div class="shift-reveal-desc">${escapeAttr(cardDescription)}</div>`
-      )}
+      )}</div>
       <button type="button" class="shift-reveal-dismiss-btn" id="shift-reveal-dismiss-btn">Dismiss</button>
     </div>
   `;
@@ -3220,12 +3357,20 @@ function colorSafe(color) {
 function render() {
   const { vm, board, dashboards, overlay } = BrokerBossEngine.buildFullViewSync(state);
 
+  forceCloseOrphanedShiftBanner(state);
   checkForNetworkMagnetEvents(state);
   checkForShiftTriggerEvents(state);
   checkForMarketShareBonusClaimEvents(state);
   checkForTechBonusUnlockEvents(state);
   checkForTurnChangeNotification(vm);
   checkForRoundSummaryEvent(state);
+  if (roundBoundaryPaused && !pendingRoundSummary) {
+    // [v68.17 FIX #10] Safety valve: paused but nothing to summarize —
+    // resume immediately and redraw from the resumed state.
+    resumeAfterRoundSummary();
+    render();
+    return;
+  }
   updateDebugHud(vm);
   renderHeader(vm);
   renderBoard(board, vm);
@@ -3371,7 +3516,7 @@ function renderClientModal(dash, vm) {
           targetAgentInstanceId: el.dataset.targetAgentInstanceId,
         });
         if (result.error) {
-          showToast(`Liquidation Engine failed: ${result.error}`);
+          showToast(`Liquidation Engine: ${uiErr(result.error, result.detail)}`);
         } else {
           showToast('Liquidation Engine used — Agent activated a second time.');
         }
@@ -3419,7 +3564,7 @@ function renderClientModal(dash, vm) {
             cardInstanceId: el.dataset.instanceId,
           });
           if (result.error) {
-            showToast(`Proprietary Algorithm failed: ${result.error}`);
+            showToast(`Proprietary Algorithm: ${uiErr(result.error, result.detail)}`);
           } else {
             showToast(mode === 'trash_for_draw' ? 'Card trashed — 2 new cards drawn.' : 'Card discarded — gained $2 PT.');
           }
@@ -4290,16 +4435,29 @@ function renderFeedbackModal() {
 
 function renderGameOverModal(vm) {
   const modalEl = document.getElementById('game-over-modal');
+  // [v68.17 FIX #9] Coach Tokens and Loyalty Tokens get their own columns.
+  // Rulebook Net Profit = Agent Profit + Coach Tokens (+3 per token), so the
+  // old single "Net Profit" column is shown as those two parts; "Unrecruitable
+  // Bonus" is the Loyalty column. Totals are unchanged.
   const CATEGORY_LABELS = {
-    netProfit: 'Net Profit',
+    agentProfit: 'Agent Profit',
+    coachTokenProfit: 'Coach Tokens (+3 each)',
     cultureScoreDoubled: 'Culture Score (×2)',
     marketShareScore: 'Market Share',
     agentCountScore: 'Agent Count',
-    loyaltyBonus: 'Unrecruitable Bonus',
+    loyaltyBonus: 'Loyalty Tokens (+4 each)',
     profitTokenScore: 'Profit Tokens',
     milestoneScore: 'Milestones',
   };
   const categoryKeys = Object.keys(CATEGORY_LABELS);
+  const categoryCell = (entry, key) => {
+    const b = entry.breakdowns;
+    // Older saved leaderboards (pre-v68.17) have no split — fall back.
+    if (key === 'agentProfit' && typeof b.agentProfit !== 'number') return b.netProfit;
+    if (key === 'coachTokenProfit') return typeof b.coachTokenProfit === 'number' ? `${b.coachTokenProfit}${b.coachTokenCount ? ` <span class="game-over-count">(${b.coachTokenCount})</span>` : ''}` : '—';
+    if (key === 'loyaltyBonus') return `${b.loyaltyBonus}${b.loyaltyAgentCount ? ` <span class="game-over-count">(${b.loyaltyAgentCount})</span>` : ''}`;
+    return b[key];
+  };
 
   const rows = vm.leaderboard
     .slice()
@@ -4307,7 +4465,7 @@ function renderGameOverModal(vm) {
     .map((entry) => {
       const player = vm.players[entry.playerId];
       const isWinner = entry.rank === 1;
-      const categoryCells = categoryKeys.map((key) => `<td>${entry.breakdowns[key]}</td>`).join('');
+      const categoryCells = categoryKeys.map((key) => `<td>${categoryCell(entry, key)}</td>`).join('');
       return `
         <tr class="${isWinner ? 'game-over-winner-row' : ''}">
           <td>${isWinner ? '🏆 ' : ''}#${entry.rank}</td>
@@ -4329,6 +4487,7 @@ function renderGameOverModal(vm) {
         </thead>
         <tbody>${rows}</tbody>
       </table>
+      <p class="game-over-footnote">Net Profit = Agent Profit + Coach Tokens. Numbers in brackets are token counts.</p>
       <div class="game-over-actions">
         <button type="button" id="game-over-play-again-btn" class="btn-primary game-over-play-again-btn">🔁 Play Again</button>
       </div>
@@ -5196,8 +5355,8 @@ function renderDashboards(dashboards, vm) {
             playerId: HUMAN_PLAYER_ID,
           });
           if (result.error) {
-            logLine(`Automation Engineer rejected: ${result.error}`);
-            showToast(`Could not trigger the Automation Engineer: ${result.error}`);
+            logLine(`Automation Engineer: ${uiErr(result.error, result.detail)}`);
+            showToast(`Could not trigger the Automation Engineer: ${uiErr(result.error, result.detail)}`);
           } else {
             showToast('Automation Engineer used — copied space triggered with no Meeple spent.');
           }
@@ -5241,6 +5400,19 @@ function renderHistory(historyTicker) {
   function substituteNames(text) {
     if (!text || Object.keys(nameById).length === 0) return text;
     return text.replace(/\bp[1-6]\b/g, (match) => nameById[match] || match);
+  }
+  // [v68.18 UI] Public log: internal bookkeeping entries (bot decisions,
+  // "awaiting choice" markers, sweeps) are hidden; ids become names/cards/
+  // spaces and "You" lines read naturally ("Your", "You recruit"). Built by
+  // uiMessages.js from the real engine log — nothing is invented.
+  if (window.BrokerBossUiMessages && state) {
+    const lines = window.BrokerBossUiMessages.buildPublicLog(state, catalog, 60);
+    el.innerHTML = lines
+      .slice()
+      .reverse()
+      .map((line) => `<div class="ticker-line"><span class="ticker-round">R${line.round}</span> ${escapeAttr(line.text)}</div>`)
+      .join('');
+    return;
   }
   el.innerHTML = historyTicker
     .slice(-30)
@@ -5310,6 +5482,11 @@ function renderOverlay(modal, humanDash, openMarketActionCards, vm, dashboards) 
   if (vm.pendingInterrupt && vm.pendingInterrupt.type === 'SHIFT_CARD_RESOLUTION') {
     blockingModalActive = true;
     forceHideCardZoom();
+    // v=58: record that a real render actually happened while this
+    // trigger's interrupt was open, so checkForShiftTriggerEvents knows
+    // NOT to also show its passive fallback banner once the log entries
+    // land — see that function for the bot-cascade gap this covers.
+    shiftModalShownForCurrentTrigger = true;
     renderShiftCardResolutionModal(overlayEl, vm, humanDash);
     return;
   }
@@ -6196,12 +6373,13 @@ let localExecuteUserAction = null;
 function patchEngineForNetworkMode() {
   if (localExecuteUserAction) return; // already patched
   localExecuteUserAction = BrokerBossEngine.executeUserAction;
-  BrokerBossEngine.executeUserAction = function networkAwareExecuteUserAction(currentState, payload) {
+  BrokerBossEngine.executeUserAction = function networkAwareExecuteUserAction(currentState, payload, options) {
     if (multiplayerClient.isOnline && multiplayerClient.ws && multiplayerClient.ws.readyState === WebSocket.OPEN) {
       multiplayerClient.ws.send(JSON.stringify({ type: 'GAME_ACTION', action: payload }));
       return { state: currentState, error: null, detail: null };
     }
-    return localExecuteUserAction(currentState, payload);
+    // [v68.17] forward settle options (round-boundary pause) on the offline path
+    return localExecuteUserAction(currentState, payload, options);
   };
 }
 
@@ -6320,7 +6498,7 @@ function handleRelayMessage(msg) {
       render();
       break;
     case 'ACTION_ERROR':
-      logLine(`Action rejected: ${msg.error}`);
+      logLine(uiErr(msg.error, msg.detail));
       // FIX: an action can be rejected because the server's real state
       // moved on (e.g. a bot cascade completed) between this client's
       // last STATE_UPDATE and the moment it clicked — that leaves the
@@ -6329,6 +6507,35 @@ function handleRelayMessage(msg) {
       // player staring at a stale view that will keep rejecting their
       // next click too, request the server's real current state right
       // away and re-render against it.
+      if (multiplayerClient.ws && multiplayerClient.ws.readyState === WebSocket.OPEN) {
+        multiplayerClient.ws.send(JSON.stringify({ type: 'REQUEST_STATE_SYNC' }));
+      }
+      break;
+    // v=58 BUGFIX: relay-server.js's ws.on('message', ...) handler wraps
+    // EVERY message type (including GAME_ACTION) in a top-level
+    // try/catch — if executeUserAction/settleGameLoop throws for any
+    // reason (e.g. an edge case in a specific bot archetype's decision
+    // logic during the post-action bot cascade, never reached by a
+    // smaller-scale simulation), the catch logs it server-side
+    // (console.error('Handler error:', err)) and sends back a generic
+    // { type: 'ERROR', message } to just the client whose action
+    // triggered it — but this switch had no case for that message type,
+    // so it silently fell into `default: break` and vanished with zero
+    // feedback. Since patchEngineForNetworkMode's fire-and-forget dispatch
+    // already returns the UNCHANGED local state for every online action,
+    // and the server's room.state was never reassigned when the handler
+    // threw (the crash happens inside executeUserAction, before
+    // `room.state = result.state`), nothing ever told the player their
+    // click did nothing — this is the exact mechanism behind "clicked my
+    // Level 5 branch choice, the reward was granted, then the game just
+    // never responded again, no error, nothing." Now it's actually
+    // surfaced, and — matching the ACTION_ERROR handler right above —
+    // requests a fresh sync in case the room's real state did move on
+    // some other way in the meantime.
+    case 'ERROR':
+      logLine(`Server error: ${msg.message || 'unknown error'}`);
+      showToast(`Something went wrong on the server: ${msg.message || 'unknown error'}. Attempting to resync…`);
+      setTimeout(() => showToast(null), 6000);
       if (multiplayerClient.ws && multiplayerClient.ws.readyState === WebSocket.OPEN) {
         multiplayerClient.ws.send(JSON.stringify({ type: 'REQUEST_STATE_SYNC' }));
       }
@@ -6738,14 +6945,39 @@ function forceHideCardZoom() {
   cardZoomDebugState.y = null;
 }
 
+/**
+ * cardZoomAllowedFor(card) — v68.13
+ * Priority 4 gating, refined. The original v=40 fix suppressed
+ * hover/zoom entirely whenever ANY blocking modal (Priority 1-3, or a
+ * generic pending-choice modal) was open — correct for a card OUTSIDE
+ * that modal (e.g. a dashboard/board card behind the backdrop, which is
+ * the actual bug v=40 fixed), but it also silently blocked zoom for
+ * cards rendered INSIDE the modal itself, such as the "Select a card
+ * from your hand to play" / "Acquire an Action Card from the Open
+ * Market" deferred-choice modal's own .hand-card options — exactly the
+ * case this report is about. Both blocking modals that render real
+ * card markup (the generic deferred-choice modal and the Shift Card
+ * Resolution / Turn Order Bidding modals) share the #interrupt-overlay
+ * element; the Round Summary Wizard uses its own #round-summary-modal
+ * element. A card found inside either container is still allowed to
+ * zoom — the modal it belongs to owns it, so showing the zoom above
+ * that same modal (see the raised .card-zoom-overlay z-index in
+ * style.css) is exactly the requested behavior, not a regression of the
+ * v=40 fix.
+ */
+function cardZoomAllowedFor(card) {
+  if (!card) return false;
+  if (!blockingModalActive) return true;
+  return !!card.closest('#interrupt-overlay, #round-summary-modal');
+}
+
 document.addEventListener('click', (e) => {
-  // Priority 4: a blocking modal is on screen — hover/zoom previews are
-  // suppressed entirely until it's dismissed.
-  if (blockingModalActive) return;
   const card = e.target.closest(ZOOMABLE_CARD_SELECTOR);
-  if (card) {
+  if (card && cardZoomAllowedFor(card)) {
     // Clicking the SAME already-pinned card again dismisses it —
-    // otherwise clicking any zoomable card (re-)pins it.
+    // otherwise clicking any zoomable card (re-)pins it. This is also
+    // the tap-to-magnify path on touch/tablet devices (a tap fires a
+    // real click event), so no separate touchstart handler is needed.
     if (cardZoomPinned && cardZoomOverlay.dataset.pinnedFor === (card.dataset.instanceId || card.title)) {
       cardZoomPinned = false;
       cardZoomOverlay.classList.remove('card-zoom-visible', 'card-zoom-pinned');
@@ -6757,8 +6989,8 @@ document.addEventListener('click', (e) => {
     cardZoomOverlay.classList.add('card-zoom-pinned');
     return;
   }
-  // Clicking anywhere else (not a zoomable card, not the overlay
-  // itself) dismisses a pinned zoom.
+  // Clicking anywhere else (not an allowed zoomable card, not the
+  // overlay itself) dismisses a pinned zoom.
   if (cardZoomPinned && !e.target.closest('.card-zoom-overlay')) {
     cardZoomPinned = false;
     cardZoomOverlay.classList.remove('card-zoom-visible', 'card-zoom-pinned');
@@ -6766,10 +6998,8 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('mouseover', (e) => {
-  // Priority 4: never shows over an active turn-blocking modal.
-  if (blockingModalActive) return;
   const card = e.target.closest(ZOOMABLE_CARD_SELECTOR);
-  if (!card || cardZoomPinned) return; // a pinned (click-magnified) card takes priority over hover
+  if (!card || cardZoomPinned || !cardZoomAllowedFor(card)) return; // a pinned (click-magnified) card takes priority over hover
   showCardZoom(card);
 });
 

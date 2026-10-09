@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-08-18T19:37:36Z (v68.5-notifications) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-09 (v68.18-batch2) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -641,7 +641,7 @@ var BrokerBossEngine = (() => {
   // techTrackReducer.js
   var require_techTrackReducer = __commonJS({
     "techTrackReducer.js"(exports, module) {
-      var { adjustWallet, adjustTrack, adjustOfficeSlots, awardMeeple, adjustMarketShare } = require_cardEffectHelpers();
+      var { adjustWallet, adjustTrack, adjustOfficeSlots, awardMeeple, adjustMarketShare, drawFromPersonalDeck, generateUniqueActionCardInstanceId } = require_cardEffectHelpers();
       var { MARKET_SHARE_TRACK_SPACES } = require_boardConfigLoader();
       // [v68.2-techtree] Lazy-required (called only inside resolveTargetedMilestone's
       // SILICON_VALLEY_SWEEP branch below, never at module-init time) so this can't
@@ -893,25 +893,21 @@ var BrokerBossEngine = (() => {
           return appendLog(nextState, { type: "MILESTONE_APPLIED", playerId, milestoneKey, message: `${playerId}'s Executive Headroom unlocks 2 free offices.` });
         }
         if (milestoneKey === "CLOUD_INFRASTRUCTURE") {
-          const drawPile = player.hand.personalDrawPile;
-          const drawCount = Math.min(3, drawPile.length);
-          const drawnCatalogIds = drawPile.slice(0, drawCount);
-          const remainingDrawPile = drawPile.slice(drawCount);
-          const newCards = drawnCatalogIds.map((catalogId, i) => ({
-            instanceId: `ac-${playerId}-cloudinfra-${i}`,
-            catalogId
-          }));
+          // [v68.18 FIX #2] "Draw 3 Action Cards" — reshuffles the discard
+          // pile when the draw pile runs out (it previously stopped at
+          // whatever was left in the draw pile, usually 2).
+          const drawResult = drawFromPersonalDeck(state, playerId, 3, "cloudinfra");
+          const drawCount = drawResult.drawnCount;
+          const drawnPlayer = drawResult.state.players[playerId];
           const nextState = {
-            ...state,
+            ...drawResult.state,
             players: {
-              ...state.players,
+              ...drawResult.state.players,
               [playerId]: {
-                ...player,
+                ...drawnPlayer,
                 hand: {
-                  ...player.hand,
-                  actionCards: [...player.hand.actionCards, ...newCards],
-                  personalDrawPile: remainingDrawPile,
-                  maxHandSize: player.hand.maxHandSize + 2
+                  ...drawnPlayer.hand,
+                  maxHandSize: drawnPlayer.hand.maxHandSize + 2
                 }
               }
             }
@@ -1143,7 +1139,7 @@ var BrokerBossEngine = (() => {
                     ...nextState.players[playerId].hand,
                     actionCards: [
                       ...nextState.players[playerId].hand.actionCards,
-                      { instanceId: `ac-${playerId}-svs`, catalogId: keepCatalogId }
+                      { instanceId: generateUniqueActionCardInstanceId(nextState, playerId, "svs"), catalogId: keepCatalogId }
                     ]
                   }
                 }
@@ -1286,23 +1282,26 @@ var BrokerBossEngine = (() => {
           return { state, error: "CARD_NOT_IN_HAND", detail: { cardInstanceId } };
         }
         const handWithoutCard = player.hand.actionCards.filter((c) => c.instanceId !== cardInstanceId);
-        if (mode === "trash_for_cards") {
-          const drawPile = player.hand.personalDrawPile;
-          const drawCount = Math.min(2, drawPile.length);
-          const drawnCatalogIds = drawPile.slice(0, drawCount);
-          const remainingDrawPile = drawPile.slice(drawCount);
-          const newCards = drawnCatalogIds.map((catalogId, i) => ({ instanceId: `ac-${playerId}-propalg-r${state.phase.round}-${i}`, catalogId }));
-          let nextState = {
+        // [v68.18 FIX #2] The dashboard button sends "trash_for_draw" while
+        // this reducer only knew "trash_for_cards", so the human's Trash ->
+        // Draw 2 returned INVALID_MODE and did nothing. Both are accepted.
+        if (mode === "trash_for_cards" || mode === "trash_for_draw") {
+          // Trash = removed from the game (not discarded). Then draw 2 from
+          // the player's own deck, reshuffling the discard pile if needed.
+          const trashedState = {
             ...state,
             players: {
               ...state.players,
               [playerId]: {
                 ...player,
-                hand: { ...player.hand, actionCards: [...handWithoutCard, ...newCards], personalDrawPile: remainingDrawPile },
+                hand: { ...player.hand, actionCards: handWithoutCard },
                 oncePerRoundAbilitiesUsed: [...player.oncePerRoundAbilitiesUsed, "PROPRIETARY_ALGORITHM"]
               }
             }
           };
+          const drawResult = drawFromPersonalDeck(trashedState, playerId, 2, "propalg");
+          const drawCount = drawResult.drawnCount;
+          let nextState = drawResult.state;
           nextState = appendLog(nextState, {
             type: "MILESTONE_APPLIED",
             playerId,
@@ -1474,6 +1473,117 @@ var BrokerBossEngine = (() => {
       function generateMeepleInstanceId(playerId) {
         _meepleCounter += 1;
         return `m-${playerId}-${_meepleCounter}`;
+      }
+      // [v68.17 FIX #1 — Duplicate Meeple ID on Hire Staff]
+      // The module-level counter above is a SECOND, independent copy of
+      // initialGameState.js's counter: both mint `m-<playerId>-<n>` and both
+      // reset at game start, so the first Hire Staff in a game could mint
+      // `m-p1-1` while the starting `m-p1-1` was still on the board. Every
+      // later placement then flipped BOTH same-id meeples to on_board (2
+      // meeples spent per action), and the duplicate stayed "on" the Hire
+      // Staff space in the UI. Ids for meeples created mid-game are now
+      // derived from what the player already owns, so a collision is
+      // impossible regardless of counters, module copies, or relay rooms.
+      function collectPlayerMeepleInstanceIds(player) {
+        if (!player || !player.timeMeeples) return [];
+        const ids = [
+          ...(player.timeMeeples.active || []).map((m) => m.instanceId),
+          ...(player.timeMeeples.staffInTraining || []).map((m) => m.instanceId)
+        ];
+        if (player.timeMeeples.copycatMeeple) ids.push(player.timeMeeples.copycatMeeple.instanceId);
+        return ids;
+      }
+      function generateUniqueMeepleInstanceId(state, playerId, tag = "staff") {
+        const taken = new Set(collectPlayerMeepleInstanceIds(state.players[playerId]));
+        let n = taken.size + 1;
+        let candidate = `m-${playerId}-${tag}-${n}`;
+        while (taken.has(candidate)) {
+          n += 1;
+          candidate = `m-${playerId}-${tag}-${n}`;
+        }
+        return candidate;
+      }
+      // [v68.18 FIX #1 — Action-card duplicate instance IDs]
+      // Action-card instance ids were minted by ~15 independent schemes:
+      // round-stamped templates (`ac-p2-startacquire-r4-0`,
+      // `ac-p1-botacquire-r3`, ...) that repeat when the same effect fires
+      // twice in a round, plus several module-level counters that reset at
+      // game start (and are shared by every room on the relay server).
+      // playActionCard / discard / trash all filter by instanceId, so a
+      // duplicate removed BOTH cards. Every card created mid-game now gets
+      // its id from this allocator, which scans every id currently held by
+      // any player (hand + discard pile) and never hands out a taken one —
+      // including ids it handed out earlier in the same batch.
+      function collectActionCardInstanceIds(state) {
+        const ids = /* @__PURE__ */ new Set();
+        Object.values(state.players || {}).forEach((p) => {
+          const h = p && p.hand || {};
+          [h.actionCards, h.personalDiscardPile, h.personalDrawPile].forEach((pile) => {
+            (pile || []).forEach((c) => {
+              if (c && typeof c === "object" && c.instanceId) ids.add(c.instanceId);
+            });
+          });
+        });
+        return ids;
+      }
+      function createActionCardIdAllocator(state) {
+        const taken = collectActionCardInstanceIds(state);
+        let n = taken.size + 1;
+        return function nextActionCardInstanceId(playerId, tag = "card") {
+          let candidate = `ac-${playerId}-${tag}-${n}`;
+          while (taken.has(candidate)) {
+            n += 1;
+            candidate = `ac-${playerId}-${tag}-${n}`;
+          }
+          taken.add(candidate);
+          n += 1;
+          return candidate;
+        };
+      }
+      function generateUniqueActionCardInstanceId(state, playerId, tag = "card") {
+        return createActionCardIdAllocator(state)(playerId, tag);
+      }
+      // [v68.18 FIX #2] "Draw N" from a player's own deck, per the Rulebook's
+      // Critical Exception: when the Draw Pile empties mid-draw, shuffle the
+      // Discard Pile into a new Draw Pile and keep drawing. Cloud
+      // Infrastructure and Proprietary Algorithm previously drew only what
+      // was left in the draw pile (often 0-2 cards).
+      function drawFromPersonalDeck(state, playerId, count, tag = "draw") {
+        const player = getPlayerOrThrow(state, playerId, "drawFromPersonalDeck");
+        let drawPile = [...player.hand.personalDrawPile || []];
+        let discardPile = [...player.hand.personalDiscardPile || []];
+        const drawnCatalogIds = [];
+        let reshuffled = false;
+        while (drawnCatalogIds.length < count) {
+          if (drawPile.length === 0) {
+            if (discardPile.length === 0) break;
+            const rng = getSharedRng();
+            const ids = discardPile.map((c) => typeof c === "string" ? c : c.catalogId);
+            for (let i = ids.length - 1; i > 0; i -= 1) {
+              const j = Math.floor(rng() * (i + 1));
+              [ids[i], ids[j]] = [ids[j], ids[i]];
+            }
+            drawPile = ids;
+            discardPile = [];
+            reshuffled = true;
+          }
+          const next = drawPile[0];
+          drawPile = drawPile.slice(1);
+          drawnCatalogIds.push(typeof next === "string" ? next : next.catalogId);
+        }
+        const nextId = createActionCardIdAllocator(state);
+        const newCards = drawnCatalogIds.map((catalogId) => ({ instanceId: nextId(playerId, tag), catalogId }));
+        const nextState = {
+          ...state,
+          players: {
+            ...state.players,
+            [playerId]: {
+              ...player,
+              hand: { ...player.hand, actionCards: [...player.hand.actionCards, ...newCards], personalDrawPile: drawPile, personalDiscardPile: discardPile }
+            }
+          }
+        };
+        return { state: nextState, drawnCount: newCards.length, reshuffled, newCards };
       }
       function getPlayerOrThrow(state, playerId, helperName) {
         const player = state.players[playerId];
@@ -1654,8 +1764,9 @@ var BrokerBossEngine = (() => {
         const bothPersonalPilesEmpty = player.hand.personalDrawPile.length === 0 && player.hand.personalDiscardPile.length === 0;
         let handCards = [...player.hand.actionCards];
         let personalDiscardPile = [...player.hand.personalDiscardPile];
+        const nextCardId = createActionCardIdAllocator(state);
         acquiredCatalogIds.forEach((catalogId, i) => {
-          const entry = { instanceId: `ac-${playerId}-marketdraw-r${state.phase.round}-${player.hand.actionCards.length}-${i}`, catalogId };
+          const entry = { instanceId: nextCardId(playerId, "marketdraw"), catalogId };
           const goesToHand = handCards.length < player.hand.maxHandSize || bothPersonalPilesEmpty;
           if (goesToHand) {
             handCards = [...handCards, entry];
@@ -1717,7 +1828,8 @@ var BrokerBossEngine = (() => {
           drawPile = drawPile.slice(1);
         }
         const remainingDrawPile = drawPile;
-        const newCards = drawnCatalogIds.map((catalogId, i) => ({ instanceId: `ac-${playerId}-blinddraw-r${state.phase.round}-${player.hand.actionCards.length}-${i}`, catalogId }));
+        const nextCardId = createActionCardIdAllocator(state);
+        const newCards = drawnCatalogIds.map((catalogId) => ({ instanceId: nextCardId(playerId, "blinddraw"), catalogId }));
         const bothPersonalPilesEmpty = player.hand.personalDrawPile.length === 0 && player.hand.personalDiscardPile.length === 0;
         let handCards = [...player.hand.actionCards];
         let personalDiscardPile = [...player.hand.personalDiscardPile];
@@ -1747,7 +1859,7 @@ var BrokerBossEngine = (() => {
           return state;
         }
         const newMeeple = {
-          instanceId: generateMeepleInstanceId(playerId),
+          instanceId: generateUniqueMeepleInstanceId(state, playerId, "bonus"),
           status: "in_supply",
           locationSpaceId: null
         };
@@ -1811,7 +1923,7 @@ var BrokerBossEngine = (() => {
           return state;
         }
         const newMeeple = {
-          instanceId: generateMeepleInstanceId(playerId),
+          instanceId: generateUniqueMeepleInstanceId(state, playerId, "staff"),
           status: "staff_in_training",
           locationSpaceId: null
         };
@@ -2010,6 +2122,11 @@ var BrokerBossEngine = (() => {
         drawFromOpenMarketActionCards,
         drawFromSharedActionCardDeckBlind,
         resetMeepleCounter,
+        createActionCardIdAllocator,
+        generateUniqueActionCardInstanceId,
+        drawFromPersonalDeck,
+        generateUniqueMeepleInstanceId,
+        collectPlayerMeepleInstanceIds,
         setSharedRng,
         getSharedRng,
         adjustWallet,
@@ -2173,8 +2290,38 @@ var BrokerBossEngine = (() => {
           0
         );
       }
+      // [v68.17 FIX #9 — Coach & Loyalty visibility at Final Scoring]
+      // Both were already scored per Rulebook v5.1 §6: Coach Tokens raise the
+      // coached Agent's Net Profit by +3 each (so they live inside Net
+      // Profit), and Loyalty is the "Unrecruitable Bonus" (+4 per Loyalty-
+      // tokened Agent). The table just never showed them by name. These
+      // fields break Net Profit into its agent and coach parts and expose the
+      // counts — Net Profit, the total, and every tie-breaker are unchanged.
+      // An exhausted (Poison Pill) agent's halved contribution is split so
+      // agentProfit + coachTokenProfit === netProfit exactly.
+      function calculateNetProfitParts(player, agentCatalog) {
+        let agentProfit = 0;
+        let coachTokenProfit = 0;
+        let coachTokenCount = 0;
+        player.roster.forEach((entry) => {
+          if (entry.isVoided) return;
+          const stats = agentCatalog[entry.catalogId];
+          if (!stats) return;
+          const base = stats.totalProfit || 0;
+          const coaches = entry.coachTokens || 0;
+          const full = base + coaches * 3;
+          const contribution = entry.exhausted ? Math.floor(full / 2) : full;
+          const basePart = entry.exhausted ? Math.floor(base / 2) : base;
+          agentProfit += basePart;
+          coachTokenProfit += contribution - basePart;
+          coachTokenCount += coaches;
+        });
+        return { agentProfit, coachTokenProfit, coachTokenCount };
+      }
       function calculatePlayerBreakdown(player, agentCatalog) {
         const netProfit = calculateNetProfit(player, agentCatalog);
+        const { agentProfit, coachTokenProfit, coachTokenCount } = calculateNetProfitParts(player, agentCatalog);
+        const loyaltyAgentCount = countLoyaltyAgents(player);
         const cultureScoreDoubled = calculateCultureScoreDoubled(player, agentCatalog);
         const marketShareScore = calculateMarketShareScore(player);
         const agentCountScore = calculateAgentCountScore(player);
@@ -2184,10 +2331,14 @@ var BrokerBossEngine = (() => {
         const total = netProfit + cultureScoreDoubled + marketShareScore + agentCountScore + loyaltyBonus + profitTokenScore + milestoneScore;
         return {
           netProfit,
+          agentProfit,
+          coachTokenProfit,
+          coachTokenCount,
           cultureScoreDoubled,
           marketShareScore,
           agentCountScore,
           loyaltyBonus,
+          loyaltyAgentCount,
           profitTokenScore,
           milestoneScore,
           total
@@ -2246,6 +2397,9 @@ var BrokerBossEngine = (() => {
               marketShareScore: entry.breakdowns.marketShareScore,
               agentCountScore: entry.breakdowns.agentCountScore,
               loyaltyBonus: entry.breakdowns.loyaltyBonus,
+              coachTokenProfit: entry.breakdowns.coachTokenProfit,
+              coachTokenCount: entry.breakdowns.coachTokenCount,
+              loyaltyAgentCount: entry.breakdowns.loyaltyAgentCount,
               profitTokenScore: entry.breakdowns.profitTokenScore,
               milestoneScore: entry.breakdowns.milestoneScore,
               total: entry.finalScore
@@ -2524,7 +2678,7 @@ var BrokerBossEngine = (() => {
   // handlers/actionCards/growth.js
   var require_growth = __commonJS({
     "handlers/actionCards/growth.js"(exports, module) {
-      var { adjustWallet, adjustTrack, adjustOfficeSlots, adjustMarketShare, drawFromOpenMarketActionCards, drawFromSharedActionCardDeckBlind } = require_cardEffectHelpers();
+      var { adjustWallet, adjustTrack, adjustOfficeSlots, adjustMarketShare, drawFromOpenMarketActionCards, drawFromSharedActionCardDeckBlind, generateUniqueMeepleInstanceId, generateUniqueActionCardInstanceId, createActionCardIdAllocator } = require_cardEffectHelpers();
       var { MARKET_SHARE_TRACK_SPACES } = require_boardConfigLoader();
       var { checkGlobalFirstToMilestones } = require_techTrackReducer();
       var DEFAULT_OUTCOME = { skipDefaultDiscard: false, customDestination: null };
@@ -3024,7 +3178,7 @@ var BrokerBossEngine = (() => {
         }
         const { keptCatalogId, candidateCatalogIds } = extra;
         const player = state.players[playerId];
-        const keptEntry = keptCatalogId ? { instanceId: `ac-${playerId}-propertytour-r${state.phase.round}`, catalogId: keptCatalogId } : null;
+        const keptEntry = keptCatalogId ? { instanceId: generateUniqueActionCardInstanceId(state, playerId, "propertytour"), catalogId: keptCatalogId } : null;
         const bothPersonalPilesEmpty = player.hand.personalDrawPile.length === 0 && player.hand.personalDiscardPile.length === 0;
         const goesToHand = keptEntry && (player.hand.actionCards.length < player.hand.maxHandSize || bothPersonalPilesEmpty);
         let nextState = {
@@ -3344,7 +3498,9 @@ var BrokerBossEngine = (() => {
       function handleGrw038(state, context) {
         const { playerId } = context;
         const player = state.players[playerId];
-        const newMeepleInstanceId = `m-${playerId}-virtualoffice-r${state.phase.round}`;
+        // [v68.17 FIX #1] was `m-<pid>-virtualoffice-r<round>` — a 2nd Virtual
+        // Office in the same round minted a duplicate id.
+        const newMeepleInstanceId = generateUniqueMeepleInstanceId(state, playerId, "virtualoffice");
         let nextState = {
           ...state,
           players: {
@@ -3832,8 +3988,9 @@ var BrokerBossEngine = (() => {
         const bothPersonalPilesEmpty = player.hand.personalDrawPile.length === 0 && player.hand.personalDiscardPile.length === 0;
         let handCards = [...player.hand.actionCards];
         let discardPile = [...player.hand.personalDiscardPile];
+        const nextCardId = createActionCardIdAllocator(state);
         finalKept.forEach((catalogId, i) => {
-          const entry = { instanceId: `ac-${playerId}-dataanalysis-r${state.phase.round}-${i}`, catalogId };
+          const entry = { instanceId: nextCardId(playerId, "dataanalysis"), catalogId };
           if (handCards.length < player.hand.maxHandSize || bothPersonalPilesEmpty) {
             handCards = [...handCards, entry];
           } else {
@@ -3841,7 +3998,7 @@ var BrokerBossEngine = (() => {
           }
         });
         finalDiscarded.forEach((catalogId, i) => {
-          discardPile = [...discardPile, { instanceId: `ac-${playerId}-dataanalysis-discard-r${state.phase.round}-${i}`, catalogId }];
+          discardPile = [...discardPile, { instanceId: nextCardId(playerId, "dataanalysis"), catalogId }];
         });
         let nextState = {
           ...state,
@@ -4283,7 +4440,7 @@ var BrokerBossEngine = (() => {
   var require_strategy = __commonJS({
     "handlers/actionCards/strategy.js"(exports, module) {
       var { grantShiftImmunity } = require_immunityReducer();
-      var { adjustOfficeSlots, adjustWallet, adjustTrack, adjustMarketShare, fireAgentBySelector, pickRosterExtremeBy } = require_cardEffectHelpers();
+      var { adjustOfficeSlots, adjustWallet, adjustTrack, adjustMarketShare, fireAgentBySelector, pickRosterExtremeBy, createActionCardIdAllocator, generateUniqueActionCardInstanceId } = require_cardEffectHelpers();
       function getAgentRecruitmentHelpers() {
         return require_agentRecruitmentReducer();
       }
@@ -4794,7 +4951,7 @@ var BrokerBossEngine = (() => {
           const sorted = [...drawn].sort((a, b) => (catalogActionCards[b] && catalogActionCards[b].cost || 0) - (catalogActionCards[a] && catalogActionCards[a].cost || 0));
           const kept = sorted[0];
           const player = nextState.players[playerId];
-          const newCardEntry = { instanceId: `ac-${playerId}-str089-${kept}`, catalogId: kept };
+          const newCardEntry = { instanceId: generateUniqueActionCardInstanceId(nextState, playerId, "str089"), catalogId: kept };
           nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: [...player.hand.actionCards, newCardEntry] } } } };
         }
         nextState = appendLog(nextState, { type: "ACTION_CARD_EFFECT_APPLIED", playerId, catalogId: "STR_089", message: `${playerId}'s Leadership Retreat draws 2 Action Cards, keeps 1, trashes 1.` });
@@ -5326,7 +5483,7 @@ var BrokerBossEngine = (() => {
   // handlers/actionCards/start.js
   var require_start = __commonJS({
     "handlers/actionCards/start.js"(exports, module) {
-      var { adjustWallet, adjustTrack, adjustOfficeSlots } = require_cardEffectHelpers();
+      var { adjustWallet, adjustTrack, adjustOfficeSlots, createActionCardIdAllocator } = require_cardEffectHelpers();
       var DEFAULT_OUTCOME = { skipDefaultDiscard: false, customDestination: null };
       var LEVELED_TRACKS = /* @__PURE__ */ new Set(["training", "technology", "recognition"]);
       function appendLog(state, entry) {
@@ -5341,7 +5498,8 @@ var BrokerBossEngine = (() => {
         const drawnCatalogIds = drawPile.slice(0, drawCount);
         const remainingDrawPile = drawPile.slice(drawCount);
         const player = state.players[playerId];
-        const newCards = drawnCatalogIds.map((catalogId, i) => ({ instanceId: `ac-${playerId}-startacquire-r${state.phase.round}-${i}`, catalogId }));
+        const nextCardId = createActionCardIdAllocator(state);
+        const newCards = drawnCatalogIds.map((catalogId) => ({ instanceId: nextCardId(playerId, "startacquire"), catalogId }));
         const availableHandSlots = Math.max(0, player.hand.maxHandSize - player.hand.actionCards.length);
         const toHand = newCards.slice(0, availableHandSlots);
         const toDiscard = newCards.slice(availableHandSlots);
@@ -5548,7 +5706,7 @@ var BrokerBossEngine = (() => {
           const activeMeepleInstanceIds = new Set(
             (playCardSpace ? playCardSpace.occupiedBy : []).filter((entry) => entry.playerId === playerId).map((entry) => entry.meepleInstanceId)
           );
-          const onBoardMeepleIds = player.timeMeeples.active.filter((m) => m.status === "on_board" && !activeMeepleInstanceIds.has(m.instanceId)).map((m) => m.instanceId);
+          const onBoardMeepleIds = [...new Set(player.timeMeeples.active.filter((m) => m.status === "on_board" && !activeMeepleInstanceIds.has(m.instanceId)).map((m) => m.instanceId))];
           if (onBoardMeepleIds.length === 0) {
             return {
               state: appendLog(state, { type: "ACTION_CARD_EFFECT_S6_SKIPPED", playerId, catalogId: "S6", reason: "NO_MEEPLES_ON_BOARD" }),
@@ -5576,7 +5734,11 @@ var BrokerBossEngine = (() => {
           (playCardSpaceResume ? playCardSpaceResume.occupiedBy : []).filter((entry) => entry.playerId === playerId).map((entry) => entry.meepleInstanceId)
         );
         console.log('[BB_DEBUG][handleS6] BEFORE RECALL', { playerId, requestedMeepleInstanceIds: extra.meepleInstanceIds, playersWithMeeplesRemaining: state.phase.playersWithMeeplesRemaining });
-        const recallIds = extra.meepleInstanceIds.filter((id) => !activeMeepleInstanceIdsResume.has(id)).slice(0, 3);
+        // [v68.17 FIX #1] Only this player's own on-board meeples, each at most
+        // once — a repeated or foreign id in the request can no longer count
+        // toward the 3 recalls or touch another meeple.
+        const ownOnBoardIds = new Set(player.timeMeeples.active.filter((m) => m.status === "on_board").map((m) => m.instanceId));
+        const recallIds = [...new Set(extra.meepleInstanceIds)].filter((id) => ownOnBoardIds.has(id) && !activeMeepleInstanceIdsResume.has(id)).slice(0, 3);
         let nextState = {
           ...state,
           players: {
@@ -6451,7 +6613,7 @@ var BrokerBossEngine = (() => {
   // handlers/specialistCards/specialistCards.js
   var require_specialistCards = __commonJS({
     "handlers/specialistCards/specialistCards.js"(exports, module) {
-      var { adjustWallet, adjustOfficeSlots, getSharedRng, VENTURE_CAPITALIST_BONUS_SPACES } = require_cardEffectHelpers();
+      var { adjustWallet, adjustOfficeSlots, getSharedRng, VENTURE_CAPITALIST_BONUS_SPACES, createActionCardIdAllocator, generateUniqueActionCardInstanceId } = require_cardEffectHelpers();
       var DEFAULT_OUTCOME = { skipDefaultDiscard: false, customDestination: null };
       var _instanceCounter = 0;
       function resetSpecialistCardInstanceCounter() {
@@ -6560,7 +6722,7 @@ var BrokerBossEngine = (() => {
         }
         const remainingTargetHand = target.hand.actionCards.filter((c) => c.instanceId !== stolenCardInstanceId);
         const draw = drawOneActionCardCatalogId(target.hand.personalDrawPile, target.hand.personalDiscardPile);
-        const newTargetHandCards = draw.catalogId ? [...remainingTargetHand, { instanceId: generateActionCardInstanceId(targetPlayerId), catalogId: draw.catalogId }] : remainingTargetHand;
+        const newTargetHandCards = draw.catalogId ? [...remainingTargetHand, { instanceId: generateUniqueActionCardInstanceId(state, targetPlayerId, "snoopreplace"), catalogId: draw.catalogId }] : remainingTargetHand;
         const claimer = state.players[playerId];
         let nextState = {
           ...state,
@@ -6717,9 +6879,10 @@ var BrokerBossEngine = (() => {
             break;
           }
         }
+        const nextCardId = createActionCardIdAllocator(state);
         const newHandCards = [
           ...remainingHand,
-          ...drawnCatalogIds.map((catalogId) => ({ instanceId: generateActionCardInstanceId(playerId), catalogId }))
+          ...drawnCatalogIds.map((catalogId) => ({ instanceId: nextCardId(playerId, "cleanslate"), catalogId }))
         ];
         let nextState = {
           ...state,
@@ -7179,7 +7342,7 @@ var BrokerBossEngine = (() => {
         const { playerId } = context;
         const nextState = { ...state, session: { ...state.session, guaranteedFirstPlayerNextRound: playerId } };
         return {
-          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_HOSTILE_TAKEOVER_CLAIMED", playerId, catalogId: "SPEC_13", message: `${playerId} claims The Hostile Takeover \u2014 guaranteed 1st player next round is written, but the extra back-to-back turn is not yet enforced by this engine.` }),
+          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_HOSTILE_TAKEOVER_CLAIMED", playerId, catalogId: "SPEC_13", message: `${playerId} claims The Hostile Takeover \u2014 they will go 1st next round and take two actions back-to-back.` }),
           effectOutcome: DEFAULT_OUTCOME
         };
       }
@@ -7532,7 +7695,7 @@ var BrokerBossEngine = (() => {
   // workerPlacementReducer.js
   var require_workerPlacementReducer = __commonJS({
     "workerPlacementReducer.js"(exports, module) {
-      var { adjustWallet, adjustTrack, awardMeeple, adjustOfficeSlots, hireStaff, adjustMarketShare, wipeAndRefillActionCardMarket, wipeAndRefillAgentMarket } = require_cardEffectHelpers();
+      var { adjustWallet, adjustTrack, awardMeeple, adjustOfficeSlots, hireStaff, adjustMarketShare, wipeAndRefillActionCardMarket, wipeAndRefillAgentMarket, generateUniqueActionCardInstanceId } = require_cardEffectHelpers();
       var { MARKET_SHARE_TRACK_SPACES } = require_boardConfigLoader();
       var { checkTrackMilestonesIfEligible, checkGlobalFirstToMilestones } = require_techTrackReducer();
       var {
@@ -7833,6 +7996,21 @@ var BrokerBossEngine = (() => {
         return { state, deferred: false };
       }
       function advanceActivePlayer(state) {
+        // [v68.18 FIX #2] The Hostile Takeover's back-to-back first turn: the
+        // first time the claimer's turn ends in the armed round, they stay
+        // the active player for one more action (if they have a meeple left).
+        const hostileDoubleTurn = state.session && state.session.hostileTakeoverDoubleTurn;
+        if (hostileDoubleTurn && !hostileDoubleTurn.used && hostileDoubleTurn.round === state.phase.round && hostileDoubleTurn.playerId === state.phase.activePlayerId && state.phase.current === "WORKER_PLACEMENT") {
+          const consumed = { ...state, session: { ...state.session, hostileTakeoverDoubleTurn: { ...hostileDoubleTurn, used: true } } };
+          if (state.phase.playersWithMeeplesRemaining.includes(hostileDoubleTurn.playerId)) {
+            return appendLog(consumed, {
+              type: "HOSTILE_TAKEOVER_SECOND_ACTION",
+              playerId: hostileDoubleTurn.playerId,
+              message: `${hostileDoubleTurn.playerId}'s Hostile Takeover: second action back-to-back before anyone else places.`
+            });
+          }
+          state = consumed;
+        }
         const { turnOrder, playersWithMeeplesRemaining, activePlayerId } = state.phase;
         console.log('[BB_DEBUG][advanceActivePlayer] ENTER', { activePlayerId, playersWithMeeplesRemainingLength: playersWithMeeplesRemaining.length, playersWithMeeplesRemaining });
         if (playersWithMeeplesRemaining.length === 0) {
@@ -8033,11 +8211,18 @@ var BrokerBossEngine = (() => {
         const updatedCopycatMeeple = player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.instanceId === meepleInstanceId ? { ...player.timeMeeples.copycatMeeple, status: "in_supply", locationSpaceId: null } : player.timeMeeples.copycatMeeple;
         const updatedOccupiedBy = space.occupiedBy.filter((o) => o.meepleInstanceId !== meepleInstanceId);
         const updatedSpaces = state.board.actionSpaces.map((s) => s.spaceId === spaceId ? { ...s, occupiedBy: updatedOccupiedBy } : s);
+        // [v68.17 FIX #3] Cancelling a choice opened by a Liquidity Staff token
+        // gives the token back (the meeple path above is a no-op for it).
+        const cancelledWasLiquidityToken = space.occupiedBy.some((o) => o.meepleInstanceId === meepleInstanceId && o.isLiquidityStaffToken);
         let nextState = {
           ...state,
           players: {
             ...state.players,
-            [playerId]: { ...player, timeMeeples: { ...player.timeMeeples, active: updatedActive, copycatMeeple: updatedCopycatMeeple } }
+            [playerId]: {
+              ...player,
+              timeMeeples: { ...player.timeMeeples, active: updatedActive, copycatMeeple: updatedCopycatMeeple },
+              ...cancelledWasLiquidityToken ? { liquidityStaffPT: (player.liquidityStaffPT || 0) + 1 } : {}
+            }
           },
           board: { ...state.board, actionSpaces: updatedSpaces },
           phase: {
@@ -8190,7 +8375,7 @@ var BrokerBossEngine = (() => {
         const backfillCount = Math.min(1, drawPile.length);
         const backfilled = drawPile.slice(0, backfillCount).map((catalogId) => ({ catalogId }));
         const newDrawPile = drawPile.slice(backfillCount);
-        const newEntry = { instanceId: `ac-${playerId}-clearmarket-r${state.phase.round}`, catalogId: pickedCatalogId };
+        const newEntry = { instanceId: generateUniqueActionCardInstanceId(state, playerId, "clearmarket"), catalogId: pickedCatalogId };
         const bothPersonalPilesEmpty = player.hand.personalDrawPile.length === 0 && player.hand.personalDiscardPile.length === 0;
         const handHasRoom = player.hand.actionCards.length < player.hand.maxHandSize || bothPersonalPilesEmpty;
         let nextState = {
@@ -8284,6 +8469,68 @@ var BrokerBossEngine = (() => {
         });
         return { state: nextState, error: null, detail: null };
       }
+      // [v68.17 FIX #3 — Liquidity Staff tokens occupy the space]
+      // Rulebook v5.1, Recognition A Lv7 (Venture Liquidation): "You may
+      // spend these tokens onto main board action spaces exactly like
+      // standard Staff Meeples to execute actions. Return used tokens
+      // directly to the bank." Previously the token went through
+      // executeFreeBoardAction (built for the banked Free Action token,
+      // which the rulebook says does NOT use a space), so it never sat on
+      // the space: no capacity check, no cost paid, and the next real meeple
+      // was paid the same arrival tier again (e.g. Additional Profit 5 + 5).
+      // The token now: respects capacity/blocked status, pays the space's
+      // printed cost, is added to occupiedBy (so it advances the payout tier
+      // and fills capacity), and is cleared by the normal end-of-round
+      // meeple-return sweep (it is never added to the player's meeples).
+      // Unchanged: it stays a free action (does not end the player's turn).
+      // DEVIATION NOTE 2: a single token cannot fund a 2-meeple space (the
+      // Executive Search hub) — rejected with LIQUIDITY_STAFF_SINGLE_MEEPLE_SPACES_ONLY.
+      function placeLiquidityStaffToken(state, playerId, spaceId) {
+        const openCheck = verifySpaceOpen(state, spaceId, playerId, null);
+        if (!openCheck.ok) {
+          return { state, error: openCheck.error, detail: openCheck.detail, deferred: false };
+        }
+        const space = openCheck.space;
+        const meepleCost = space.cost && space.cost.meepleCost || 1;
+        if (meepleCost > 1 || space.type === "specialist_action") {
+          return { state, error: "LIQUIDITY_STAFF_SINGLE_MEEPLE_SPACES_ONLY", detail: { spaceId, meepleCost }, deferred: false };
+        }
+        const affordCheck = verifyCanAffordSpace(state, playerId, space);
+        if (!affordCheck.ok) {
+          return { state, error: affordCheck.error, detail: affordCheck.detail, deferred: false };
+        }
+        const usedThisRound = state.board.actionSpaces.reduce(
+          (n, s) => n + s.occupiedBy.filter((o) => o.playerId === playerId && o.isLiquidityStaffToken).length,
+          0
+        );
+        const tokenInstanceId = `liquidity-${playerId}-r${state.phase.round}-${usedThisRound + 1}`;
+        const occupantOrder = space.occupiedBy.length + 1;
+        const updatedSpace = {
+          ...space,
+          occupiedBy: [...space.occupiedBy, { playerId, meepleInstanceId: tokenInstanceId, order: occupantOrder, isLiquidityStaffToken: true }]
+        };
+        let nextState = {
+          ...state,
+          board: {
+            ...state.board,
+            actionSpaces: state.board.actionSpaces.map((s) => s.spaceId === space.spaceId ? updatedSpace : s)
+          }
+        };
+        if (space.cost && (space.cost.profitTokens || space.cost.priorityTokens)) {
+          nextState = adjustWallet(nextState, playerId, -(space.cost.profitTokens || 0), -(space.cost.priorityTokens || 0));
+        }
+        nextState = appendLog(nextState, {
+          type: "LIQUIDITY_STAFF_TOKEN_PLACED",
+          playerId,
+          spaceId: space.spaceId,
+          tokenInstanceId,
+          arrivalOrder: occupantOrder,
+          cost: space.cost || null,
+          message: `${playerId} spends a Liquidity Staff token on ${space.spaceId} (arrival #${occupantOrder}) \u2014 it occupies the space like a Staff Meeple and returns to the bank at end of round.`
+        });
+        const result = resolveActionSpace(nextState, playerId, updatedSpace, { instanceId: tokenInstanceId }, null, occupantOrder);
+        return { state: result.state, error: null, detail: null, deferred: !!result.deferred };
+      }
       function useAutomationEngineer(state, playerId) {
         const player = state.players[playerId];
         if (!player) {
@@ -8330,6 +8577,7 @@ var BrokerBossEngine = (() => {
       module.exports = {
         claimMarketShareBonusIfEligible,
         executeFreeBoardAction,
+        placeLiquidityStaffToken,
         placeMeeple,
         cancelDeferredSpaceChoice,
         resolveDualTrackChoice,
@@ -8993,7 +9241,7 @@ var BrokerBossEngine = (() => {
   // agentRecruitmentReducer.js
   var require_agentRecruitmentReducer = __commonJS({
     "agentRecruitmentReducer.js"(exports, module) {
-      var { adjustWallet } = require_cardEffectHelpers();
+      var { adjustWallet, generateUniqueActionCardInstanceId } = require_cardEffectHelpers();
       var { resolveShiftTrigger } = require_shiftReducer();
       var { NULL_INTERRUPT, playActionCard } = require_actionCardReducer();
       var { checkGlobalFirstToMilestones } = require_techTrackReducer();
@@ -9775,7 +10023,7 @@ var BrokerBossEngine = (() => {
             const refillCatalogId = drawPile.length > 0 ? drawPile[0] : null;
             const newOpenMarket = refillCatalogId ? [{ catalogId: refillCatalogId }, ...remainingMarket] : remainingMarket;
             const newDrawPile = refillCatalogId ? drawPile.slice(1) : drawPile;
-            const newCardEntry = { instanceId: `ac-${playerId}-freeactionmarket-r${state.phase.round}-${player.hand.actionCards.length}`, catalogId: acquiredCatalogId };
+            const newCardEntry = { instanceId: generateUniqueActionCardInstanceId(state, playerId, "freeactionmarket"), catalogId: acquiredCatalogId };
             const bothPersonalPilesEmpty = player.hand.personalDrawPile.length === 0 && player.hand.personalDiscardPile.length === 0;
             const goesToHand = player.hand.actionCards.length < player.hand.maxHandSize || bothPersonalPilesEmpty;
             let nextState = {
@@ -9856,7 +10104,7 @@ var BrokerBossEngine = (() => {
   // endOfRoundReducer.js
   var require_endOfRoundReducer = __commonJS({
     "endOfRoundReducer.js"(exports, module) {
-      var { adjustWallet, adjustMarketShare, getSharedRng } = require_cardEffectHelpers();
+      var { adjustWallet, adjustMarketShare, getSharedRng, createActionCardIdAllocator } = require_cardEffectHelpers();
       var { endOfRoundShiftImmunitySweep } = require_immunityReducer();
       var { isGameOver, runFinalScoring } = require_scoringEngine();
       // [v68.3] Lazy requires (not top-of-module) to avoid the circular
@@ -10030,7 +10278,33 @@ var BrokerBossEngine = (() => {
             }
           };
         });
-        const newTurnOrder = ranked.map((entry) => entry.playerId);
+        let newTurnOrder = ranked.map((entry) => entry.playerId);
+        // [v68.18 FIX #2 — The Hostile Takeover (SPEC_13)]
+        // Rulebook: "you completely bypass the standard turn order
+        // determination. You are automatically designated as the 1st Player
+        // for the new round. Furthermore, your first turn of the new round
+        // allows you to execute two standard actions back-to-back before the
+        // 2nd player is permitted to place a single meeple." The claim was
+        // recorded (session.guaranteedFirstPlayerNextRound) but nothing ever
+        // read it. The claimer now goes first (everyone else keeps their bid
+        // order) and the back-to-back turn is armed for the new round only.
+        const hostileTakeoverPlayerId = nextState.session && nextState.session.guaranteedFirstPlayerNextRound;
+        if (hostileTakeoverPlayerId && newTurnOrder.includes(hostileTakeoverPlayerId)) {
+          newTurnOrder = [hostileTakeoverPlayerId, ...newTurnOrder.filter((id) => id !== hostileTakeoverPlayerId)];
+          nextState = {
+            ...nextState,
+            session: {
+              ...nextState.session,
+              guaranteedFirstPlayerNextRound: null,
+              hostileTakeoverDoubleTurn: { playerId: hostileTakeoverPlayerId, round: nextState.phase.round + 1, used: false }
+            }
+          };
+          nextState = appendLog(nextState, {
+            type: "HOSTILE_TAKEOVER_TURN_ORDER_APPLIED",
+            playerId: hostileTakeoverPlayerId,
+            message: `${hostileTakeoverPlayerId}'s Hostile Takeover takes 1st place in next round's turn order and their first turn is two actions back-to-back.`
+          });
+        }
         nextState = {
           ...nextState,
           phase: {
@@ -10169,8 +10443,9 @@ var BrokerBossEngine = (() => {
           if (drawnCatalogIds.length === 0 && !reshuffleOccurred) {
             return;
           }
+          const nextCardId = createActionCardIdAllocator(nextState);
           const newHandCards = drawnCatalogIds.map((catalogId) => ({
-            instanceId: generateActionCardInstanceId(playerId),
+            instanceId: nextCardId(playerId, "redraw"),
             catalogId
           }));
           nextState = {
@@ -10479,6 +10754,41 @@ var BrokerBossEngine = (() => {
         nextState = meepleTaxSweep(nextState);
         return { ...nextState, phase: { ...nextState.phase, current: "TURN_ORDER_BIDDING" } };
       }
+      // [v68.17 FIX #2 — Hard stop at the end of Round 7]
+      // Rulebook v5.1 §4 / §6: "When the 7th and final Specialist card is
+      // flipped, players complete that final round ... and the game
+      // immediately transitions into Final Scoring." Previously the final
+      // round fell through the normal end-of-round chain (dividend, meeple
+      // tax, turn-order bidding for a Round 8 that doesn't exist, hand
+      // redraw, market churn, round tracker -> 8) and only THEN hit
+      // isGameOver(). Once every player has placed their last meeple and the
+      // End-of-Round Tech Bonus window (Liquidation Engine / Copycat — both
+      // "before the board resets") has resolved, the final round now goes
+      // straight to Final Scoring. Rounds 1-6 are unchanged.
+      // DEVIATION NOTE 1: the Base Round Dividend and Meeple Tax are also
+      // skipped after Round 7 (Batch #1 instruction: no PT income beyond
+      // Round 7). Flip FINAL_ROUND_RUNS_DIVIDEND_AND_TAX to true to pay them.
+      var FINAL_ROUND_RUNS_DIVIDEND_AND_TAX = false;
+      function isFinalRound(state) {
+        return state.phase.round >= state.phase.maxRounds;
+      }
+      function completeRoundOrFinishGame(state) {
+        if (!isFinalRound(state)) {
+          return runPreBiddingSequence(state);
+        }
+        let nextState = state;
+        if (FINAL_ROUND_RUNS_DIVIDEND_AND_TAX) {
+          nextState = incomeCollectionSweep(nextState);
+          nextState = meepleTaxSweep(nextState);
+        }
+        nextState = appendLog(nextState, {
+          type: "FINAL_ROUND_COMPLETED",
+          round: nextState.phase.round,
+          message: `Round ${nextState.phase.round} of ${nextState.phase.maxRounds} is complete \u2014 the market closes and the game goes straight to Final Scoring.`
+        });
+        nextState = { ...nextState, phase: { ...nextState.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
+        return runFinalScoring(nextState);
+      }
       // ---------------------------------------------------------------------
       // [v68.3-techtree-final] END_OF_ROUND_TECH_BONUSES phase.
       //
@@ -10664,6 +10974,8 @@ var BrokerBossEngine = (() => {
         resetActionCardInstanceCounter,
         runEndOfRoundSequence,
         runPreBiddingSequence,
+        completeRoundOrFinishGame,
+        isFinalRound,
         incomeCollectionSweep,
         meepleTaxSweep,
         repossessMeeples,
@@ -10689,6 +11001,7 @@ var BrokerBossEngine = (() => {
   // openMarketActionCardReducer.js
   var require_openMarketActionCardReducer = __commonJS({
     "openMarketActionCardReducer.js"(exports, module) {
+      var { generateUniqueActionCardInstanceId } = require_cardEffectHelpers();
       var { verifyPendingActionCardChoice, NULL_INTERRUPT } = require_actionCardReducer();
       var { advanceActivePlayer } = require_workerPlacementReducer();
       function appendLog(state, entry) {
@@ -10734,7 +11047,7 @@ var BrokerBossEngine = (() => {
         const newDrawPile = refillCatalogId ? drawPile.slice(1) : drawPile;
         const bothPersonalPilesEmpty = player.hand.personalDrawPile.length === 0 && player.hand.personalDiscardPile.length === 0;
         const goesToHand = player.hand.actionCards.length < player.hand.maxHandSize || bothPersonalPilesEmpty;
-        const newCardEntry = { instanceId: generateActionCardInstanceId(playerId), catalogId: acquiredCatalogId };
+        const newCardEntry = { instanceId: generateUniqueActionCardInstanceId(state, playerId, "market"), catalogId: acquiredCatalogId };
         let nextState = {
           ...state,
           board: {
@@ -12530,6 +12843,7 @@ var BrokerBossEngine = (() => {
   // botInterruptResolver.js
   var require_botInterruptResolver = __commonJS({
     "botInterruptResolver.js"(exports, module) {
+      var { generateUniqueActionCardInstanceId } = require_cardEffectHelpers();
       var { handleInterruptResolution } = require_interruptResolutionReducer();
       var { resolveDualTrackChoice, resolveHireCoachChoice, resolveClearOpenMarketChoice, resolveClearOpenMarketFreeCardPick, advanceActivePlayer, cancelDeferredSpaceChoice } = require_workerPlacementReducer();
       var { resolveTrackBranchChoice, resolveTargetedMilestone } = require_techTrackReducer();
@@ -13279,7 +13593,7 @@ var BrokerBossEngine = (() => {
             const drawnCatalogId = drawPile[0];
             const remainingDrawPile = drawPile.slice(1);
             const acquiringPlayer = state.players[interrupt.sourcePlayerId];
-            const newCard = { instanceId: `ac-${interrupt.sourcePlayerId}-botacquire-r${state.phase.round}`, catalogId: drawnCatalogId };
+            const newCard = { instanceId: generateUniqueActionCardInstanceId(state, interrupt.sourcePlayerId, "botacquire"), catalogId: drawnCatalogId };
             let nextState = {
               ...state,
               board: { ...state.board, decks: { ...state.board.decks, actionCardDrawPile: remainingDrawPile } },
@@ -13325,7 +13639,7 @@ var BrokerBossEngine = (() => {
             const drawnCatalogId = drawPile[0];
             const remainingDrawPile = drawPile.slice(1);
             const acquiringPlayer = failedState.players[interrupt.sourcePlayerId];
-            const newCard = { instanceId: `ac-${interrupt.sourcePlayerId}-botacquirefallback-r${failedState.phase.round}`, catalogId: drawnCatalogId };
+            const newCard = { instanceId: generateUniqueActionCardInstanceId(failedState, interrupt.sourcePlayerId, "botacquire"), catalogId: drawnCatalogId };
             let nextState = {
               ...failedState,
               board: { ...failedState.board, decks: { ...failedState.board.decks, actionCardDrawPile: remainingDrawPile } },
@@ -13748,7 +14062,7 @@ var BrokerBossEngine = (() => {
       var { renderPlayerDashboard } = require_playerDashboardRenderer();
       var { renderInterruptOverlay } = require_interruptOverlayRenderer();
       var { dispatchAction, triggerBotTurnIfActive } = require_gameActionDispatcher();
-      var { cancelDeferredSpaceChoice, resolveDualTrackChoice, resolveHireCoachChoice, resolveClearOpenMarketChoice, resolveClearOpenMarketFreeCardPick, executeFreeBoardAction, useExecutiveOverdrive, useAutomationEngineer, advanceActivePlayer } = require_workerPlacementReducer();
+      var { cancelDeferredSpaceChoice, resolveDualTrackChoice, resolveHireCoachChoice, resolveClearOpenMarketChoice, resolveClearOpenMarketFreeCardPick, executeFreeBoardAction, placeLiquidityStaffToken, useExecutiveOverdrive, useAutomationEngineer, advanceActivePlayer } = require_workerPlacementReducer();
       var { resolveShellCompanySecondRecruit } = require_specialistCards();
       var { resolveTrackBranchChoice, resolveTargetedMilestone, forfeitTargetedMilestone, useProprietaryAlgorithm, useLiquidationEngine } = require_techTrackReducer();
       var { resolveDeficitTrackChoice } = require_cardEffectHelpers();
@@ -13766,6 +14080,7 @@ var BrokerBossEngine = (() => {
       var {
         runEndOfRoundSequence,
         runPreBiddingSequence,
+        completeRoundOrFinishGame,
         getNextUnprocessedTechBonusPlayerId,
         openEndOfRoundTechBonusPrompt,
         resolveEndOfRoundTechBonusChoice
@@ -13954,7 +14269,15 @@ var BrokerBossEngine = (() => {
             if (lpPlayer.liquidityStaffPTUsableRound !== state.phase.round) {
               return { state, error: "LIQUIDITY_STAFF_PT_NOT_USABLE_THIS_ROUND", detail: { usableRound: lpPlayer.liquidityStaffPTUsableRound, currentRound: state.phase.round } };
             }
-            const lpResult = executeFreeBoardAction(state, userIntent.playerId, userIntent.spaceId);
+            // [v68.17 FIX #3] Like any Staff Meeple placement: only on your own
+            // turn, during Worker Placement, with no other choice pending.
+            if (state.phase.current !== "WORKER_PLACEMENT" || state.phase.activePlayerId !== userIntent.playerId) {
+              return { state, error: "NOT_YOUR_ACTIVE_TURN", detail: { phase: state.phase.current, activePlayerId: state.phase.activePlayerId } };
+            }
+            if (state.phase.pendingInterrupt && state.phase.pendingInterrupt.type !== "NULL") {
+              return { state, error: "CHOICE_PENDING", detail: { pendingInterrupt: state.phase.pendingInterrupt.type } };
+            }
+            const lpResult = placeLiquidityStaffToken(state, userIntent.playerId, userIntent.spaceId);
             if (lpResult.error) {
               return { state, error: lpResult.error, detail: lpResult.detail };
             }
@@ -14135,12 +14458,27 @@ var BrokerBossEngine = (() => {
       }
       function settleGameLoop(state, options = {}) {
         const maxIterations = options.maxIterations || DEFAULT_MAX_SETTLE_ITERATIONS;
+        // [v68.17 FIX #10 — Round Summary timing] Opt-in: stop at the very
+        // start of a new round's Worker Placement, before any bot acts, so
+        // the offline client can show the Round Summary and only resume bot
+        // turns (a plain settleGameLoop call) once the player dismisses it.
+        // Off by default — the relay server (multiple humans) never pauses.
+        const pauseAtRoundBoundary = !!options.pauseAtRoundBoundary;
+        const startRound = state.phase.round;
+        // The final bid's own reducer already runs end-of-round cleanup and
+        // bumps the round before this loop starts, so "entered Worker
+        // Placement from another phase" is the boundary signal, not only a
+        // round-number change.
+        const startedOutsidePlacement = state.phase.current !== "WORKER_PLACEMENT";
         let iterations = 0;
         let current = state;
         while (current.phase.current !== "FINAL_SCORING") {
           iterations += 1;
           if (iterations > maxIterations) {
             return { state: current, settled: false, reason: "MAX_ITERATIONS_EXCEEDED" };
+          }
+          if (current.phase.current === "WORKER_PLACEMENT" && pauseAtRoundBoundary && (current.phase.round > startRound || startedOutsidePlacement)) {
+            return { state: current, settled: true, reason: "ROUND_BOUNDARY_PAUSE" };
           }
           if (current.phase.current === "WORKER_PLACEMENT") {
             const interrupt = current.phase.pendingInterrupt;
@@ -14187,7 +14525,9 @@ var BrokerBossEngine = (() => {
             }
             const nextTechBonusPlayerId = getNextUnprocessedTechBonusPlayerId(current);
             if (nextTechBonusPlayerId === null) {
-              current = runPreBiddingSequence(current);
+              // [v68.17 FIX #2] Rounds 1-6: income/tax then bidding (unchanged).
+              // Final round: straight to Final Scoring — no Round 8 bidding.
+              current = completeRoundOrFinishGame(current);
               continue;
             }
             current = openEndOfRoundTechBonusPrompt(current, nextTechBonusPlayerId);

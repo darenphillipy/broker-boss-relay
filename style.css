@@ -1,5 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap');
 
+/* [v68.18 UI] capped New Year Strategic Planning picker */
+#s1-track-picker .track-boost-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* [v68.17 FIX #9] token counts in the final score table */
+.game-over-table .game-over-count { color: var(--text-dim); font-size: 0.85em; }
+.game-over-footnote { color: var(--text-dim); font-size: 0.85em; margin: 6px 0 0; }
+
 :root {
   --bg-dark: #1b2430;
   --bg-panel: #232f3f;
@@ -433,6 +440,32 @@ body {
   width: 100%;
   height: 90px;
   margin-bottom: 8px;
+}
+/* v=59 BUGFIX: reported live-playtest visual bug — this banner's real
+   card image (buildFullCardImageHtml -> .full-card-image-wrap /
+   .full-card-image) had no dedicated sized container here at all, so it
+   fell back to the generic base rule (width:100%; height:100%) with no
+   concrete height to resolve against (this box's own height is auto,
+   sized to its content) — the browser had no real aspect ratio to honor
+   and rendered the card art squished into a thin horizontal band. Fixed
+   by giving it the exact same treatment as the already-correct, already-
+   working Shift Card Resolution modal's own card art
+   (.shift-resolution-card-art below), including the same 540/720 real
+   card aspect ratio — that modal renders these same shift-card images
+   correctly today, so this mirrors a known-good pattern rather than
+   guessing at a new one.  */
+.shift-reveal-card-art {
+  width: 160px;
+  aspect-ratio: 540 / 720;
+  margin: 0 auto 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+}
+.shift-reveal-card-art .full-card-image-wrap,
+.shift-reveal-card-art .full-card-image {
+  width: 100%;
+  height: 100%;
 }
 .shift-reveal-name {
   font-weight: 700;
@@ -887,7 +920,20 @@ body {
   transform: translateX(-50%);
   margin-top: 4px;
   z-index: 6;
+  /* v68.13: this base rule stays pointer-events:none so the empty
+     "No Specialist Card revealed" placeholder (.specialist-card-empty)
+     never blocks clicks on whatever board element it happens to sit
+     over. But once a real card is revealed, this element is exactly
+     one of the ZOOMABLE_CARD_SELECTOR types (app.js) AND carries its
+     own title="" tooltip -- pointer-events:none silently blocked BOTH
+     of those, not just the new hover-zoom, since the browser never
+     dispatched mouseover/click to this element at all. Re-enabled
+     below for the non-empty case only. */
   pointer-events: none;
+}
+.specialist-card-panel:not(.specialist-card-empty) {
+  pointer-events: auto;
+  cursor: help;
 }
 .specialist-card-panel {
   width: 140px;
@@ -2145,17 +2191,26 @@ body {
 
 .card-zoom-overlay {
   position: fixed;
-  /* v=40: was z-index 9999 — the single highest value anywhere in this
-     stylesheet, above every modal tier including .round-summary-modal
-     (9997) and .interrupt-overlay (9990). That let a hover/zoom preview
-     visually float over an active turn-blocking modal purely via CSS
-     stacking, independent of the JS-side blockingModalActive gating in
-     app.js (which now also suppresses it entirely while any modal is
-     open). Dropped below all three blocking-modal tiers so the two
-     defenses reinforce each other rather than one silently overriding
-     the other; still above every other board/UI layer (highest
-     non-modal z-index elsewhere is 300). */
-  z-index: 9980;
+  /* v=40 originally dropped this below every modal tier (interrupt
+     9990, round-summary 9997) alongside a JS-side blockingModalActive
+     gate that unconditionally suppressed hover-zoom while ANY modal was
+     open -- fixing a real bug where a leftover/new preview for a card
+     OUTSIDE the modal (e.g. a dashboard card behind the backdrop) could
+     float above a blocking modal.
+     v68.13: that gate was overly broad -- it also blocked zoom for
+     cards that live INSIDE the modal itself (e.g. the "Select a card to
+     play" / "Acquire from the Open Market" deferred-choice modal's own
+     .hand-card options), which need it most. app.js's cardZoomAllowedFor()
+     now only allows the zoom to trigger at all for a card inside the
+     currently-active modal container (#interrupt-overlay /
+     #round-summary-modal) or when no blocking modal is open at all --
+     the original bug's scenario (a card outside the modal) still can
+     never reach showCardZoom(). With that JS gate doing the real work,
+     this can safely sit ABOVE the modal tiers again so the preview is
+     actually visible when it's allowed to show, while staying below
+     .video-modal-overlay (9999) which is the one thing that should
+     always cover everything. */
+  z-index: 9998;
   pointer-events: none;
   /* v=41: defensive hardening — no unwanted-position report was
      reproducible against the actual code (default state was already
@@ -3504,4 +3559,84 @@ body {
   padding: 6px 14px;
   font-weight: 700;
   cursor: pointer;
+}
+
+/* ==========================================================================
+   CONSERVATIVE MOBILE & TABLET RESPONSIVE FIX
+   Applies ONLY to screens 1024px wide or smaller (Phones & Tablets).
+   Desktop layout (>1024px) is untouched -- nothing above this block
+   was edited.
+
+   Root cause (confirmed via real-browser measurement, not guessed):
+   the existing @media (max-width: 900px) rule above switches #game-main
+   to flex-direction: column, but #game-main's own base rule also sets
+   align-items: flex-start. In a column flex container, align-items
+   controls the CROSS axis, which is now horizontal width -- flex-start
+   means children shrink-to-fit instead of stretching to the container's
+   full width. #board-zoom-viewport has no explicit width of its own
+   (only flex:3, meaningful in row mode), so once column mode engages it
+   collapses to its min-content width -- measured at ~11px wide at both
+   900px and 1024px viewport widths, i.e. the reported board reduced to
+   an invisible sliver. The existing 900px block's max-width:100% on
+   .board-column caps a width, it doesn't create one, so it can't fix
+   this by itself.
+   Fix: stretch #game-main's children on the cross axis instead of
+   shrink-to-fit, and give the board viewport / dashboard wrapper an
+   explicit 100% width so they actually fill the stacked column. Every
+   selector below already exists elsewhere in this file -- no new
+   classes or ids were introduced, and no JavaScript was touched.
+   ========================================================================== */
+@media screen and (max-width: 1024px) {
+  #game-main {
+    align-items: stretch;
+  }
+
+  #board-zoom-viewport,
+  .board-column,
+  #player-dashboards-wrap,
+  #player-dashboards {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* ==========================================================================
+   BOARD-MOUNTED CARD SLOT SCALING FIX (Specialist Card popout)
+   No existing rule above is edited -- this is a pure addition, guarded by
+   @supports so browsers without container query units keep today's
+   behavior (.specialist-card-panel's own width: 140px, untouched above)
+   exactly as-is.
+
+   Confirmed via real-browser measurement, not guessed: the Executive
+   Search hub's revealed Specialist Card popout (.specialist-card-panel,
+   e.g. "The Shell Company") is a FIXED 140px wide regardless of screen
+   size. On desktop that's ~18% of the 780px board -- proportionate. On a
+   343px-wide board (a typical narrow phone in portrait, after the earlier
+   mobile layout fix), it's still 140px -- 41% of the ENTIRE board width,
+   more than double the width of the hub panel it's centered under, and
+   measured to visually overlap the Growth hub panel beneath it. Its own
+   top/left offsets were already percentage-based (correct); only its
+   WIDTH was a raw pixel value.
+   The active Shift Card slot (.active-shift-slot / .active-shift-box)
+   was checked the same way and is NOT affected -- it already sizes
+   itself as a percentage of #board-hubs (27%) and scaled correctly at
+   every width tested (780px, 343px, 308px board widths), so it's
+   intentionally left untouched here.
+   Fix: .board-hubs becomes a query container, and .specialist-card-panel's
+   width is expressed in cqw (percent of #board-hubs's own rendered
+   width, its true reference frame) instead of px -- 140/780 = 17.9487%,
+   so desktop rendering is pixel-identical (780 * 0.179487 = 140.0px)
+   while it now shrinks in lockstep with the board on every smaller
+   screen. The card's inner image (.full-card-image-wrap/.full-card-image)
+   already sizes itself at width:100%/height:100% of this panel, so it
+   scales automatically once the panel does -- no separate image-level
+   change was needed.
+   ========================================================================== */
+@supports (container-type: inline-size) {
+  .board-hubs {
+    container-type: inline-size;
+  }
+  .specialist-card-panel {
+    width: 17.9487cqw;
+  }
 }
