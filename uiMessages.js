@@ -1,5 +1,5 @@
 /**
- * uiMessages.js — Broker Boss Online (v68.18)
+ * uiMessages.js — Broker Boss Online (v68.19)
  *
  * Presentation-only text helpers. No game rules, no state changes: these
  * functions only turn engine data (error codes, log entries) into words a
@@ -81,6 +81,8 @@
     INSUFFICIENT_MATCHING_VALUES: 'To poach, you must meet at least 2 of the Agent\'s values (Training, Technology, Recognition).',
     ALL_VALUES_NOT_MET: 'A Loyalty Token needs all 3 of the Agent\'s values met.',
     NO_OPEN_DESK: 'Your offices are full — expand your offices (Leadership hub) before hiring another Agent.',
+    OFFICES_AT_MAX: 'All 16 office spaces on your board are already open — Office Expansion has nothing left to add.',
+    COPYCAT_END_OF_ROUND_ONLY: 'The Copycat Meeple can only be placed in the End of Round window, after everyone has finished their turns.',
     AGENT_HAS_ONBOARDING_TOKEN: 'That Agent was just hired this round and is protected until the round ends.',
     AGENT_HAS_LOYALTY_TOKEN: "That Agent has a Loyalty Token and can't be poached.",
     AGENT_RECRUITMENT_PROTECTED: "That Agent is protected and can't be taken right now.",
@@ -210,7 +212,9 @@
         var walked = Array.isArray(entry.meeplesRepossessed) ? entry.meeplesRepossessed.length : entry.meeplesRepossessed;
         return who + " can't cover the Meeple Tax — " + (walked || 'some') + ' staff ' + (walked === 1 ? 'walks' : 'walk') + ' out.';
       case 'SHIFT_EFFECT_APPLIED':
-        return null; // the Shift card itself is announced separately
+        return null; // the Shift card itself is announced by SHIFT_CARD_TRIGGERED
+      case 'SHIFT_EFFECT_BLOCKED_BY_IMMUNITY':
+        return who + ' is protected from ' + (cardName(catalog, entry.catalogId) || 'the Shift card') + ' by Shift immunity.';
       default:
         return null;
     }

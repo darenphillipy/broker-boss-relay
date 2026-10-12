@@ -11,7 +11,7 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-09 (v68.18-batch2) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.19-batch3) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 
 // [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
@@ -3526,19 +3526,24 @@ function renderClientModal(dash, vm) {
     });
   } else if (clientModalState.type === 'PROPRIETARY_ALGORITHM') {
     if (!clientModalState.mode) {
+      // [v68.19 #4] Nothing left to draw (draw pile and discard pile both
+      // empty) → Trash 1 → Draw 2 would trash a card for nothing.
+      const paHand = (state.players[HUMAN_PLAYER_ID] || {}).hand || {};
+      const paCardsToDraw = (paHand.personalDrawPile || []).length + (paHand.personalDiscardPile || []).length;
+      const paTrashLocked = paCardsToDraw === 0;
       clientModalOverlay.innerHTML = `
         <div class="modal-box">
           <h3>Proprietary Algorithm</h3>
           <p class="modal-acquire-label">Choose one:</p>
           <div class="modal-actions" style="justify-content: center; gap: 10px;">
-            <button class="modal-skip-btn" id="pa-mode-trash">Trash 1 Card → Draw 2</button>
+            <button class="modal-skip-btn" id="pa-mode-trash" ${paTrashLocked ? 'disabled title="Your draw pile and discard pile are both empty — there is nothing to draw."' : ''}>Trash 1 Card → Draw 2</button>
             <button class="modal-skip-btn" id="pa-mode-discard">Discard 1 Card → Gain $2 PT</button>
           </div>
           <div class="modal-actions"><button class="modal-cancel-btn" id="client-modal-cancel-btn">Cancel</button></div>
         </div>
       `;
       const trashBtn = clientModalOverlay.querySelector('#pa-mode-trash');
-      if (trashBtn) trashBtn.addEventListener('click', () => { clientModalState = { type: 'PROPRIETARY_ALGORITHM', mode: 'trash_for_draw' }; render(); });
+      if (trashBtn && !paTrashLocked) trashBtn.addEventListener('click', () => { clientModalState = { type: 'PROPRIETARY_ALGORITHM', mode: 'trash_for_draw' }; render(); });
       const discardBtn = clientModalOverlay.querySelector('#pa-mode-discard');
       if (discardBtn) discardBtn.addEventListener('click', () => { clientModalState = { type: 'PROPRIETARY_ALGORITHM', mode: 'discard_for_pt' }; render(); });
     } else {
@@ -4594,7 +4599,7 @@ function buildDraggableMeepleRowHtml(dash) {
   const copycatMeeple = state.players[dash.playerId] && state.players[dash.playerId].timeMeeples.copycatMeeple;
   const copycatToken =
     copycatMeeple && copycatMeeple.status === 'in_supply'
-      ? `<span class="draggable-meeple-token draggable-copycat-token" draggable="true" data-meeple-instance-id="${copycatMeeple.instanceId}" title="Copycat Meeple — drag onto any opponent-occupied space any time, or wait for the End of Round prompt to use it automatically">${buildMeepleSvg('#e8842c')}</span>`
+      ? `<span class="copycat-token-static" title="Copycat Meeple — you'll be offered it in the End of Round window, after everyone has finished their turns">${buildMeepleSvg('#e8842c')}</span>`
       : '';
   const trainingBadge =
     dash.timeMeeples.staffInTrainingCount > 0

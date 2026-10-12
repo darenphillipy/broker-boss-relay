@@ -1994,6 +1994,8 @@ body {
   cursor: pointer;
 }
 .modal-skip-btn:hover { filter: brightness(1.1); }
+/* v68.19: greyed-out choice (e.g. Proprietary Algorithm with nothing to draw) */
+.modal-skip-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.6); }
 
 .modal-cancel-btn {
   background: transparent;
@@ -3203,6 +3205,15 @@ body {
 .draggable-copycat-token {
   filter: drop-shadow(0 0 3px rgba(232, 132, 44, 0.8));
 }
+/* v68.19: Copycat Meeple is shown but not draggable (End of Round only) */
+.copycat-token-static {
+  display: inline-block;
+  width: 13px;
+  height: 16px;
+  cursor: help;
+  filter: drop-shadow(0 0 3px rgba(232, 132, 44, 0.8));
+}
+.copycat-token-static svg { width: 100%; height: 100%; display: block; }
 
 /* Report/Feedback button and modal */
 .report-feedback-btn {

@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-09 (v68.18-batch2) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.19-batch3) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -18,7 +18,9 @@ var BrokerBossEngine = (() => {
         STARTING_PRIORITY_TOKENS: 0,
         STARTING_LOYALTY_TOKENS: 3,
         STARTING_OFFICES: 2,
-        MAX_OFFICES: 6,
+        // [v68.19 FIX #1] The Personal Broker Board has 16 office spaces.
+        // (6 is the Office Mogul milestone, checked separately, not a cap.)
+        MAX_OFFICES: 16,
         STARTING_TIME_MEEPLES: 3,
         MAX_TIME_MEEPLES: 6,
         MAX_HAND_SIZE: 5,
@@ -743,7 +745,10 @@ var BrokerBossEngine = (() => {
               }
             }
           };
-          nextState = reAddToPlayersWithMeeplesRemaining(nextState);
+          // [v68.19 FIX #3] The Copycat Meeple is only ever placed in the
+          // End-of-Round Tech Bonus window, so claiming it must NOT put the
+          // player back into the standard-turn queue (that froze the round
+          // when the claimer had no regular meeples left).
           return appendLog(nextState, {
             type: "COPYCAT_MARKETING_IMMEDIATE_APPLIED",
             playerId,
@@ -1899,7 +1904,9 @@ var BrokerBossEngine = (() => {
         const offices = player.tracks.offices;
         const newOffices = {
           ...offices,
-          unlocked: Math.max(0, offices.unlocked + delta)
+          // [v68.19 FIX #1] Clamp to the board's 16 spaces so the shared
+          // transaction invariant can never be tripped by an expansion.
+          unlocked: Math.min(Number.isFinite(offices.max) ? offices.max : 16, Math.max(0, offices.unlocked + delta))
         };
         return {
           ...state,
@@ -2241,9 +2248,9 @@ var BrokerBossEngine = (() => {
         SUPERSTAR_RECRUITER: 10
       };
       function isGameOver(state) {
-        if (state.phase.round > state.phase.maxRounds) return true;
-        const maxMarketShareIndex = MARKET_SHARE_TRACK_SPACES.length - 1;
-        return Object.values(state.players).some((p) => p.tracks.marketShare.position >= maxMarketShareIndex);
+        // [v68.19 FIX #2] The game ends only after the final round (Round 7).
+        // Reaching 33 on the Market Share Track is NOT a game-end trigger.
+        return state.phase.round > state.phase.maxRounds;
       }
       function getAgentCatalog(state) {
         return state.cardCatalog && state.cardCatalog.agentCards || {};
@@ -2495,6 +2502,15 @@ var BrokerBossEngine = (() => {
         if (space.status === "blocked" || space.status === "void") {
           return { ok: false, error: "SPACE_BLOCKED", detail: { spaceId, status: space.status } };
         }
+        // [v68.19 FIX #1] Office Expansion is only refused once all 16 office
+        // spaces on the personal board are already unlocked. Lives here so
+        // humans, bots, Liquidity Staff tokens and UI highlighting all agree.
+        if (space.type === "office_expansion" && state.players[playerId]) {
+          const offices = state.players[playerId].tracks.offices;
+          if (offices.unlocked >= offices.max) {
+            return { ok: false, error: "OFFICES_AT_MAX", detail: { unlocked: offices.unlocked, max: offices.max } };
+          }
+        }
         const effectiveCapacity = space.capacityScalesWithPlayerCount ? Math.max(1, (state.settings.playerCount || 2) - 1) : space.capacity;
         if (effectiveCapacity !== null && space.occupiedBy.length >= effectiveCapacity) {
           const player = state.players[playerId];
@@ -2626,6 +2642,13 @@ var BrokerBossEngine = (() => {
         const supplyCheck = verifyMeepleAvailable(state, playerId, meepleInstanceId);
         if (!supplyCheck.ok) {
           return supplyCheck;
+        }
+        // [v68.19 FIX #3] Legacy route closed: the Copycat Meeple can't be
+        // placed as a standard turn. It goes out only through the
+        // End-of-Round Tech Bonus prompt (executeCopycatEndOfRoundPlacement).
+        const placingPlayer = state.players[playerId];
+        if (placingPlayer.timeMeeples.copycatMeeple && supplyCheck.meeple.instanceId === placingPlayer.timeMeeples.copycatMeeple.instanceId) {
+          return { ok: false, error: "COPYCAT_END_OF_ROUND_ONLY", detail: { meepleInstanceId } };
         }
         const spaceCheck = verifySpaceOpen(state, spaceId, playerId, extra, supplyCheck.meeple);
         if (!spaceCheck.ok) {
@@ -7996,6 +8019,22 @@ var BrokerBossEngine = (() => {
         return { state, deferred: false };
       }
       function advanceActivePlayer(state) {
+        // [v68.19 queue sync] Only players who actually have a meeple in supply
+        // may be handed the turn. Effects that remove a meeple mid-round (a
+        // Shift card such as "lose 1 Time Meeple") left the player listed,
+        // so the turn passed to someone with nothing to place and the round
+        // froze. Prune them here, at the single place the turn moves.
+        if (state.phase.current === "WORKER_PLACEMENT" && Array.isArray(state.phase.playersWithMeeplesRemaining)) {
+          const hasMeepleInSupply = (pid) => !!(state.players[pid] && state.players[pid].timeMeeples.active.some((m) => m.status === "in_supply"));
+          const synced = state.phase.playersWithMeeplesRemaining.filter(hasMeepleInSupply);
+          if (synced.length !== state.phase.playersWithMeeplesRemaining.length) {
+            const dropped = state.phase.playersWithMeeplesRemaining.filter((pid) => !synced.includes(pid));
+            state = appendLog({ ...state, phase: { ...state.phase, playersWithMeeplesRemaining: synced } }, {
+              type: "MEEPLE_QUEUE_SYNCED",
+              droppedPlayerIds: dropped
+            });
+          }
+        }
         // [v68.18 FIX #2] The Hostile Takeover's back-to-back first turn: the
         // first time the claimer's turn ends in the armed round, they stay
         // the active player for one more action (if they have a meeple left).
@@ -8718,6 +8757,21 @@ var BrokerBossEngine = (() => {
       }
       function applyShiftEffectAndTransitionToConsequences(state, triggeringPlayerId, drawnCard, extra) {
         const seatPlayerIds = state.session.seats.map((s) => s.playerId);
+        // [v68.19 FIX #5] Announce the Shift card in the Action Log with its
+        // name and printed effect before the per-player effect entries.
+        const shiftCatalogEntry = state.cardCatalog && state.cardCatalog.shiftCards && state.cardCatalog.shiftCards[drawnCard.catalogId] || {};
+        const shiftCardName = shiftCatalogEntry.name || drawnCard.catalogId;
+        const shiftCardText = String(shiftCatalogEntry.description || "").trim();
+        const shiftImmunePlayerIds = seatPlayerIds.filter((pid) => playerHasShiftImmunity(state.players[pid]));
+        state = appendLog(state, {
+          type: "SHIFT_CARD_TRIGGERED",
+          playerId: triggeringPlayerId,
+          catalogId: drawnCard.catalogId,
+          cardName: shiftCardName,
+          effectText: shiftCardText,
+          immunePlayerIds: shiftImmunePlayerIds,
+          message: `Shift Card Triggered: ${shiftCardName}${shiftCardText ? ` \u2014 "${shiftCardText}"` : ""}${shiftImmunePlayerIds.length ? ` (Shift immunity protects ${shiftImmunePlayerIds.join(", ")}.)` : ""}`
+        });
         const logLengthBeforeEffect = state.log.length;
         let nextState = applyShiftCardEffect(state, triggeringPlayerId, drawnCard, extra || null);
         seatPlayerIds.forEach((pid) => {
