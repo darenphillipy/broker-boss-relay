@@ -11,7 +11,7 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.19-batch3) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.20-a) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 
 // [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
@@ -1534,6 +1534,73 @@ function renderSpecialistCardChoiceModal(overlayEl, vm, humanDash) {
   if (fallbackSkipBtn) fallbackSkipBtn.addEventListener('click', () => submitSpecialistCardChoice({}, null));
 }
 
+// [v68.20-a] Pay-or-penalty Shift cards (Unforeseen Expenses, Unexpected
+// Tax Audit, Legal Fees) ask EVERY player to choose before the effect is
+// applied (engine stage "player_choices"). This screen used to be missing,
+// so the modal fell through to the Acknowledge screen, which the engine
+// refuses at this stage — every player was stuck. Presentation only: the
+// costs/penalties below just describe what the engine's handlers do.
+const SHIFT_CHOICE_OPTIONS = {
+  SFT_026: { cost: 4, penalty: 'Fire your lowest-profit Agent that has 4 profit or less (nothing is fired if you have none).' },
+  SFT_035: { cost: 6, penalty: 'Fire your highest-profit Agent out of the game.' },
+  SFT_036: { cost: 5, penalty: 'Permanently lose 1 Time Meeple.' },
+};
+let shiftChoiceSentKey = null;
+
+function renderShiftCardChoiceStage(overlayEl, vm, interrupt, catalogId, cardArtHtml, cardTextHtml) {
+  const option = SHIFT_CHOICE_OPTIONS[catalogId] || { cost: 0, penalty: 'Take the penalty printed on the card.' };
+  const pending = Array.isArray(interrupt.pendingChoicePlayerIds) ? interrupt.pendingChoicePlayerIds : [];
+  const decided = Object.keys(interrupt.playerChoices || {});
+  const nameOf = (pid) => (vm.players[pid] && vm.players[pid].displayName) || pid;
+  const iOweChoice = pending.includes(HUMAN_PLAYER_ID);
+  const myPT = state && state.players[HUMAN_PLAYER_ID] ? state.players[HUMAN_PLAYER_ID].wallet.profitTokens : 0;
+  const canPay = myPT >= option.cost;
+  const sentKey = `${catalogId}|${(state && state.log && state.log.length) || 0}`;
+  const alreadySent = iOweChoice && shiftChoiceSentKey === sentKey;
+  const statusHtml = [
+    ...decided.map((pid) => `<li>✓ ${escapeAttr(nameOf(pid))} has decided</li>`),
+    ...pending.map((pid) => `<li>… ${escapeAttr(nameOf(pid))} is deciding</li>`),
+  ].join('');
+  let actionHtml;
+  if (iOweChoice && !alreadySent) {
+    actionHtml = `
+      <p class="shift-choice-prompt">Your choice:</p>
+      <div class="modal-actions shift-choice-actions">
+        <button type="button" class="modal-skip-btn" id="shift-choice-pay-btn" ${canPay ? '' : 'disabled'} title="${canPay ? '' : `You have ${myPT} PT — not enough to pay.`}">Pay ${option.cost} PT</button>
+        <button type="button" class="modal-skip-btn shift-choice-penalty-btn" id="shift-choice-penalty-btn">Take Penalty</button>
+      </div>
+      <p class="shift-choice-detail">You have ${myPT} PT.${canPay ? '' : ' You can\'t afford to pay, so the penalty applies.'} Penalty: ${escapeAttr(option.penalty)}</p>
+    `;
+  } else if (alreadySent) {
+    actionHtml = '<p class="shift-resolution-waiting">Sending your choice…</p>';
+  } else {
+    actionHtml = `<p class="shift-resolution-waiting">${decided.includes(HUMAN_PLAYER_ID) ? 'Your choice is in. ' : ''}Waiting for the other players to choose…</p>`;
+  }
+  overlayEl.innerHTML = `
+    <div class="modal-box shift-resolution-modal-box">
+      <h3>⚡ Shift Card — Everyone Chooses</h3>
+      <div class="shift-resolution-card-art">${cardArtHtml}</div>
+      ${cardTextHtml}
+      ${actionHtml}
+      <ul class="shift-choice-status">${statusHtml}</ul>
+    </div>
+  `;
+  const send = (choice) => {
+    shiftChoiceSentKey = sentKey;
+    const result = BrokerBossEngine.executeUserAction(state, { type: 'RESOLVE_SHIFT_CARD_PLAYER_CHOICE', playerId: HUMAN_PLAYER_ID, choice });
+    if (result.error) {
+      shiftChoiceSentKey = null;
+      showToast(`Shift card: ${uiErr(result.error, result.detail)}`);
+    }
+    state = result.state;
+    render();
+  };
+  const payBtn = overlayEl.querySelector('#shift-choice-pay-btn');
+  if (payBtn && canPay) payBtn.addEventListener('click', () => send('PAY'));
+  const penaltyBtn = overlayEl.querySelector('#shift-choice-penalty-btn');
+  if (penaltyBtn) penaltyBtn.addEventListener('click', () => send('PENALTY'));
+}
+
 function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
   overlayEl.style.display = 'flex';
   const interrupt = vm.pendingInterrupt;
@@ -1576,6 +1643,11 @@ function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
         render();
       });
     }
+    return;
+  }
+
+  if (stage === 'player_choices') {
+    renderShiftCardChoiceStage(overlayEl, vm, interrupt, catalogId, cardArtHtml, cardTextHtml);
     return;
   }
 
@@ -6381,14 +6453,24 @@ function patchEngineForNetworkMode() {
   BrokerBossEngine.executeUserAction = function networkAwareExecuteUserAction(currentState, payload, options) {
     if (multiplayerClient.isOnline && multiplayerClient.ws && multiplayerClient.ws.readyState === WebSocket.OPEN) {
       multiplayerClient.ws.send(JSON.stringify({ type: 'GAME_ACTION', action: payload }));
+      // [v68.20-a] The relay always answers an action (STATE_UPDATE or
+      // ACTION_ERROR), so it doubles as a heartbeat: no reply in 10s = lost.
+      if (!connectionMonitor.pingSentAt) connectionMonitor.pingSentAt = Date.now();
       return { state: currentState, error: null, detail: null };
+    }
+    // [v68.20-a] Online but the socket isn't open: refuse instead of silently
+    // running the action on this tab's local copy (that diverged from the
+    // real game the server holds).
+    if (multiplayerClient.isOnline) {
+      declareConnectionLost('action while disconnected');
+      return { state: currentState, error: 'CONNECTION_LOST', detail: null };
     }
     // [v68.17] forward settle options (round-boundary pause) on the offline path
     return localExecuteUserAction(currentState, payload, options);
   };
 }
 
-function connectRelay(onOpen, isReconnectAttempt) {
+function connectRelay(onOpen, isReconnectAttempt, mode) {
   const url = getRelayServerUrl();
   const ws = new WebSocket(url);
   multiplayerClient.ws = ws;
@@ -6398,6 +6480,9 @@ function connectRelay(onOpen, isReconnectAttempt) {
   });
 
   ws.addEventListener('error', () => {
+    // [v68.20-a] A mid-game resume attempt that fails is just one try — the
+    // connection monitor schedules the next one from the 'close' event.
+    if (mode === 'resume') return;
     if (isReconnectAttempt) {
       // FIX: this used to only call showLobbyError(), which writes to
       // #online-lobby-error — an element that doesn't exist yet this
@@ -6415,13 +6500,15 @@ function connectRelay(onOpen, isReconnectAttempt) {
   });
 
   ws.addEventListener('close', () => {
-    if (multiplayerClient.isOnline) {
-      showToast('Connection to the multiplayer server was lost. Attempting to reconnect…');
-      scheduleReconnectRetry();
-    }
+    // [v68.20-a] Ignore sockets we've already replaced or deliberately dropped.
+    if (ws.__abandoned || ws !== multiplayerClient.ws) return;
+    if (mode === 'resume') { connectionMonitorAttemptFailed(); return; }
+    if (multiplayerClient.isOnline) declareConnectionLost('socket closed');
   });
 
   ws.addEventListener('message', (event) => {
+    if (ws.__abandoned || ws !== multiplayerClient.ws) return;
+    noteRelayMessage();
     let msg;
     try {
       msg = JSON.parse(event.data);
@@ -6429,6 +6516,151 @@ function connectRelay(onOpen, isReconnectAttempt) {
       return;
     }
     handleRelayMessage(msg);
+  });
+}
+
+/**
+ * [v68.20-a] Connection monitor (client only; relay-server.js unchanged).
+ * A dropped Render connection can stay "open" in the browser with nothing
+ * coming through (game 3 of the 2026-10-12 playtests), so a 'close' event
+ * alone isn't enough. After 20s of silence during an online game this
+ * asks the relay for a state sync (it only answers while the room exists);
+ * no answer within 10s = connection lost. Then: a top banner, and resume
+ * attempts with backoff for up to 3 minutes (a Render restart can take
+ * about a minute). If the server answers that the room is gone, say so
+ * plainly instead of silently dropping the player to the lobby.
+ */
+const CONNECTION_IDLE_PING_MS = 20000;
+const CONNECTION_PING_TIMEOUT_MS = 10000;
+const RECONNECT_GIVE_UP_MS = 180000;
+const connectionMonitor = { started: false, lastMessageAt: Date.now(), pingSentAt: null, status: 'ok', lostAt: 0, attempt: 0, retryTimer: null, restoredTimer: null };
+
+function noteRelayMessage() {
+  connectionMonitor.lastMessageAt = Date.now();
+  connectionMonitor.pingSentAt = null;
+}
+
+function connectionMonitorActive() {
+  return multiplayerClient.isOnline && !(state && state.phase && state.phase.current === 'FINAL_SCORING');
+}
+
+function sendHeartbeat() {
+  const ws = multiplayerClient.ws;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  try { ws.send(JSON.stringify({ type: 'REQUEST_STATE_SYNC' })); } catch (err) { return false; }
+  connectionMonitor.pingSentAt = Date.now();
+  return true;
+}
+
+function connectionMonitorTick() {
+  if (!connectionMonitorActive() || connectionMonitor.status !== 'ok') return;
+  const ws = multiplayerClient.ws;
+  if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) { declareConnectionLost('socket closed'); return; }
+  const now = Date.now();
+  if (connectionMonitor.pingSentAt && now - connectionMonitor.pingSentAt > CONNECTION_PING_TIMEOUT_MS) { declareConnectionLost('no reply from server'); return; }
+  if (!connectionMonitor.pingSentAt && now - connectionMonitor.lastMessageAt > CONNECTION_IDLE_PING_MS) sendHeartbeat();
+}
+
+function startConnectionMonitor() {
+  connectionMonitor.lastMessageAt = Date.now();
+  connectionMonitor.pingSentAt = null;
+  if (connectionMonitor.started) return;
+  connectionMonitor.started = true;
+  setInterval(connectionMonitorTick, 2000);
+  // Phones/laptops waking up: check right away instead of waiting 20s.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && connectionMonitorActive() && connectionMonitor.status === 'ok' && !connectionMonitor.pingSentAt) sendHeartbeat();
+  });
+  window.addEventListener('offline', () => { if (connectionMonitorActive()) declareConnectionLost('device offline'); });
+  window.addEventListener('online', () => { if (connectionMonitor.status === 'reconnecting') { clearTimeout(connectionMonitor.retryTimer); attemptResumeNow(); } });
+}
+
+function declareConnectionLost(reason) {
+  if (connectionMonitor.status !== 'ok') return;
+  if (!multiplayerClient.roomCode || !multiplayerClient.reconnectToken) return;
+  connectionMonitor.status = 'reconnecting';
+  connectionMonitor.lostReason = reason;
+  connectionMonitor.lostAt = Date.now();
+  connectionMonitor.attempt = 0;
+  const old = multiplayerClient.ws;
+  if (old) { old.__abandoned = true; try { old.close(); } catch (err) { /* already gone */ } }
+  showConnectionBanner('lost');
+  clearTimeout(connectionMonitor.retryTimer);
+  connectionMonitor.retryTimer = setTimeout(attemptResumeNow, 500);
+}
+
+function attemptResumeNow() {
+  if (connectionMonitor.status !== 'reconnecting') return;
+  if (Date.now() - connectionMonitor.lostAt > RECONNECT_GIVE_UP_MS) { connectionMonitor.status = 'failed'; showConnectionBanner('failed'); return; }
+  connectionMonitor.attempt += 1;
+  showConnectionBanner('lost');
+  connectRelay(() => {
+    multiplayerClient.ws.send(JSON.stringify({ type: 'RECONNECT_PLAYER', roomCode: multiplayerClient.roomCode, seatIndex: multiplayerClient.mySeatIndex, reconnectToken: multiplayerClient.reconnectToken }));
+  }, true, 'resume');
+}
+
+function connectionMonitorAttemptFailed() {
+  if (connectionMonitor.status !== 'reconnecting') return;
+  const delay = Math.min(2000 * connectionMonitor.attempt, 10000);
+  clearTimeout(connectionMonitor.retryTimer);
+  connectionMonitor.retryTimer = setTimeout(attemptResumeNow, delay);
+}
+
+function connectionMonitorResumed() {
+  const wasReconnecting = connectionMonitor.status !== 'ok';
+  connectionMonitor.status = 'ok';
+  clearTimeout(connectionMonitor.retryTimer);
+  noteRelayMessage();
+  if (wasReconnecting) showConnectionBanner('restored');
+}
+
+function connectionMonitorRoomGone(reason) {
+  connectionMonitor.status = 'room-gone';
+  clearTimeout(connectionMonitor.retryTimer);
+  showConnectionBanner(reason === 'ROOM_NOT_FOUND' ? 'room-gone' : 'seat-gone');
+}
+
+function showConnectionBanner(kind) {
+  let el = document.getElementById('connection-status-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'connection-status-banner';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  clearTimeout(connectionMonitor.restoredTimer);
+  const backBtn = '<button type="button" class="connection-banner-btn" id="connection-banner-lobby-btn">Back to Main Menu</button>';
+  if (kind === 'lost') {
+    el.className = 'connection-banner connection-banner--lost';
+    el.innerHTML = `<span>⚠️ Connection lost to server. Attempting to reconnect…${connectionMonitor.attempt > 1 ? ` (try ${connectionMonitor.attempt})` : ''}</span>`;
+  } else if (kind === 'restored') {
+    el.className = 'connection-banner connection-banner--restored';
+    el.innerHTML = '<span>✅ Reconnected — you\'re back in the game.</span>';
+    connectionMonitor.restoredTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+  } else if (kind === 'failed') {
+    el.className = 'connection-banner connection-banner--failed';
+    el.innerHTML = `<span>❌ Still can't reach the game server after 3 minutes.</span><button type="button" class="connection-banner-btn" id="connection-banner-retry-btn">Try Again</button>${backBtn}`;
+  } else if (kind === 'room-gone') {
+    el.className = 'connection-banner connection-banner--failed';
+    el.innerHTML = `<span>❌ The game server restarted and this game room no longer exists, so this game can't be resumed.</span>${backBtn}`;
+  } else {
+    el.className = 'connection-banner connection-banner--failed';
+    el.innerHTML = `<span>❌ Reconnected to the server, but your seat in this game could not be restored.</span>${backBtn}`;
+  }
+  el.style.display = 'flex';
+  const retry = document.getElementById('connection-banner-retry-btn');
+  if (retry) retry.addEventListener('click', () => { connectionMonitor.status = 'reconnecting'; connectionMonitor.lostAt = Date.now(); connectionMonitor.attempt = 0; attemptResumeNow(); });
+  const back = document.getElementById('connection-banner-lobby-btn');
+  if (back) back.addEventListener('click', () => {
+    el.style.display = 'none';
+    connectionMonitor.status = 'ok';
+    multiplayerClient.isOnline = false;
+    if (multiplayerClient.ws) { multiplayerClient.ws.__abandoned = true; try { multiplayerClient.ws.close(); } catch (err) { /* ignore */ } }
+    clearSessionCredentials();
+    document.getElementById('app-shell').style.display = 'none';
+    document.getElementById('lobby-screen').style.display = '';
+    renderLobby();
   });
 }
 
@@ -6496,6 +6728,7 @@ function handleRelayMessage(msg) {
       state = msg.state;
       document.getElementById('lobby-screen').style.display = 'none';
       document.getElementById('app-shell').style.display = 'block';
+      startConnectionMonitor();
       render();
       break;
     case 'STATE_UPDATE':
@@ -6547,6 +6780,8 @@ function handleRelayMessage(msg) {
       break;
     case 'RECONNECTED':
       reconnectRetryCount = 0;
+      if (msg.gameStarted) startConnectionMonitor();
+      connectionMonitorResumed();
       multiplayerClient.roomCode = msg.roomCode;
       multiplayerClient.mySeatIndex = msg.seatIndex;
       multiplayerClient.reconnectToken = msg.reconnectToken;
@@ -6573,6 +6808,16 @@ function handleRelayMessage(msg) {
       }
       break;
     case 'RECONNECT_ERROR':
+      // [v68.20-a] Mid-game resume: tell the player plainly instead of
+      // silently dumping them on the lobby.
+      if (connectionMonitor.status === 'reconnecting') {
+        connectionMonitorRoomGone(msg.reason);
+        break;
+      }
+      if (msg.reason === 'ROOM_NOT_FOUND') {
+        showToast('Your previous online game room no longer exists (the server was restarted).');
+        setTimeout(() => showToast(null), 7000);
+      }
       // The stored credentials didn't work (room gone, token stale,
       // etc.) — nothing to restore, so just clear them and let the
       // player go through the normal landing screen instead of getting

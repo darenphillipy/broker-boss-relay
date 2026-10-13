@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.19-batch3) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.20-a) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -12904,8 +12904,30 @@ var BrokerBossEngine = (() => {
       var { evaluateRecruitCandidates, evaluatePoachCandidates, evaluateLoyaltyCandidates, evaluateActionCardChoice } = require_botDecisionEngine();
       var { resolveRecruitFromGrowthHub, resolvePoachFromGrowthHub, resolveLoyaltyFromGrowthHub } = require_agentRecruitmentReducer();
       var { playActionCard, resolveActionCardEffectChoice, resolveSpecialistCardEffectChoice } = require_actionCardReducer();
-      var { resolveShiftEffectStage2 } = require_shiftReducer();
+      var { resolveShiftEffectStage2, resolveShiftCardPlayerChoice } = require_shiftReducer();
       var { resolveEndOfRoundTechBonusChoice } = require_endOfRoundReducer();
+      // [v68.20-a] Pay-or-penalty Shift cards (Unforeseen Expenses,
+      // Unexpected Tax Audit, Legal Fees): every bot still owed a choice
+      // answers with the card's own default — pay if it can afford it,
+      // otherwise take the penalty. Humans answer through the client.
+      var SHIFT_CHOICE_PAY_COST = { SFT_026: 4, SFT_035: 6, SFT_036: 5 };
+      function autoResolveBotShiftChoices(state) {
+        let current = state;
+        for (let guard = 0; guard < 12; guard += 1) {
+          const interrupt = current.phase.pendingInterrupt;
+          if (!interrupt || interrupt.type !== "SHIFT_CARD_RESOLUTION" || !interrupt.data || interrupt.data.stage !== "player_choices") break;
+          const botId = (interrupt.data.pendingChoicePlayerIds || []).find((pid) => current.players[pid] && current.players[pid].isBot);
+          if (!botId) break;
+          const cost = SHIFT_CHOICE_PAY_COST[interrupt.data.drawnCardCatalogId] || 0;
+          const choice = current.players[botId].wallet.profitTokens >= cost ? "PAY" : "PENALTY";
+          const result = resolveShiftCardPlayerChoice(current, botId, choice);
+          if (result.error) {
+            return { state: appendLog(current, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: botId, error: result.error }), changed: current !== state, error: result.error };
+          }
+          current = appendLog(result.state, { type: "BOT_INTERRUPT_DECISION_MADE", playerId: botId, interruptType: "SHIFT_CARD_RESOLUTION", choiceType: "SHIFT_CARD_PLAYER_CHOICE", choice, catalogId: interrupt.data.drawnCardCatalogId });
+        }
+        return { state: current, changed: current !== state, error: null };
+      }
       // [v68.5 BUGFIX] Same fix as gameLoopController.js's advanceIfInterruptClear
       // — resolveTrackBranchChoice/resolveTargetedMilestone never call
       // advanceActivePlayer themselves, so the bot's own branch/milestone
@@ -13618,6 +13640,13 @@ var BrokerBossEngine = (() => {
             }
             return { state: loggedState2, action: "BOT_INTERRUPT_RESOLVED", reason: null };
           }
+          if (stage === "player_choices") {
+            // [v68.20-a] Previously fell through to the auto-acknowledge below,
+            // which cleared the card WITHOUT applying its effect or asking anyone.
+            const answered = autoResolveBotShiftChoices(state);
+            if (answered.changed) return { state: answered.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+            return { state, action: "NONE", reason: "WAITING_ON_HUMAN_SHIFT_CHOICE" };
+          }
           const nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
           return {
             state: appendLog(nextState, { type: "BOT_INTERRUPT_DECISION_MADE", playerId: interrupt.sourcePlayerId, archetype: player.archetype || null, interruptType: interrupt.type, choiceType: "SHIFT_CARD_AUTO_ACKNOWLEDGED", rationale: "BOTS_DO_NOT_NEED_TO_PAUSE_FOR_ACKNOWLEDGMENT" }),
@@ -13777,7 +13806,8 @@ var BrokerBossEngine = (() => {
       }
       module.exports = {
         resolveBotInterrupt,
-        computeCleanSlateBotSelection
+        computeCleanSlateBotSelection,
+        autoResolveBotShiftChoices
       };
     }
   });
@@ -14140,6 +14170,7 @@ var BrokerBossEngine = (() => {
         resolveEndOfRoundTechBonusChoice
       } = require_endOfRoundReducer();
       var { acknowledgeShiftCardResolution, resolveShiftEffectStage2 } = require_shiftReducer();
+      var { autoResolveBotShiftChoices } = require_botInterruptResolver();
       var { submitTurnOrderBid } = require_turnOrderBiddingReducer();
       var { evaluateTurnOrderBid } = require_botDecisionEngine();
       var { revealNextSpecialist } = require_specialistRevealReducer();
@@ -14536,6 +14567,15 @@ var BrokerBossEngine = (() => {
           }
           if (current.phase.current === "WORKER_PLACEMENT") {
             const interrupt = current.phase.pendingInterrupt;
+            // [v68.20-a] Pay-or-penalty Shift cards ask EVERY player, so the
+            // owner check below is the wrong test: bots still owed a choice
+            // answer now; the loop then waits only while a human still owes one.
+            if (interrupt && interrupt.type === "SHIFT_CARD_RESOLUTION" && interrupt.data && interrupt.data.stage === "player_choices") {
+              const answered = autoResolveBotShiftChoices(current);
+              if (answered.error) return { state: answered.state, settled: false, reason: "BOT_SHIFT_CHOICE_FAILED" };
+              if (answered.changed) { current = answered.state; continue; }
+              return { state: current, settled: true, reason: "WAITING_ON_HUMAN_SHIFT_CHOICE" };
+            }
             if (interrupt && interrupt.type !== "NULL") {
               const owner = current.players[interrupt.sourcePlayerId];
               if (!owner || !owner.isBot) {

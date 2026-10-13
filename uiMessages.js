@@ -1,5 +1,5 @@
 /**
- * uiMessages.js — Broker Boss Online (v68.19)
+ * uiMessages.js — Broker Boss Online (v68.20-a)
  *
  * Presentation-only text helpers. No game rules, no state changes: these
  * functions only turn engine data (error codes, log entries) into words a
@@ -81,6 +81,10 @@
     INSUFFICIENT_MATCHING_VALUES: 'To poach, you must meet at least 2 of the Agent\'s values (Training, Technology, Recognition).',
     ALL_VALUES_NOT_MET: 'A Loyalty Token needs all 3 of the Agent\'s values met.',
     NO_OPEN_DESK: 'Your offices are full — expand your offices (Leadership hub) before hiring another Agent.',
+    CONNECTION_LOST: "You're not connected to the game server right now — reconnecting. Try again in a moment.",
+    NOT_YOUR_SHIFT_CARD_CHOICE_TO_MAKE: 'You have already answered this Shift card (or it does not apply to you).',
+    NO_PENDING_SHIFT_CARD_CHOICE: 'That Shift card choice has already been settled.',
+    INVALID_SHIFT_CARD_CHOICE: 'Pick either Pay or Take Penalty.',
     OFFICES_AT_MAX: 'All 16 office spaces on your board are already open — Office Expansion has nothing left to add.',
     COPYCAT_END_OF_ROUND_ONLY: 'The Copycat Meeple can only be placed in the End of Round window, after everyone has finished their turns.',
     AGENT_HAS_ONBOARDING_TOKEN: 'That Agent was just hired this round and is protected until the round ends.',
