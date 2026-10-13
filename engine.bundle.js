@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-13 (v68.22-bot-ai) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-13 (v68.23-specialists) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -10941,6 +10941,19 @@ var BrokerBossEngine = (() => {
           nextState = incomeCollectionSweep(nextState);
           nextState = meepleTaxSweep(nextState);
         }
+        // [v68.23] Use it or lose it applies to the final round too.
+        const finalDeck = nextState.specialistDeck;
+        if (finalDeck && finalDeck.activeCard && finalDeck.activeCard.catalogId && !finalDeck.activeCard.claimedByPlayerId) {
+          const lastId = finalDeck.activeCard.catalogId;
+          const lastCard = nextState.cardCatalog && nextState.cardCatalog.specialistCards && nextState.cardCatalog.specialistCards[lastId];
+          nextState = { ...nextState, specialistDeck: { ...finalDeck, discardPile: [...(finalDeck.discardPile || []), lastId], activeCard: null } };
+          nextState = appendLog(nextState, {
+            type: "SPECIALIST_CARD_DISCARDED_UNCLAIMED",
+            catalogId: lastId,
+            revealedRound: finalDeck.activeCard.revealedRound,
+            message: `Round ${nextState.phase.round} Ended: Unclaimed Specialist ${lastCard && lastCard.name || lastId} discarded.`
+          });
+        }
         nextState = appendLog(nextState, {
           type: "FINAL_ROUND_COMPLETED",
           round: nextState.phase.round,
@@ -11414,6 +11427,17 @@ var BrokerBossEngine = (() => {
           actionCardCatalogSize: Object.keys(state.cardCatalog.actionCards).length,
           shiftCardCatalogSize: Object.keys(state.cardCatalog.shiftCards).length
         });
+        // [v68.23] Log Round 1's Specialist like every later round's.
+        if (state.specialistDeck && state.specialistDeck.activeCard && state.specialistDeck.activeCard.catalogId) {
+          const firstId = state.specialistDeck.activeCard.catalogId;
+          const firstCard = state.cardCatalog.specialistCards && state.cardCatalog.specialistCards[firstId];
+          state = appendLog(state, {
+            type: "SPECIALIST_CARD_REVEALED",
+            catalogId: firstId,
+            revealedRound: 1,
+            message: `New Specialist revealed for Round 1: ${firstCard && firstCard.name || firstId}.`
+          });
+        }
         state = { ...state, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
         return deepClone(state);
       }
@@ -13399,14 +13423,67 @@ var BrokerBossEngine = (() => {
           default: return 3;
         }
       }
+      // [v68.23] Rough "who is winning" estimate for denial decisions: Agents,
+      // coaching, Loyalty, Market Share and leftover PT, the way Final Scoring
+      // will count them.
+      function projectedScore(state, playerId) {
+        const { MS } = deps();
+        const p = state.players[playerId];
+        const roster = p.roster.filter((r) => !r.isVoided);
+        const agents = roster.reduce((sum, r) => sum + agentEndValue(agentStatsOf(state, r.catalogId)) + 3 * (r.coachTokens || 0) + (r.loyaltyToken && r.loyaltyToken.active ? 4 : 0), 0);
+        return agents + (MS[p.tracks.marketShare.position] || 0) + Math.floor(p.wallet.profitTokens / 4);
+      }
+      // How far through the current round we are: share of all active meeples already on the board.
+      function roundProgress(state) {
+        let placed = 0;
+        let total = 0;
+        Object.values(state.players).forEach((p) => {
+          p.timeMeeples.active.forEach((m) => {
+            total += 1;
+            if (m.status === "on_board") placed += 1;
+          });
+        });
+        return total ? placed / total : 0;
+      }
+      // [v68.23] Specialists are "use it or lose it": the card on the hub is
+      // discarded at the end of the round if nobody hires it, so a bot never
+      // waits for a better moment. The value is shaped by:
+      //   - personality fit (favourite Specialists x1.3),
+      //   - denial: a leading rival who would gain a lot from this card,
+      //   - urgency: the later in the round, the sooner the card disappears,
+      //     and a bot holding its last two meeples gets its last chance now.
+      // It must beat the bot's best ordinary action plus a slice of its second
+      // best (the hub costs TWO meeples) — no longer the sum of both, which
+      // left the hub dead in most rounds.
       function shouldClaimSpecialist(state, playerId, catalogId) {
         const player = state.players[playerId];
         const profile = getProfile(player);
         const favorite = (profile.favoriteSpecialists || []).includes(catalogId) ? 1.3 : 1;
-        const value = specialistBaseValue(state, playerId, catalogId) * (profile.specialistMult || 1) * favorite - 2 * profitTokenValue(state, player);
+        let value = specialistBaseValue(state, playerId, catalogId) * (profile.specialistMult || 1) * favorite;
+        // Denial: the leader (by projected score) would gain a lot from this card.
+        const others = Object.keys(state.players).filter((id) => id !== playerId);
+        let denial = 0;
+        if (others.length) {
+          const leader = others.reduce((a, b) => projectedScore(state, b) > projectedScore(state, a) ? b : a);
+          const myScore = projectedScore(state, playerId);
+          const leaderScore = projectedScore(state, leader);
+          if (leaderScore > myScore) {
+            const leaderProfile = getProfile(state.players[leader]);
+            const leaderFav = (leaderProfile.favoriteSpecialists || []).includes(catalogId) ? 1.3 : 1;
+            const leaderGain = specialistBaseValue(state, leader, catalogId) * (leaderProfile.specialistMult || 1) * leaderFav;
+            if (leaderGain >= 6) denial = 0.35 * leaderGain * (profile === ARCHETYPE_PROFILES.Aggressive ? 1.5 : 1);
+          }
+        }
+        value += denial;
+        // Urgency: round decay + last chance.
+        const progress = roundProgress(state);
+        const inSupply = player.timeMeeples.active.filter((m) => m.status === "in_supply").length;
+        const lastChance = inSupply <= 2 ? 1.15 : 1;
+        value *= (1 + 0.4 * progress) * lastChance;
+        value -= 2 * profitTokenValue(state, player);
         const ranked = rankBotSpaceCandidates(state, playerId);
-        const giveUp = (ranked[0] ? ranked[0].score : 0) + (ranked[1] ? ranked[1].score : 0) * 0.6;
-        return { claim: value > giveUp, value, giveUp };
+        const giveUp = (ranked[0] ? ranked[0].score : 0) * 0.85 + (ranked[1] ? ranked[1].score : 0) * 0.35;
+        return { claim: value > giveUp, value, giveUp, denial, progress };
       }
 
       // ---- turn-order bidding -------------------------------------------
@@ -13429,8 +13506,8 @@ var BrokerBossEngine = (() => {
         const topAgent = bestAgentValue(market);
         if (deskInfo(state, playerId).open && topAgent >= 12) value += profile === ARCHETYPE_PROFILES.Growth ? 2.5 : 1;
         value += profile.contestedBonus * 0.5;
-        const activeCard = state.specialistDeck && state.specialistDeck.activeCard;
-        if (activeCard && activeCard.catalogId && !activeCard.claimedByPlayerId && (profile.favoriteSpecialists || []).includes(activeCard.catalogId)) value += 2;
+        // (v68.23: no bonus for the Specialist on the hub — it is discarded at
+        // round end, so next round's card is unknown when bidding.)
         value *= Math.min(1, 0.4 + rivals * 0.15);
         const pt = profitTokenValue(state, player);
         const reserve = officeValue(state, playerId) > 4 || staffValue(state, playerId) > 4 ? 4 : 0;
@@ -13445,7 +13522,7 @@ var BrokerBossEngine = (() => {
         const bid = surplus > 0 ? Math.floor((surplus / Math.max(pt, 0.3)) * 0.4) : 0;
         return { profitTokensBid: Math.max(0, Math.min(bid, spendable, 5)), priorityTokensBid: 0, firstPlaceValue: value };
       }
-      module.exports = { ARCHETYPE_PROFILES, PHASE_MULTIPLIERS, rankBotSpaceCandidates, planTurnOrderBid, estimateCardValue, bestPlayableCard, getProfile, shouldClaimSpecialist };
+      module.exports = { ARCHETYPE_PROFILES, PHASE_MULTIPLIERS, rankBotSpaceCandidates, planTurnOrderBid, estimateCardValue, bestPlayableCard, getProfile, shouldClaimSpecialist, projectedScore, roundProgress };
     }
   });
 
@@ -14540,9 +14617,13 @@ var BrokerBossEngine = (() => {
         // [v68.22] Distinguish a bot that simply has no meeples left (a normal
         // end of its round) from one that forfeits an action it could take.
         const hasMeepleLeft = player.timeMeeples.active.some((m) => m.status === "in_supply");
+        // [v68.23] Boxed in (every space full, closed, blocked or unaffordable)
+        // is a legal sit-out, not a bot mistake — log it the same way as for humans.
+        const boxedIn = hasMeepleLeft && require_placementLegality().listMeaningfulPlacements(nextState, activePlayerId).length === 0;
         nextState = appendLog(nextState, {
-          type: hasMeepleLeft ? "BOT_TURN_NO_VALID_ACTION" : "BOT_TURN_DONE_NO_MEEPLES",
-          playerId: activePlayerId
+          type: !hasMeepleLeft ? "BOT_TURN_DONE_NO_MEEPLES" : boxedIn ? "BOT_TURN_NO_LEGAL_PLACEMENT" : "BOT_TURN_NO_VALID_ACTION",
+          playerId: activePlayerId,
+          ...(boxedIn ? { message: `${activePlayerId} has no open space left this round — their remaining meeples sit out until next round.` } : {})
         });
         nextState = {
           ...nextState,
@@ -14604,6 +14685,11 @@ var BrokerBossEngine = (() => {
         };
         return { ...state, log: [...state.log, logEntry] };
       }
+      // [v68.23] Card name for log lines (falls back to the id).
+      function specialistNameOf(state, catalogId) {
+        const c = state.cardCatalog && state.cardCatalog.specialistCards && state.cardCatalog.specialistCards[catalogId];
+        return c && c.name || catalogId;
+      }
       function revealNextSpecialist(state) {
         if (state.phase.current !== "SPECIALIST_REVEAL") {
           return state;
@@ -14641,10 +14727,23 @@ var BrokerBossEngine = (() => {
             cubeState: "unused",
             cubeLocation: null
           };
+          // [v68.23] One plain sentence for the public log covering both halves
+          // of the hand-over: what happened to last round's card, and the new one.
+          const prevRound = nextState.phase.round - 1;
+          const newName = specialistNameOf(nextState, nextCatalogId);
+          let refreshMessage = `New Specialist revealed for Round ${nextState.phase.round}: ${newName}.`;
+          if (outgoingCard && outgoingCard.catalogId) {
+            const oldName = specialistNameOf(nextState, outgoingCard.catalogId);
+            refreshMessage = outgoingCard.claimedByPlayerId
+              ? `Round ${prevRound} Ended: ${oldName} was hired by ${outgoingCard.claimedByPlayerId}. New Specialist revealed for Round ${nextState.phase.round}: ${newName}.`
+              : `Round ${prevRound} Ended: Unclaimed Specialist ${oldName} discarded. New Specialist revealed for Round ${nextState.phase.round}: ${newName}.`;
+          }
           nextState = appendLog(nextState, {
             type: "SPECIALIST_CARD_REVEALED",
             catalogId: nextCatalogId,
-            revealedRound: nextState.phase.round
+            revealedRound: nextState.phase.round,
+            discardedCatalogId: outgoingCard && outgoingCard.catalogId && !outgoingCard.claimedByPlayerId ? outgoingCard.catalogId : null,
+            message: refreshMessage
           });
           if (remainingDrawPile.length === 0) {
             nextState = appendLog(nextState, {
@@ -14677,6 +14776,49 @@ var BrokerBossEngine = (() => {
       module.exports = {
         revealNextSpecialist
       };
+    }
+  });
+
+  // placementLegality.js
+  // [v68.23] Rules helper: can this player still make ANY meaningful
+  // placement this round? Used by the game loop so a human who is completely
+  // boxed in (every space full, closed by a Shift card, blocked by a rival's
+  // Lobbyist, unaffordable, or with no legal target) sits out the rest of the
+  // round instead of freezing the game — the same thing bots already do.
+  var require_placementLegality = __commonJS({
+    "placementLegality.js"(exports, module) {
+      // Deferred spaces that are pointless without a target.
+      function targetExists(state, playerId, spaceId) {
+        const bde = require_botDecisionEngine();
+        const player = state.players[playerId];
+        switch (spaceId) {
+          case "GRW_RECRUIT_AGENT": return !!bde.evaluateRecruitCandidates(state, playerId);
+          case "GRW_POACH_AGENT": return !!bde.evaluatePoachCandidates(state, playerId);
+          case "GRW_LOYALTY_TOKEN": return !!bde.evaluateLoyaltyCandidates(state, playerId);
+          case "LDR_HIRE_COACH": return player.roster.some((r) => !r.isVoided);
+          case "EXEC_SEARCH_SPECIALTY_AGENT_HUB": {
+            const card = state.specialistDeck && state.specialistDeck.activeCard;
+            return !!(card && card.catalogId && !card.claimedByPlayerId);
+          }
+          default: return true;
+        }
+      }
+      function listMeaningfulPlacements(state, playerId) {
+        const wpv = require_workerPlacementValidation();
+        const player = state.players[playerId];
+        if (!player) return [];
+        const inSupply = player.timeMeeples.active.filter((m) => m.status === "in_supply").length;
+        if (inSupply === 0) return [];
+        return state.board.actionSpaces.filter((space) => {
+          const meepleCost = space.cost && space.cost.meepleCost || 1;
+          if (inSupply < meepleCost) return false;
+          const open = wpv.verifySpaceOpen(state, space.spaceId, playerId, null);
+          if (!open.ok) return false;
+          if (!wpv.verifyCanAffordSpace(state, playerId, open.space).ok) return false;
+          return targetExists(state, playerId, space.spaceId);
+        }).map((s) => s.spaceId);
+      }
+      module.exports = { listMeaningfulPlacements };
     }
   });
 
@@ -15148,6 +15290,24 @@ var BrokerBossEngine = (() => {
             if (activePlayer && activePlayer.isBot) {
               const result = triggerBotTurnIfActive(current);
               current = result.state;
+              continue;
+            }
+            // [v68.23] A human with meeples left but no meaningful space at all
+            // (everything full, Shift-closed, Lobbyist-blocked, unaffordable or
+            // target-less) sits out the rest of the round instead of freezing it.
+            if (activePlayer && activePlayer.timeMeeples.active.some((m) => m.status === "in_supply") && require_placementLegality().listMeaningfulPlacements(current, activePlayer.playerId).length === 0) {
+              const sittingOut = activePlayer.timeMeeples.active.filter((m) => m.status === "in_supply").length;
+              current = { ...current, log: [...current.log, {
+                seq: current.log.length + 1,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                round: current.phase.round,
+                type: "HUMAN_TURN_NO_LEGAL_PLACEMENT",
+                playerId: activePlayer.playerId,
+                meeplesSittingOut: sittingOut,
+                message: `${activePlayer.playerId} has no open space left this round — ${sittingOut} meeple${sittingOut === 1 ? " sits" : "s sit"} out until next round.`
+              }] };
+              current = { ...current, phase: { ...current.phase, playersWithMeeplesRemaining: current.phase.playersWithMeeplesRemaining.filter((id) => id !== activePlayer.playerId) } };
+              current = advanceActivePlayer(current);
               continue;
             }
             return { state: current, settled: true, reason: "WAITING_ON_HUMAN_TURN" };

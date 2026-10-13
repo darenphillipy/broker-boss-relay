@@ -217,8 +217,9 @@
       case 'SPECIALIST_CARD_ACTIVATED':
         return who + ' hires ' + (cardName(catalog, entry.catalogId) || "this round's Specialist") + '.';
       case 'SPECIALIST_CARD_REVEALED':
-      case 'SPECIALIST_DECK_FINAL_CARD_REVEALED':
         return 'New Specialist this round: ' + (cardName(catalog, entry.catalogId) || 'revealed') + '.';
+      case 'SPECIALIST_DECK_FINAL_CARD_REVEALED':
+        return null; // [v68.23] the reveal line itself already announces it
       case 'ROUND_ADVANCED':
         return '— Round ' + entry.newRound + ' begins —';
       case 'TURN_ORDER_RESOLVED':
