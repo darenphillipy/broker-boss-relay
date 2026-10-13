@@ -1,5 +1,5 @@
 /**
- * uiMessages.js — Broker Boss Online (v68.20-a)
+ * uiMessages.js — Broker Boss Online (v68.20)
  *
  * Presentation-only text helpers. No game rules, no state changes: these
  * functions only turn engine data (error codes, log entries) into words a
@@ -81,6 +81,11 @@
     INSUFFICIENT_MATCHING_VALUES: 'To poach, you must meet at least 2 of the Agent\'s values (Training, Technology, Recognition).',
     ALL_VALUES_NOT_MET: 'A Loyalty Token needs all 3 of the Agent\'s values met.',
     NO_OPEN_DESK: 'Your offices are full — expand your offices (Leadership hub) before hiring another Agent.',
+    SHIFT_CARD_BANS_THIS_SPACE: function (d) { return shiftBanText(d, 'that space is closed to you this round.'); },
+    SHIFT_CARD_BANS_RECRUITING: function (d) { return shiftBanText(d, d && d.shiftCardId === 'SFT_023' ? 'no recruiting from the Open Market this round.' : 'no recruiting this round.'); },
+    SHIFT_CARD_BANS_THIS_AGENT: function (d) { return shiftBanText(d, 'Agents with Training 5 or more can\'t be recruited this round' + (d && d.agentTraining != null ? ' (this one has ' + d.agentTraining + ').' : '.')); },
+    SHIFT_CARD_BANS_PLAYING_CARDS: function (d) { return shiftBanText(d, 'no Action Cards can be played this round. You can still acquire a card.'); },
+    SHIFT_SURCHARGE_UNAFFORDABLE: function (d) { return 'A Shift card adds a ' + (d && d.required) + ' PT surcharge to this recruit — you have ' + (d && d.current) + ' PT.'; },
     CONNECTION_LOST: "You're not connected to the game server right now — reconnecting. Try again in a moment.",
     NOT_YOUR_SHIFT_CARD_CHOICE_TO_MAKE: 'You have already answered this Shift card (or it does not apply to you).',
     NO_PENDING_SHIFT_CARD_CHOICE: 'That Shift card choice has already been settled.',
@@ -122,6 +127,14 @@
   };
 
   var GENERIC_ERROR = "That move isn't allowed right now.";
+
+  var SHIFT_BAN_NAMES = { SFT_001: 'Recruitment Ban', SFT_022: 'Bad Press', SFT_023: 'Team Morale Drops', SFT_034: 'Office Supplies Shortage', SFT_045: 'Office Renovation Costs', SFT_049: 'Outdated Technology', SFT_050: 'Internal Audit' };
+  var SHIFT_SPACE_WHAT = { SFT_022: 'no recruiting this round.', SFT_023: 'no recruiting from the Open Market this round.', SFT_045: 'the Hire Staff action is closed this round.', SFT_049: 'Training, Technology and Recognition can\'t increase this round.', SFT_050: 'the Additional Profit action is closed this round.' };
+  function shiftBanText(d, fallback) {
+    var id = d && d.shiftCardId;
+    var what = (d && d.spaceId && SHIFT_SPACE_WHAT[id]) || fallback;
+    return 'Shift card in effect' + (SHIFT_BAN_NAMES[id] ? ' (' + SHIFT_BAN_NAMES[id] + ')' : '') + ': ' + what;
+  }
 
   function friendlyError(code, detail) {
     if (!code) return '';

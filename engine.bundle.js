@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.20-a) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.20-batch4b) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -1644,6 +1644,11 @@ var BrokerBossEngine = (() => {
             `adjustTrack: "${trackName}" is not a leveled track \u2014 expected one of training | technology | recognition`
           );
         }
+        // [v68.20 FIX #2] SFT_049 Outdated Technology: no Ops Hub value may
+        // increase this round (decreases still apply).
+        if (delta > 0 && player.trackIncreasesBannedUntilRound === state.phase.round) {
+          return appendLog(state, { type: "TRACK_INCREASE_BLOCKED_BY_SHIFT", playerId, trackName, blockedAmount: delta, message: `${playerId}'s ${trackName} can't increase this round (Outdated Technology).` });
+        }
         const track = player.tracks[trackName];
         const newTrack = {
           ...track,
@@ -2494,6 +2499,26 @@ var BrokerBossEngine = (() => {
       function meepleIsCopycatBypass(player, meeple) {
         return !!(player.timeMeeples.copycatMeeple && meeple && meeple.instanceId === player.timeMeeples.copycatMeeple.instanceId);
       }
+      // [v68.20 FIX #2] Shift card restrictions on board spaces. Each card sets
+      // a per-player "...UntilRound" flag to the round it fires in; the ban
+      // applies for that round only. Lives here (verifySpaceOpen) so humans,
+      // bots, Liquidity Staff tokens and UI highlighting all agree; the free
+      // action token and Copycat Marketing call it directly.
+      var SHIFT_TRACK_SPACE_IDS = /* @__PURE__ */ new Set(["OPS_TRAINING", "OPS_TECHNOLOGY", "OPS_RECOGNITION", "OPS_2X_COMBO"]);
+      function verifyShiftSpaceRestriction(state, playerId, spaceId) {
+        const player = state.players[playerId];
+        const round = state.phase.round;
+        if (!player) return { ok: true };
+        const deny = (shiftCardId) => ({ ok: false, error: "SHIFT_CARD_BANS_THIS_SPACE", detail: { spaceId, shiftCardId } });
+        if (spaceId === "GRW_RECRUIT_AGENT") {
+          if (player.recruitBannedUntilRound === round) return deny("SFT_022");
+          if (player.openMarketRecruitBannedUntilRound === round) return deny("SFT_023");
+        }
+        if (spaceId === "LDR_HIRE_STAFF" && player.hireStaffBannedUntilRound === round) return deny("SFT_045");
+        if (spaceId === "EXEC_ADDITIONAL_PROFIT" && player.additionalProfitBannedUntilRound === round) return deny("SFT_050");
+        if (SHIFT_TRACK_SPACE_IDS.has(spaceId) && player.trackIncreasesBannedUntilRound === round) return deny("SFT_049");
+        return { ok: true };
+      }
       function verifySpaceOpen(state, spaceId, playerId, extra, meeple = null) {
         const space = state.board.actionSpaces.find((s) => s.spaceId === spaceId);
         if (space === void 0) {
@@ -2502,6 +2527,8 @@ var BrokerBossEngine = (() => {
         if (space.status === "blocked" || space.status === "void") {
           return { ok: false, error: "SPACE_BLOCKED", detail: { spaceId, status: space.status } };
         }
+        const shiftSpaceCheck = verifyShiftSpaceRestriction(state, playerId, spaceId);
+        if (!shiftSpaceCheck.ok) return shiftSpaceCheck;
         // [v68.19 FIX #1] Office Expansion is only refused once all 16 office
         // spaces on the personal board are already unlocked. Lives here so
         // humans, bots, Liquidity Staff tokens and UI highlighting all agree.
@@ -2674,6 +2701,7 @@ var BrokerBossEngine = (() => {
         verifyActivePlayer,
         verifyMeepleAvailable,
         verifySpaceOpen,
+        verifyShiftSpaceRestriction,
         verifyCanAffordSpace,
         verifySpecialistAction,
         verifySpecialistHubNotSpent,
@@ -5721,14 +5749,26 @@ var BrokerBossEngine = (() => {
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
+      // [v68.20 FIX #3] "Move the Meeple used to play this card onto this
+      // space. Recall up to 3 of your OTHER Meeples." Only the meeple that
+      // played this card is excluded — the newest of this player's meeples on
+      // the Play-a-Card space. Earlier meeples there can now be recalled.
+      function s6PlayingMeepleIds(state, playerId) {
+        const intr = state.phase.pendingInterrupt;
+        if (intr && intr.type === "ACTION_SPACE_DEFERRED_CHOICE" && intr.sourcePlayerId === playerId && intr.data && intr.data.spaceId === "EXEC_TAKE_PLAY_CARD" && intr.data.meepleInstanceId) {
+          return /* @__PURE__ */ new Set([intr.data.meepleInstanceId]);
+        }
+        const playCardSpace = (state.board.actionSpaces || []).find((s) => s.spaceId === "EXEC_TAKE_PLAY_CARD");
+        const mine = (playCardSpace ? playCardSpace.occupiedBy : []).filter((entry) => entry.playerId === playerId);
+        if (mine.length === 0) return /* @__PURE__ */ new Set();
+        const newest = mine.reduce((a, b) => (b.order || 0) > (a.order || 0) ? b : a);
+        return /* @__PURE__ */ new Set([newest.meepleInstanceId]);
+      }
       function handleS6(state, context) {
         const { playerId, cardInstanceId, extra } = context;
         const player = state.players[playerId];
         if (!extra || !Array.isArray(extra.meepleInstanceIds)) {
-          const playCardSpace = (state.board.actionSpaces || []).find((s) => s.spaceId === "EXEC_TAKE_PLAY_CARD");
-          const activeMeepleInstanceIds = new Set(
-            (playCardSpace ? playCardSpace.occupiedBy : []).filter((entry) => entry.playerId === playerId).map((entry) => entry.meepleInstanceId)
-          );
+          const activeMeepleInstanceIds = s6PlayingMeepleIds(state, playerId);
           const onBoardMeepleIds = [...new Set(player.timeMeeples.active.filter((m) => m.status === "on_board" && !activeMeepleInstanceIds.has(m.instanceId)).map((m) => m.instanceId))];
           if (onBoardMeepleIds.length === 0) {
             return {
@@ -5752,10 +5792,7 @@ var BrokerBossEngine = (() => {
             effectOutcome: DEFAULT_OUTCOME
           };
         }
-        const playCardSpaceResume = (state.board.actionSpaces || []).find((s) => s.spaceId === "EXEC_TAKE_PLAY_CARD");
-        const activeMeepleInstanceIdsResume = new Set(
-          (playCardSpaceResume ? playCardSpaceResume.occupiedBy : []).filter((entry) => entry.playerId === playerId).map((entry) => entry.meepleInstanceId)
-        );
+        const activeMeepleInstanceIdsResume = s6PlayingMeepleIds(state, playerId);
         console.log('[BB_DEBUG][handleS6] BEFORE RECALL', { playerId, requestedMeepleInstanceIds: extra.meepleInstanceIds, playersWithMeeplesRemaining: state.phase.playersWithMeeplesRemaining });
         // [v68.17 FIX #1] Only this player's own on-board meeples, each at most
         // once — a repeated or foreign id in the request can no longer count
@@ -6355,7 +6392,9 @@ var BrokerBossEngine = (() => {
           const active = player.timeMeeples.active;
           const idx = active.findIndex((m) => m.status === "in_supply");
           if (idx < 0) return;
-          const newActive = active.map((m, i) => i === idx ? { ...m, status: "disabled_until_round", disabledUntilRound: nextState.phase.round + 1 } : m);
+          // [v68.20] "lost for the next round": unusable for the rest of this
+          // round AND next round; back in supply the round after that.
+          const newActive = active.map((m, i) => i === idx ? { ...m, status: "disabled_until_round", disabledUntilRound: nextState.phase.round + 2 } : m);
           nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, timeMeeples: { ...player.timeMeeples, active: newActive } } } };
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
@@ -6539,7 +6578,7 @@ var BrokerBossEngine = (() => {
         });
         if (!bestCatalogId) return { state, effectOutcome: DEFAULT_OUTCOME };
         const { recruitOpenMarketAgent: recruit } = require_agentRecruitmentReducer();
-        const result = recruit(state, lowestPlayerId, bestCatalogId);
+        const result = recruit(state, lowestPlayerId, bestCatalogId, { bypassShiftRestrictions: true });
         const nextState = result.error ? state : result.state;
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
@@ -8497,6 +8536,10 @@ var BrokerBossEngine = (() => {
         if (space.status === "blocked" || space.status === "void") {
           return { state, error: "SPACE_BLOCKED", detail: { spaceId, status: space.status } };
         }
+        const freeShiftCheck = require_workerPlacementValidation().verifyShiftSpaceRestriction(state, playerId, spaceId);
+        if (!freeShiftCheck.ok) {
+          return { state, error: freeShiftCheck.error, detail: freeShiftCheck.detail };
+        }
         const syntheticMeeple = { instanceId: `free-action-${playerId}-${state.phase.round}` };
         const occupantOrder = (space.occupiedBy ? space.occupiedBy.length : 0) + 1;
         const result = resolveActionSpace(state, playerId, space, syntheticMeeple, null, occupantOrder);
@@ -8941,16 +8984,12 @@ var BrokerBossEngine = (() => {
             }
           }
           return null;
-        },
-        function handSizeWithinCapacity(state) {
-          for (const playerId of Object.keys(state.players)) {
-            const hand = state.players[playerId].hand;
-            if (hand.actionCards.length > hand.maxHandSize) {
-              return `player ${playerId}'s hand (${hand.actionCards.length} cards) exceeds maxHandSize (${hand.maxHandSize})`;
-            }
-          }
-          return null;
         }
+        // [v68.20 FIX #1] handSizeWithinCapacity removed. Hand size is a SOFT
+        // cap (Master Schema ruling #2): cards like Proprietary Algorithm or
+        // The Snoop can legally take a hand over the limit mid-round, and the
+        // end-of-round discard/redraw enforces it. As an invariant it rolled
+        // back OTHER players' card plays whenever anyone was over the limit.
       ];
       function runInvariantChecks(state, validators) {
         for (const validator of validators) {
@@ -9172,6 +9211,11 @@ var BrokerBossEngine = (() => {
           nextState2 = { ...nextState2, phase: { ...nextState2.phase, pendingInterrupt: NULL_INTERRUPT } };
           nextState2 = advanceActivePlayer(nextState2);
           return { state: nextState2, error: null, detail: null };
+        }
+        // [v68.20 FIX #2] SFT_034 Office Supplies Shortage: no playing Action
+        // Cards this round (acquiring one on the same space is still allowed).
+        if (player.playCardActionBannedUntilRound === state.phase.round) {
+          return { state, error: "SHIFT_CARD_BANS_PLAYING_CARDS", detail: { shiftCardId: "SFT_034" } };
         }
         const handEntry = player.hand.actionCards.find((c) => c.instanceId === cardInstanceId);
         if (!handEntry) {
@@ -9595,7 +9639,38 @@ var BrokerBossEngine = (() => {
           message: `${playerId}'s desk space is over capacity after losing an Influencer \u2014 ${toFire.length} agent(s) fired (lowest Total Profit first) to comply.`
         });
       }
-      function recruitOpenMarketAgent(state, playerId, agentCatalogId) {
+      // [v68.20 FIX #2] Shift card recruiting restrictions, shared by every
+      // recruit path (Recruit space, recruiting Action Cards, CRM Update, the
+      // free-agent token). Flags equal the round the card fired; that round only.
+      //   SFT_022 Bad Press ............ no recruiting at all
+      //   SFT_023 Team Morale Drops .... no recruiting from the Open Market
+      //   SFT_001 Recruitment Ban ...... no Agents with Training 5+
+      //   SFT_018 Recession ............ recruiting requirements doubled
+      //   SFT_003 / SFT_012 ............ +2 / +5 PT per recruit
+      //   SFT_024 Staff Shortage ....... +5 PT for Agents with profit 5+
+      function evaluateShiftRecruitRestrictions(state, playerId, agentStats, source, opts = {}) {
+        const player = state.players[playerId];
+        const round = state.phase.round;
+        const on = (field) => player[field] === round;
+        if (on("recruitBannedUntilRound")) return { error: "SHIFT_CARD_BANS_RECRUITING", detail: { shiftCardId: "SFT_022" } };
+        if (source === "open_market" && on("openMarketRecruitBannedUntilRound")) return { error: "SHIFT_CARD_BANS_RECRUITING", detail: { shiftCardId: "SFT_023" } };
+        if (on("recruitmentBanTrainingFloorUntilRound") && (agentStats.training || 0) >= 5) return { error: "SHIFT_CARD_BANS_THIS_AGENT", detail: { shiftCardId: "SFT_001", agentTraining: agentStats.training || 0 } };
+        let surcharge = 0;
+        if (!opts.noSurcharge) {
+          if (on("recruitmentSurchargeUntilRound")) surcharge += player.recruitmentSurchargeAmount || 0;
+          if (on("highProfitRecruitSurchargeUntilRound") && (agentStats.totalProfit || 0) >= (player.highProfitRecruitThreshold || 5)) surcharge += player.highProfitRecruitSurchargeAmount || 5;
+        }
+        if (surcharge > player.wallet.profitTokens) return { error: "SHIFT_SURCHARGE_UNAFFORDABLE", detail: { required: surcharge, current: player.wallet.profitTokens } };
+        return { error: null, detail: null, surcharge, doubled: !opts.ignoreRequirements && on("recruitmentRequirementDoubledUntilRound") };
+      }
+      function doubledRecruitRequirements(agentStats) {
+        return { ...agentStats, training: (agentStats.training || 0) * 2, technology: (agentStats.technology || 0) * 2, recognition: (agentStats.recognition || 0) * 2 };
+      }
+      function payShiftRecruitSurcharge(state, playerId, surcharge, agentName) {
+        if (!surcharge) return state;
+        return appendLog(adjustWallet(state, playerId, -surcharge, 0), { type: "SHIFT_RECRUIT_SURCHARGE_PAID", playerId, amount: surcharge, message: `${playerId} pays a ${surcharge} PT Shift card surcharge to recruit ${agentName}.` });
+      }
+      function recruitOpenMarketAgent(state, playerId, agentCatalogId, options = {}) {
         const player = state.players[playerId];
         if (!player) {
           return { state, error: "PLAYER_NOT_FOUND", detail: { playerId } };
@@ -9611,13 +9686,18 @@ var BrokerBossEngine = (() => {
         if (!agentStats) {
           return { state, error: "AGENT_CATALOG_ENTRY_NOT_FOUND", detail: { agentCatalogId } };
         }
-        const matchCount = countMatchingValues(player.tracks, agentStats, getAggressivePoacherReduction(player));
+        const shiftRecruit = options.bypassShiftRestrictions ? { error: null, surcharge: 0, doubled: false } : evaluateShiftRecruitRestrictions(state, playerId, agentStats, "open_market");
+        if (shiftRecruit.error) {
+          return { state, error: shiftRecruit.error, detail: shiftRecruit.detail };
+        }
+        const matchCount = countMatchingValues(player.tracks, shiftRecruit.doubled ? doubledRecruitRequirements(agentStats) : agentStats, getAggressivePoacherReduction(player));
         if (matchCount < MIN_MATCHING_VALUES_TO_RECRUIT) {
           return { state, error: "NO_MATCHING_VALUE", detail: { required: MIN_MATCHING_VALUES_TO_RECRUIT, matched: matchCount } };
         }
         const poacherReductionApplied = getAggressivePoacherReduction(player) > 0;
         let nextState = removeFromOpenMarketAndRefill(state, agentCatalogId);
         nextState = addAgentToRoster(nextState, playerId, agentCatalogId, "recruited");
+        nextState = payShiftRecruitSurcharge(nextState, playerId, shiftRecruit.surcharge, agentStats.name);
         nextState = adjustWallet(nextState, playerId, agentStats.totalProfit, 0);
         nextState = advanceMarketReport(nextState);
         if (poacherReductionApplied) {
@@ -9628,7 +9708,7 @@ var BrokerBossEngine = (() => {
           playerId,
           agentCatalogId,
           netProfit: agentStats.totalProfit,
-          message: `${playerId} recruits ${agentStats.name} from the Open Market for $0 PT (+${agentStats.totalProfit} PT Net Profit bonus).`
+          message: `${playerId} recruits ${agentStats.name} from the Open Market for $${shiftRecruit.surcharge || 0} PT (+${agentStats.totalProfit} PT Net Profit bonus).`
         });
         if (agentStats.network.role === "influencer") {
           nextState = pullInfluencerNetwork(nextState, playerId, agentCatalogId);
@@ -9903,11 +9983,16 @@ var BrokerBossEngine = (() => {
         if (!agentStats) {
           return { state, error: "AGENT_CATALOG_ENTRY_NOT_FOUND", detail: { catalogId: chosenCatalogId } };
         }
-        const matchCount = countMatchingValues(crmPlayer.tracks, agentStats);
+        const crmShift = evaluateShiftRecruitRestrictions(state, playerId, agentStats, "deck");
+        if (crmShift.error) {
+          return { state, error: crmShift.error, detail: crmShift.detail };
+        }
+        const matchCount = countMatchingValues(crmPlayer.tracks, crmShift.doubled ? doubledRecruitRequirements(agentStats) : agentStats);
         if (matchCount < MIN_MATCHING_VALUES_TO_RECRUIT) {
           return { state, error: "NO_MATCHING_VALUE", detail: { required: MIN_MATCHING_VALUES_TO_RECRUIT, matched: matchCount } };
         }
         let nextState = addAgentToRoster(state, playerId, chosenCatalogId, "recruited");
+        nextState = payShiftRecruitSurcharge(nextState, playerId, crmShift.surcharge, agentStats.name);
         const returnedCatalogIds = candidateCatalogIds.filter((id) => id !== chosenCatalogId);
         const drawPile = nextState.board.decks && nextState.board.decks.agentDrawPile || [];
         nextState = {
@@ -9975,6 +10060,13 @@ var BrokerBossEngine = (() => {
           }
           if (!hasOpenDesk(state, playerId)) {
             return { state, error: "NO_OPEN_DESK", detail: null };
+          }
+          // [v68.20] A free Agent still counts as recruiting from the Open Market
+          // (bans apply); it's free, so no surcharge.
+          const tokenStats = getAgentStats(state, targetCatalogId) || {};
+          const tokenShift = evaluateShiftRecruitRestrictions(state, playerId, tokenStats, "open_market", { noSurcharge: true, ignoreRequirements: true });
+          if (tokenShift.error) {
+            return { state, error: tokenShift.error, detail: tokenShift.detail };
           }
           let nextState = addAgentToRoster(state, playerId, targetCatalogId, "recruited");
           nextState = removeFromOpenMarketAndRefill(nextState, targetCatalogId);
@@ -10132,6 +10224,8 @@ var BrokerBossEngine = (() => {
       module.exports = {
         resetAgentInstanceCounter,
         recruitOpenMarketAgent,
+        evaluateShiftRecruitRestrictions,
+        doubledRecruitRequirements,
         poachCompetingBrokerAgent,
         placeLoyaltyToken,
         moveLoyaltyToken,
@@ -10432,8 +10526,13 @@ var BrokerBossEngine = (() => {
         let nextState = state;
         Object.keys(nextState.players).forEach((playerId) => {
           const player = nextState.players[playerId];
+          // [v68.20] Meeples placed "on their side" by a Shift card (Agent
+          // Disloyalty, Bad Lead Generation) stood up again — before this they
+          // were never returned and were lost for the rest of the game.
+          // disabledUntilRound = the first round the meeple can be used again.
+          const nextRoundNumber = nextState.phase.round + 1;
           const updatedActive = player.timeMeeples.active.map(
-            (m) => m.status === "on_board" ? { ...m, status: "in_supply", locationSpaceId: null } : m
+            (m) => m.status === "on_board" ? { ...m, status: "in_supply", locationSpaceId: null } : m.status === "disabled_until_round" && nextRoundNumber >= (m.disabledUntilRound || 0) ? { ...m, status: "in_supply", locationSpaceId: null, disabledUntilRound: null } : m
           );
           const updatedCopycatMeeple = player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.status === "on_board" ? { ...player.timeMeeples.copycatMeeple, status: "in_supply", locationSpaceId: null } : player.timeMeeples.copycatMeeple;
           nextState = {
@@ -10871,7 +10970,7 @@ var BrokerBossEngine = (() => {
         let copycatOption = null;
         if (recognition.branch === "B" && recognition.value >= 5 && player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.status === "in_supply") {
           const validTargetSpaceIds = state.board.actionSpaces.filter(
-            (space) => space.status !== "blocked" && space.status !== "void" && space.occupiedBy.some((entry) => entry.playerId !== playerId)
+            (space) => space.status !== "blocked" && space.status !== "void" && space.occupiedBy.some((entry) => entry.playerId !== playerId) && require_workerPlacementValidation().verifyShiftSpaceRestriction(state, playerId, space.spaceId).ok
           ).map((space) => space.spaceId);
           if (validTargetSpaceIds.length > 0) {
             copycatOption = { validTargetSpaceIds };
@@ -10932,6 +11031,10 @@ var BrokerBossEngine = (() => {
         }
         if (space.status === "blocked" || space.status === "void") {
           return { state, error: "SPACE_BLOCKED", detail: { targetSpaceId, status: space.status } };
+        }
+        const copycatShiftCheck = require_workerPlacementValidation().verifyShiftSpaceRestriction(state, playerId, targetSpaceId);
+        if (!copycatShiftCheck.ok) {
+          return { state, error: copycatShiftCheck.error, detail: copycatShiftCheck.detail };
         }
         // Rulebook: "place your Copycat Meeple onto any single action space
         // occupied by an opponent this round" — re-verified here against the
@@ -12803,7 +12906,12 @@ var BrokerBossEngine = (() => {
         const candidates = (state.board.openMarketAgents || []).map((entry) => {
           const stats = getAgentStats(state, entry.catalogId);
           if (!stats) return null;
-          const matched = countMatchingValues(player.tracks, stats);
+          // [v68.20] Skip Agents this bot can't recruit this round because of a
+          // Shift card (ban, Training 5+ ban, doubled requirements, surcharge).
+          const recruitHelpers = require_agentRecruitmentReducer();
+          const shift = recruitHelpers.evaluateShiftRecruitRestrictions(state, playerId, stats, "open_market");
+          if (shift.error) return null;
+          const matched = countMatchingValues(player.tracks, shift.doubled ? recruitHelpers.doubledRecruitRequirements(stats) : stats);
           if (matched < MIN_MATCHING_VALUES_TO_RECRUIT) return null;
           const influencerBonus = stats.network && stats.network.role === "influencer" ? stats.totalProfit * 0.5 : 0;
           return { catalogId: entry.catalogId, score: stats.totalProfit + influencerBonus };
@@ -12860,6 +12968,7 @@ var BrokerBossEngine = (() => {
       var { verifyPlayRequirement } = require_actionCardReducer();
       function evaluateActionCardChoice(state, playerId) {
         const player = state.players[playerId];
+        if (player.playCardActionBannedUntilRound === state.phase.round) return null;
         const catalog = state.cardCatalog && state.cardCatalog.actionCards || {};
         const playable = player.hand.actionCards.map((entry) => {
           const stats = catalog[entry.catalogId];
@@ -13561,11 +13670,11 @@ var BrokerBossEngine = (() => {
             });
             const result2 = resolveRecruitFromGrowthHub(loggedState2, interrupt.sourcePlayerId, chosenCatalogId);
             if (result2.error) {
-              return {
-                state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }),
-                action: "BOT_INTERRUPT_RESOLUTION_FAILED",
-                reason: result2.error
-              };
+              // [v68.20] Back out of the space instead of retrying the same refused
+              // choice forever (e.g. a Shift card surcharge the bot can't pay).
+              const failedState = appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error });
+              const backOut = cancelDeferredSpaceChoice(failedState, interrupt.sourcePlayerId);
+              return { state: backOut.error ? failedState : backOut.state, action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
             }
             return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
           }
@@ -13588,11 +13697,11 @@ var BrokerBossEngine = (() => {
             });
             const result2 = resolvePoachFromGrowthHub(loggedState2, interrupt.sourcePlayerId, chosen.targetPlayerId, chosen.targetAgentInstanceId);
             if (result2.error) {
-              return {
-                state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }),
-                action: "BOT_INTERRUPT_RESOLUTION_FAILED",
-                reason: result2.error
-              };
+              // [v68.20] Back out of the space instead of retrying the same refused
+              // choice forever (e.g. a Shift card surcharge the bot can't pay).
+              const failedState = appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error });
+              const backOut = cancelDeferredSpaceChoice(failedState, interrupt.sourcePlayerId);
+              return { state: backOut.error ? failedState : backOut.state, action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
             }
             return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
           }

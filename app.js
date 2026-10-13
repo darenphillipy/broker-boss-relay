@@ -11,7 +11,7 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.20-a) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.20-batch4b) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 
 // [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
