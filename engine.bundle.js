@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-13 (v68.23-specialists) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-13 (v68.24-bot-tuning) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -12971,7 +12971,9 @@ var BrokerBossEngine = (() => {
           const matched = countMatchingValues(player.tracks, shift.doubled ? recruitHelpers.doubledRecruitRequirements(stats) : stats);
           if (matched < MIN_MATCHING_VALUES_TO_RECRUIT) return null;
           const influencerBonus = stats.network && stats.network.role === "influencer" ? stats.totalProfit * 0.5 : 0;
-          return { catalogId: entry.catalogId, score: stats.totalProfit + influencerBonus };
+          // [v68.24] Archetype bots rank Agents by their own valuation (culture-aware), not raw profit.
+          const ownValue = player.archetype ? require_botStrategyPlanner().agentValueFor(state, playerId, stats) : stats.totalProfit;
+          return { catalogId: entry.catalogId, score: ownValue + influencerBonus };
         }).filter(Boolean);
         if (candidates.length === 0) return null;
         candidates.sort((a, b) => b.score - a.score);
@@ -12999,7 +13001,9 @@ var BrokerBossEngine = (() => {
             }
             const matched = countMatchingValues(player.tracks, stats);
             if (matched < MIN_MATCHING_VALUES_TO_POACH) return;
-            candidates.push({ targetPlayerId: rivalId, targetAgentInstanceId: entry.agentInstanceId, score: stats.totalProfit });
+            // [v68.24] culture-aware for archetype bots; the rival's loss still counts (poach "synergy").
+            const poachScore = player.archetype ? require_botStrategyPlanner().agentValueFor(state, playerId, stats) + 0.4 * ((stats.totalProfit || 0) + 2) : stats.totalProfit;
+            candidates.push({ targetPlayerId: rivalId, targetAgentInstanceId: entry.agentInstanceId, score: poachScore });
           });
         });
         if (candidates.length === 0) return null;
@@ -13088,22 +13092,22 @@ var BrokerBossEngine = (() => {
         // fights for turn order when there is something worth fighting for.
         Aggressive: {
           label: "Shark", mult: { recruit: 1, poach: 1.7, loyalty: 0.7, office: 0.9, staff: 0.9, coach: 0.9, track: 0.9, combo: 1, profit: 0.9, marketShare: 1, playCard: 1.1, clearMarket: 0.8 },
-          rivalCardBonus: 2.5, contestedBonus: 1.5, bidFactor: 1, priorityTokenThreshold: 3, marketShareCommit: 0.8, specialistMult: 1.15, favoriteSpecialists: ["SPEC_2", "SPEC_3", "SPEC_13", "SPEC_9"]
+          rivalCardBonus: 2.5, contestedBonus: 1.5, bidFactor: 1, priorityTokenThreshold: 3, culturePenalty: 1.5, maxBidShare: 0.25, marketShareCommit: 0.8, specialistMult: 1.15, favoriteSpecialists: ["SPEC_2", "SPEC_3", "SPEC_13", "SPEC_9"]
         },
         // Operations: offices, staff and tech early — a big late-game action machine.
         Engine: {
           label: "Operations", mult: { recruit: 1, poach: 0.6, loyalty: 0.9, office: 1.4, staff: 1.35, coach: 1.15, track: 1.1, combo: 1.2, profit: 1, marketShare: 0.9, playCard: 1.1, clearMarket: 0.8 },
-          favoriteTrack: "technology", rivalCardBonus: 0.5, contestedBonus: 0.5, bidFactor: 0.5, priorityTokenThreshold: 5, marketShareCommit: 0.8, specialistMult: 1, favoriteSpecialists: ["SPEC_7", "SPEC_8", "SPEC_10", "SPEC_5"]
+          favoriteTrack: "technology", rivalCardBonus: 0.5, contestedBonus: 0.5, bidFactor: 0.5, priorityTokenThreshold: 5, culturePenalty: 0, maxBidShare: 0.3, marketShareCommit: 0.8, specialistMult: 1, favoriteSpecialists: ["SPEC_7", "SPEC_8", "SPEC_10", "SPEC_5"]
         },
         // Headhunter: fill desks fast, climb Recognition, race Market Share milestones.
         Growth: {
-          label: "Headhunter", mult: { recruit: 1.3, poach: 0.8, loyalty: 0.9, office: 1.1, staff: 0.85, coach: 0.9, track: 1, combo: 1, profit: 0.9, marketShare: 1.15, playCard: 1, clearMarket: 1.3 },
-          favoriteTrack: "recognition", rivalCardBonus: 0.5, contestedBonus: 0.8, bidFactor: 0.7, priorityTokenThreshold: 4, marketShareCommit: 1.2, specialistMult: 1, favoriteSpecialists: ["SPEC_4", "SPEC_12", "SPEC_5"]
+          label: "Headhunter", mult: { recruit: 1.4, poach: 0.8, loyalty: 0.9, office: 1.1, staff: 0.85, coach: 0.9, track: 1, combo: 1, profit: 0.9, marketShare: 1.15, playCard: 1, clearMarket: 1.3 },
+          favoriteTrack: "recognition", rivalCardBonus: 0.5, contestedBonus: 0.8, bidFactor: 0.7, priorityTokenThreshold: 4, culturePenalty: 0, maxBidShare: 0.3, marketShareCommit: 1.2, specialistMult: 1, favoriteSpecialists: ["SPEC_4", "SPEC_12", "SPEC_5"]
         },
         // Defensive: steady PT, Loyalty shields, coaching, safe combo payouts.
         Cautious: {
           label: "Defensive", mult: { recruit: 1.1, poach: 0.5, loyalty: 1.6, office: 1.05, staff: 0.8, coach: 1.3, track: 1, combo: 1.25, profit: 1.2, marketShare: 1.15, playCard: 0.9, clearMarket: 0.9 },
-          rivalCardBonus: 0, contestedBonus: 0.3, bidFactor: 0.3, priorityTokenThreshold: 6, marketShareCommit: 1.0, specialistMult: 0.85, favoriteSpecialists: ["SPEC_5", "SPEC_8"]
+          rivalCardBonus: 0, contestedBonus: 0.3, bidFactor: 0.3, priorityTokenThreshold: 6, culturePenalty: 0.25, maxBidShare: 0.3, marketShareCommit: 1.0, specialistMult: 0.85, favoriteSpecialists: ["SPEC_5", "SPEC_8"]
         }
       };
       var DEFAULT_PROFILE = ARCHETYPE_PROFILES.Cautious;
@@ -13113,6 +13117,11 @@ var BrokerBossEngine = (() => {
         mid: { recruit: 1.1, track: 1.05 },
         late: { office: 0.8, track: 0.7, marketShare: 1.2, coach: 1.25, loyalty: 1.25, clearMarket: 0.7 }
       };
+      // [v68.24] Market Share is direct end-game points that compound up the
+      // track, so its weight climbs in the closing rounds (on top of phase).
+      var MARKET_SHARE_ROUND_WEIGHT = { 1: 1, 2: 1, 3: 1, 4: 1.15, 5: 1.4, 6: 1.75, 7: 2 };
+      // [v68.24] Coach-stacking safety: utility per coach already on the Agent.
+      var COACH_STACK_MULTIPLIER = [1, 0.85, 0.6, 0.35, 0.2];
       var VALUE_DIMENSIONS = ["training", "technology", "recognition"];
       var AVERAGE_ACTION_VALUE = 3.5; // what one extra meeple action is typically worth, in VP
       var MAX_TIME_MEEPLES = 6;
@@ -13152,6 +13161,33 @@ var BrokerBossEngine = (() => {
         if (!stats) return 0;
         return (stats.totalProfit || 0) + 2 + 2 * (stats.culture || 0);
       }
+      // [v68.24] Agent value for THIS bot. Negative culture is doubled at Final
+      // Scoring and some archetypes (the Shark especially) were piling up toxic
+      // rosters (-15 to -24). Extra penalty per negative culture point, growing
+      // once the roster is already in the red.
+      function rosterCulture(state, playerId) {
+        return state.players[playerId].roster.filter((r) => !r.isVoided).reduce((sum, r) => {
+          const st = agentStatsOf(state, r.catalogId);
+          return sum + (st ? st.culture || 0 : 0);
+        }, 0);
+      }
+      function agentValueFor(state, playerId, stats) {
+        if (!stats) return 0;
+        let value = agentEndValue(stats);
+        const culture = stats.culture || 0;
+        if (culture < 0) {
+          const profile = getProfile(state.players[playerId]);
+          const already = rosterCulture(state, playerId);
+          // Culture is already doubled in the value above; this is the extra
+          // caution on top: the Shark's own penalty, plus everyone gets warier
+          // once their roster is in the red (-6 and -12 thresholds).
+          let extra = profile.culturePenalty || 0;
+          if (already <= -6) extra += 0.5;
+          if (already <= -12) extra += 0.5;
+          value += culture * extra;
+        }
+        return value;
+      }
       function deskInfo(state, playerId) {
         const { rec } = deps();
         const player = state.players[playerId];
@@ -13170,8 +13206,8 @@ var BrokerBossEngine = (() => {
           return VALUE_DIMENSIONS.filter((d) => tracks[d].value >= need[d]).length >= (rec.MIN_MATCHING_VALUES_TO_RECRUIT || 1);
         });
       }
-      function bestAgentValue(agents) {
-        return agents.reduce((best, s) => Math.max(best, agentEndValue(s)), 0);
+      function bestAgentValue(agents, state, playerId) {
+        return agents.reduce((best, s) => Math.max(best, state ? agentValueFor(state, playerId, s) : agentEndValue(s)), 0);
       }
       function milestoneOpen(state, key) {
         return !Object.values(state.players).some((p) => (p.milestonesClaimed || []).includes(key));
@@ -13205,7 +13241,7 @@ var BrokerBossEngine = (() => {
           const before = recruitableAgents(state, playerId).length;
           const tracks = { ...player.tracks, [dim]: { ...track, value: after } };
           const afterList = recruitableAgents(state, playerId, tracks);
-          if (afterList.length > before) value += Math.min(4, 0.35 * bestAgentValue(afterList));
+          if (afterList.length > before) value += Math.min(4, 0.35 * bestAgentValue(afterList, state, playerId));
         }
         // Lets a roster Agent take a Loyalty Token (needs all three values).
         const catalogStats = player.roster.filter((r) => !r.isVoided && !(r.loyaltyToken && r.loyaltyToken.active)).map((r) => agentStatsOf(state, r.catalogId)).filter(Boolean);
@@ -13246,7 +13282,7 @@ var BrokerBossEngine = (() => {
         if (player.tracks.offices.unlocked >= (player.tracks.offices.max || 16)) return 0;
         // A desk only matters if we can fill it before the game ends.
         const market = recruitableAgents(state, playerId);
-        const futureAgent = market.length ? bestAgentValue(market) : 7;
+        const futureAgent = market.length ? bestAgentValue(market, state, playerId) : 7;
         const fillChance = desks.open ? (desks.cap - desks.used >= 2 ? 0.15 : 0.35) : market.length ? 0.9 : 0.6;
         let value = futureAgent * fillChance * (r >= 1 ? 1 : 0.3);
         if (player.tracks.offices.unlocked + 1 >= 6 && milestoneOpen(state, "OFFICE_MOGUL")) value += 5;
@@ -13266,13 +13302,30 @@ var BrokerBossEngine = (() => {
       function coachValue(state, playerId) {
         const player = state.players[playerId];
         if (!player.roster.some((r) => !r.isVoided)) return 0;
-        let value = 3;
-        // Coaching an unshielded Agent is a risk: rivals can poach it (and Shift
-        // cards can fire it), taking the coach points with it.
-        if (!player.roster.some((r) => !r.isVoided && r.loyaltyToken && r.loyaltyToken.active)) value *= 0.75;
+        const target = chooseCoachTarget(state, playerId);
+        let value = 3 * (target ? target.safety : 0);
         const coaches = player.roster.reduce((s, r) => s + (r.isVoided ? 0 : r.coachTokens || 0), 0);
         if (coaches + 1 >= 4 && milestoneOpen(state, "THE_MENTOR")) value += 7;
         return value;
+      }
+      // [v68.24] Where a coach goes. Utility drops for every coach already on
+      // the Agent (1, .85, .6, .35, .2) and a stack of 2+ on an unshielded
+      // Agent is a poach risk (x0.6). Loyalty-shielded Agents are the safest
+      // home (x1.25); Agents still in onboarding are briefly safe (x1.1).
+      function chooseCoachTarget(state, playerId) {
+        const player = state.players[playerId];
+        let best = null;
+        player.roster.filter((r) => !r.isVoided).forEach((r) => {
+          const coaches = r.coachTokens || 0;
+          let safety = COACH_STACK_MULTIPLIER[Math.min(coaches, COACH_STACK_MULTIPLIER.length - 1)];
+          const shielded = !!(r.loyaltyToken && r.loyaltyToken.active);
+          if (shielded) safety *= 1.25;
+          else if (r.onboardingToken && r.onboardingToken.active) safety *= 1.1;
+          else if (coaches >= 2) safety *= 0.6;
+          if (r.exhausted) safety *= 0.5;
+          if (!best || safety > best.safety) best = { agentInstanceId: r.agentInstanceId, safety: Math.min(1, safety), coaches };
+        });
+        return best;
       }
       function poachTarget(state, playerId) {
         const { bde } = deps();
@@ -13302,7 +13355,7 @@ var BrokerBossEngine = (() => {
         if (/to level \d+/.test(d)) v += 2;
         if (/market share/.test(d) && !/lose|down/.test(d)) v += marketShareStepValue(state, playerId, num(/market share track (\d+)/, 1));
         if (/office/.test(d) && /increase|gain|\+/.test(d) && !/lose/.test(d)) v += num(/by (\d+)/, 1) * officeValue(state, playerId) * 0.8;
-        if (/recruit/.test(d) && !/block|protect/.test(d)) v += deskInfo(state, playerId).open ? 0.6 * Math.max(7, bestAgentValue(recruitableAgents(state, playerId))) : 1;
+        if (/recruit/.test(d) && !/block|protect/.test(d)) v += deskInfo(state, playerId).open ? 0.6 * Math.max(7, bestAgentValue(recruitableAgents(state, playerId), state, playerId)) : 1;
         if (/coach/.test(d)) v += coachValue(state, playerId);
         if (/loyalty token/.test(d)) v += 3;
         if (/(acquire|aquire|draw) (\d+)/.test(d)) v += Number(d.match(/(acquire|aquire|draw) (\d+)/)[2]) * 0.8;
@@ -13356,15 +13409,16 @@ var BrokerBossEngine = (() => {
         if (desks.open) {
           const market = recruitableAgents(state, playerId);
           if (market.length) {
-            const best = market.reduce((a, b) => agentEndValue(b) > agentEndValue(a) ? b : a);
-            consider("GRW_RECRUIT_AGENT", "recruit", agentEndValue(best) + best.totalProfit * pt * 0.5, 0, "recruit", best.name);
+            const best = market.reduce((a, b) => agentValueFor(state, playerId, b) > agentValueFor(state, playerId, a) ? b : a);
+            consider("GRW_RECRUIT_AGENT", "recruit", agentValueFor(state, playerId, best) + best.totalProfit * pt * 0.5, 0, "recruit", best.name);
           } else {
             consider("EXEC_CLEAR_OPEN_MARKET", "clearMarket", 2.5, 0, null, "no recruitable Agent in the market");
           }
           const target = poachTarget(state, playerId);
           if (target) {
             const prime = (target.totalProfit || 0) >= 10 ? 1.5 : 1; // opportunity: an unshielded star
-            consider("GRW_POACH_AGENT", "poach", (agentEndValue(target) + 0.4 * agentEndValue(target)) * prime, 0, "poach", target.name);
+            // poaching also takes the Agent's value away from a rival — that "immediate synergy" offsets a culture penalty
+            consider("GRW_POACH_AGENT", "poach", (agentValueFor(state, playerId, target) + 0.4 * agentEndValue(target)) * prime, 0, "poach", target.name);
           }
         }
         if (bde.evaluateLoyaltyCandidates(state, playerId)) {
@@ -13372,7 +13426,7 @@ var BrokerBossEngine = (() => {
           const coachedAtRisk = player.roster.reduce((sum, r) => sum + (!r.isVoided && !(r.loyaltyToken && r.loyaltyToken.active) ? r.coachTokens || 0 : 0), 0);
           consider("GRW_LOYALTY_TOKEN", "loyalty", 4 + exposed + Math.min(6, 1.5 * coachedAtRisk), 0, "loyalty");
         }
-        consider("GRW_MARKET_SHARE_ADVANCE", "marketShare", marketShareStepValue(state, playerId), 0, null);
+        consider("GRW_MARKET_SHARE_ADVANCE", "marketShare", marketShareStepValue(state, playerId) * (MARKET_SHARE_ROUND_WEIGHT[state.phase.round] || 1), 0, null);
         // Leadership hub
         const officeVal = officeValue(state, playerId);
         // Desks full (or one away) while the market has Agents we can sign: expand.
@@ -13503,7 +13557,7 @@ var BrokerBossEngine = (() => {
         const target = deskInfo(state, playerId).open ? poachTarget(state, playerId) : null;
         if (target && (target.totalProfit || 0) >= 8) value += profile === ARCHETYPE_PROFILES.Aggressive ? 4 : 1.5;
         const market = recruitableAgents(state, playerId);
-        const topAgent = bestAgentValue(market);
+        const topAgent = bestAgentValue(market, state, playerId);
         if (deskInfo(state, playerId).open && topAgent >= 12) value += profile === ARCHETYPE_PROFILES.Growth ? 2.5 : 1;
         value += profile.contestedBonus * 0.5;
         // (v68.23: no bonus for the Specialist on the hub — it is discarded at
@@ -13520,9 +13574,14 @@ var BrokerBossEngine = (() => {
         const compensationGivenUp = (rivals / 2) * pt;
         const surplus = value * profile.bidFactor - compensationGivenUp;
         const bid = surplus > 0 ? Math.floor((surplus / Math.max(pt, 0.3)) * 0.4) : 0;
-        return { profitTokensBid: Math.max(0, Math.min(bid, spendable, 5)), priorityTokensBid: 0, firstPlaceValue: value };
+        // [v68.24] Never stake more than a share of liquid capital (25% for the
+        // Shark), and a bid must return at least 1.5x its PT cost in value.
+        const capitalCap = Math.floor(player.wallet.profitTokens * (profile.maxBidShare || 0.3));
+        let capped = Math.max(0, Math.min(bid, spendable, 5, capitalCap));
+        while (capped > 0 && value * profile.bidFactor < capped * pt * 1.5 + compensationGivenUp) capped -= 1;
+        return { profitTokensBid: capped, priorityTokensBid: 0, firstPlaceValue: value };
       }
-      module.exports = { ARCHETYPE_PROFILES, PHASE_MULTIPLIERS, rankBotSpaceCandidates, planTurnOrderBid, estimateCardValue, bestPlayableCard, getProfile, shouldClaimSpecialist, projectedScore, roundProgress };
+      module.exports = { ARCHETYPE_PROFILES, PHASE_MULTIPLIERS, MARKET_SHARE_ROUND_WEIGHT, COACH_STACK_MULTIPLIER, agentValueFor, chooseCoachTarget, rosterCulture, rankBotSpaceCandidates, planTurnOrderBid, estimateCardValue, bestPlayableCard, getProfile, shouldClaimSpecialist, projectedScore, roundProgress };
     }
   });
 
@@ -13861,7 +13920,10 @@ var BrokerBossEngine = (() => {
           return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
         if (interrupt.type === "ACTION_SPACE_DEFERRED_CHOICE" && interrupt.data && interrupt.data.spaceType === "hire_coach") {
-          const candidate = player.roster.find((r) => !r.isVoided);
+          // [v68.24] Spread coaches: the planner picks the safest Agent (fewest
+          // coaches, Loyalty-shielded first) instead of always the first one.
+          const plannedCoach = player.archetype ? require_botStrategyPlanner().chooseCoachTarget(state, interrupt.sourcePlayerId) : null;
+          const candidate = plannedCoach ? player.roster.find((r) => r.agentInstanceId === plannedCoach.agentInstanceId) : player.roster.find((r) => !r.isVoided);
           if (!candidate) {
             return {
               state: { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } },
@@ -13876,7 +13938,7 @@ var BrokerBossEngine = (() => {
             interruptType: interrupt.type,
             choiceType: "HIRE_COACH",
             targetAgentInstanceId: candidate.agentInstanceId,
-            rationale: "FIRST_REAL_ROSTER_AGENT"
+            rationale: plannedCoach ? "SAFEST_AGENT_FEWEST_COACHES" : "FIRST_REAL_ROSTER_AGENT"
           });
           const result2 = resolveHireCoachChoice(loggedState2, interrupt.sourcePlayerId, candidate.agentInstanceId);
           if (result2.error) {
