@@ -11,7 +11,7 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.20-batch4b) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.21-polish) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 
 // [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
@@ -253,14 +253,17 @@ function startGame(botConfigs) {
   // (Recruiter/Headhunter); Engine's real behavior already prioritizes
   // operations-track efficiency (Efficiency/Operations); Cautious's real
   // behavior already adapts defensively (Balanced/Defensive).
+  // [v68.21] Each archetype has a pool of 5 distinct names (same title), so
+  // two bots of one archetype get different people, never "Vince II".
+  // Keep this pool identical to BOT_PERSONALITY_REGISTRY in relay-server.js.
   const BOT_PERSONALITY_REGISTRY = {
-    Aggressive: { name: 'Vince "The Shark" Steel', title: 'Aggressive / Shark' },
-    Engine: { name: 'Calculated Carl', title: 'Efficiency / Operations' },
-    Growth: { name: 'Hunter Hayes', title: 'Recruiter / Headhunter' },
-    Cautious: { name: 'Morgan Trust', title: 'Balanced / Defensive' },
+    Aggressive: { title: 'Aggressive / Shark', names: ['Vince "The Shark" Steel', 'Rita "Riptide" Vance', 'Max "The Closer" Cutter', 'Dana "Barracuda" Cole', 'Rex "Hammer" Holt'] },
+    Engine: { title: 'Efficiency / Operations', names: ['Calculated Carl', 'Precise Priya', 'Methodical Mel', 'Efficient Eddie', 'Systematic Sam'] },
+    Growth: { title: 'Recruiter / Headhunter', names: ['Hunter Hayes', 'Scout Sanders', 'Talent Tess Rivera', 'Network Nate', 'Rally Rhodes'] },
+    Cautious: { title: 'Balanced / Defensive', names: ['Morgan Trust', 'Steady Stella', 'Prudent Pete', 'Careful Cora', 'Balanced Ben'] },
   };
   const RANDOMIZABLE_ARCHETYPES = Object.keys(BOT_PERSONALITY_REGISTRY);
-  const usedPersonaNames = {};
+  const usedPersonaNames = new Set();
 
   function resolveBotPersonality(requestedArchetype) {
     // "Random" is resolved to a real archetype HERE, at game start —
@@ -272,10 +275,10 @@ function startGame(botConfigs) {
       requestedArchetype === 'Random'
         ? RANDOMIZABLE_ARCHETYPES[Math.floor(Math.random() * RANDOMIZABLE_ARCHETYPES.length)]
         : requestedArchetype;
-    const persona = BOT_PERSONALITY_REGISTRY[resolvedArchetype] || { name: 'Bot', title: resolvedArchetype };
-    usedPersonaNames[persona.name] = (usedPersonaNames[persona.name] || 0) + 1;
-    const occurrence = usedPersonaNames[persona.name];
-    const displayName = occurrence > 1 ? `${persona.name} ${['I', 'II', 'III', 'IV', 'V'][occurrence - 1] || occurrence}` : persona.name;
+    const persona = BOT_PERSONALITY_REGISTRY[resolvedArchetype] || { names: ['Bot'], title: resolvedArchetype };
+    let displayName = persona.names.find((n) => !usedPersonaNames.has(n));
+    for (let k = 2; !displayName; k++) if (!usedPersonaNames.has(`Bot ${k}`)) displayName = `Bot ${k}`;
+    usedPersonaNames.add(displayName);
     return { archetype: resolvedArchetype, displayName, personaTitle: persona.title };
   }
 
@@ -2700,6 +2703,30 @@ function logLine(text) {
   el.textContent = text;
 }
 
+// [v68.21] Online refusals arrive as ACTION_ERROR. Some codes only mean
+// "your screen was a moment behind the server" (a second click on a choice
+// that was already settled, a click just after the turn moved on). Those
+// must not wipe out a real refusal the player is still reading, such as
+// "Shift card in effect (…): the Hire Staff action is closed this round."
+const STALE_SCREEN_ERROR_PATTERN = /^NO_PENDING_|^NOT_YOUR_TURN$|^WRONG_PHASE$|^PENDING_INTERRUPT_ACTIVE$|^BID_ALREADY_SUBMITTED$|^CHOICE_PENDING$/;
+const REFUSAL_HOLD_MS = 5000;
+let lastMeaningfulRefusalAt = 0;
+function isStaleScreenError(code) {
+  return typeof code === 'string' && STALE_SCREEN_ERROR_PATTERN.test(code);
+}
+const STALE_SCREEN_FALLBACK_TEXT = 'That choice is no longer available — the board has moved on. Try again.';
+function showRelayActionError(code, detail) {
+  const text = uiErr(code, detail);
+  // Also stale: any unmapped code that uiMessages.js already words as
+  // "the board has moved on" (e.g. UNKNOWN_/INVALID_ from an outdated click).
+  if (isStaleScreenError(code) || text === STALE_SCREEN_FALLBACK_TEXT) {
+    if (Date.now() - lastMeaningfulRefusalAt < REFUSAL_HOLD_MS) return; // keep the real refusal on screen
+  } else {
+    lastMeaningfulRefusalAt = Date.now();
+  }
+  logLine(text);
+}
+
 function showToast(text) {
   const el = document.getElementById('action-toast');
   if (!text) {
@@ -4108,6 +4135,10 @@ function renderHeader(vm) {
   document.getElementById('active-player-info').textContent = vm.players[vm.meta.activePlayerId]
     ? vm.players[vm.meta.activePlayerId].displayName
     : '—';
+  // [v68.21] Nobody is "active" once the game is over: hide the label at
+  // Final Scoring (it reappears when a new game starts).
+  const activeLabelEl = document.getElementById('active-player-label');
+  if (activeLabelEl) activeLabelEl.style.display = vm.meta.phase === 'FINAL_SCORING' ? 'none' : '';
 
   // Room Code in the nav bar: persists through actual gameplay (not
   // just the waiting room screen), so a disconnected or refreshed
@@ -6736,7 +6767,7 @@ function handleRelayMessage(msg) {
       render();
       break;
     case 'ACTION_ERROR':
-      logLine(uiErr(msg.error, msg.detail));
+      showRelayActionError(msg.error, msg.detail);
       // FIX: an action can be rejected because the server's real state
       // moved on (e.g. a bot cascade completed) between this client's
       // last STATE_UPDATE and the moment it clicked — that leaves the

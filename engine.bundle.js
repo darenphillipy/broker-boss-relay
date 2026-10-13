@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.20-batch4b) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.21-polish) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -12891,6 +12891,11 @@ var BrokerBossEngine = (() => {
       }
       function evaluateTurnOrderBid(state, playerId) {
         const player = state.players[playerId];
+        // [v68.21] Hostile Takeover already guarantees this bot first place next
+        // round, so any bid would be thrown away. Bid nothing.
+        if (state.session && state.session.guaranteedFirstPlayerNextRound === playerId) {
+          return { profitTokensBid: 0, priorityTokensBid: 0 };
+        }
         if (player.wallet.priorityTokens >= 1) {
           return { profitTokensBid: 0, priorityTokensBid: 1 };
         }

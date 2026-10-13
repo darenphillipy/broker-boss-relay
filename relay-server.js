@@ -96,22 +96,26 @@ const REAL_STARTING_HAND = ['S1', 'S2', 'S3', 'S4', 'S5'];
 const REAL_STARTING_DRAW_PILE = ['S6', 'S7'];
 const RESERVED_STARTING_DECK_CATALOG_IDS = new Set([...REAL_STARTING_HAND, ...REAL_STARTING_DRAW_PILE]);
 
+// [v68.21] 5 distinct names per archetype (same title). Keep identical to
+// BOT_PERSONALITY_REGISTRY in app.js.
 const BOT_PERSONALITY_REGISTRY = {
-  Aggressive: { name: 'Vince "The Shark" Steel', title: 'Aggressive / Shark' },
-  Engine: { name: 'Calculated Carl', title: 'Efficiency / Operations' },
-  Growth: { name: 'Hunter Hayes', title: 'Recruiter / Headhunter' },
-  Cautious: { name: 'Morgan Trust', title: 'Balanced / Defensive' },
+  Aggressive: { title: 'Aggressive / Shark', names: ['Vince "The Shark" Steel', 'Rita "Riptide" Vance', 'Max "The Closer" Cutter', 'Dana "Barracuda" Cole', 'Rex "Hammer" Holt'] },
+  Engine: { title: 'Efficiency / Operations', names: ['Calculated Carl', 'Precise Priya', 'Methodical Mel', 'Efficient Eddie', 'Systematic Sam'] },
+  Growth: { title: 'Recruiter / Headhunter', names: ['Hunter Hayes', 'Scout Sanders', 'Talent Tess Rivera', 'Network Nate', 'Rally Rhodes'] },
+  Cautious: { title: 'Balanced / Defensive', names: ['Morgan Trust', 'Steady Stella', 'Prudent Pete', 'Careful Cora', 'Balanced Ben'] },
 };
 const RANDOMIZABLE_ARCHETYPES = Object.keys(BOT_PERSONALITY_REGISTRY);
 const BOT_COLORS = ['blue', 'green', 'gold', 'purple', 'grey'];
 const SEAT_COLORS = ['red', 'blue', 'green', 'gold', 'purple', 'grey'];
 
+// usedNames: object whose keys are display names already at the table.
+// Picks the first unused name in the archetype's pool and records it.
 function resolveBotPersonality(requestedArchetype, usedNames) {
   const resolvedArchetype = requestedArchetype === 'Random' ? RANDOMIZABLE_ARCHETYPES[Math.floor(Math.random() * RANDOMIZABLE_ARCHETYPES.length)] : requestedArchetype;
-  const persona = BOT_PERSONALITY_REGISTRY[resolvedArchetype] || { name: 'Bot', title: resolvedArchetype };
-  usedNames[persona.name] = (usedNames[persona.name] || 0) + 1;
-  const occurrence = usedNames[persona.name];
-  const displayName = occurrence > 1 ? `${persona.name} ${['I', 'II', 'III', 'IV', 'V'][occurrence - 1] || occurrence}` : persona.name;
+  const persona = BOT_PERSONALITY_REGISTRY[resolvedArchetype] || { names: ['Bot'], title: resolvedArchetype };
+  let displayName = persona.names.find((n) => !usedNames[n]);
+  for (let k = 2; !displayName; k++) if (!usedNames[`Bot ${k}`]) displayName = `Bot ${k}`;
+  usedNames[displayName] = 1;
   return { archetype: resolvedArchetype, displayName };
 }
 
@@ -466,6 +470,8 @@ function handleStartGame(connectionId) {
   if (!BrokerBossEngine) BrokerBossEngine = loadEngine();
   const catalog = loadCatalogs();
   const usedBotNames = {};
+  // [v68.21] a bot never takes a human player's name either
+  room.seats.forEach((s) => { if (s.type === 'human' && s.displayName) usedBotNames[s.displayName] = 1; });
 
   const players = room.seats
     .filter((s) => s.type === 'human' || s.type === 'bot')
@@ -669,10 +675,8 @@ function convertSeatToBot(room, seat, archetype) {
   if (room.state) {
     const playerId = `p${seat.seatIndex + 1}`;
     const usedNames = {};
-    room.seats.forEach((s) => {
-      if (s.type === 'bot' && room.state.players[`p${s.seatIndex + 1}`]) {
-        usedNames[room.state.players[`p${s.seatIndex + 1}`].displayName] = 1;
-      }
+    Object.keys(room.state.players).forEach((pid) => {
+      if (pid !== playerId) usedNames[room.state.players[pid].displayName] = 1;
     });
     const resolved = resolveBotPersonality(archetype || 'Random', usedNames);
     room.state = {
