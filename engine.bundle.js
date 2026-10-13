@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-12 (v68.21-polish) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-13 (v68.22-bot-ai) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -2524,7 +2524,7 @@ var BrokerBossEngine = (() => {
         if (space === void 0) {
           return { ok: false, error: "SPACE_NOT_FOUND", detail: { spaceId } };
         }
-        if (space.status === "blocked" || space.status === "void") {
+        if ((space.status === "blocked" && !(space.blockedByCatalogId === "SPEC_3" && space.blockedByPlayerId === playerId)) || space.status === "void") {
           return { ok: false, error: "SPACE_BLOCKED", detail: { spaceId, status: space.status } };
         }
         const shiftSpaceCheck = verifyShiftSpaceRestriction(state, playerId, spaceId);
@@ -5009,7 +5009,14 @@ var BrokerBossEngine = (() => {
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleStr093(state, context) {
-        const { playerId, cardInstanceId, extra } = context;
+        const { playerId, cardInstanceId } = context;
+        // [v68.22 FIX] Map the standard { targetPlayerId } answer onto this
+        // card's two picks, using which stage of the card is open.
+        let extra = context.extra;
+        const pendingStr093 = state.phase.pendingInterrupt && state.phase.pendingInterrupt.type === "ACTION_CARD_EFFECT_CHOICE" && state.phase.pendingInterrupt.data && state.phase.pendingInterrupt.data.catalogId === "STR_093" ? state.phase.pendingInterrupt.data : null;
+        if (pendingStr093 && extra && extra.targetPlayerId && !extra.firstTargetPlayerId) {
+          extra = pendingStr093.stage === "second" ? { ...extra, firstTargetPlayerId: pendingStr093.firstTargetPlayerId, secondTargetPlayerId: extra.targetPlayerId } : { ...extra, firstTargetPlayerId: extra.targetPlayerId };
+        }
         if (!extra || !extra.firstTargetPlayerId) {
           const nextState2 = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "ACTION_CARD_EFFECT_CHOICE", sourcePlayerId: playerId, data: { catalogId: "STR_093", choiceType: "STR074_RIVAL_TARGET", cardInstanceId, stage: "first" } } } };
           return { state: appendLog(nextState2, { type: "ACTION_CARD_EFFECT_STR093_AWAITING_FIRST_CHOICE", playerId, catalogId: "STR_093" }), effectOutcome: DEFAULT_OUTCOME };
@@ -7311,7 +7318,7 @@ var BrokerBossEngine = (() => {
           ...state,
           board: {
             ...state.board,
-            actionSpaces: state.board.actionSpaces.map((s) => s.hub === targetHub ? { ...s, status: "blocked", blockedByCatalogId: "SPEC_3", blockedUntilEndOfRound: state.phase.round } : s)
+            actionSpaces: state.board.actionSpaces.map((s) => s.hub === targetHub ? { ...s, status: "blocked", blockedByCatalogId: "SPEC_3", blockedByPlayerId: playerId, blockedUntilEndOfRound: state.phase.round } : s)
           },
           phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } }
         };
@@ -8533,7 +8540,7 @@ var BrokerBossEngine = (() => {
         if (!space) {
           return { state, error: "SPACE_NOT_FOUND", detail: { spaceId } };
         }
-        if (space.status === "blocked" || space.status === "void") {
+        if ((space.status === "blocked" && !(space.blockedByCatalogId === "SPEC_3" && space.blockedByPlayerId === playerId)) || space.status === "void") {
           return { state, error: "SPACE_BLOCKED", detail: { spaceId, status: space.status } };
         }
         const freeShiftCheck = require_workerPlacementValidation().verifyShiftSpaceRestriction(state, playerId, spaceId);
@@ -11029,7 +11036,7 @@ var BrokerBossEngine = (() => {
         if (!space) {
           return { state, error: "SPACE_NOT_FOUND", detail: { targetSpaceId } };
         }
-        if (space.status === "blocked" || space.status === "void") {
+        if ((space.status === "blocked" && !(space.blockedByCatalogId === "SPEC_3" && space.blockedByPlayerId === playerId)) || space.status === "void") {
           return { state, error: "SPACE_BLOCKED", detail: { targetSpaceId, status: space.status } };
         }
         const copycatShiftCheck = require_workerPlacementValidation().verifyShiftSpaceRestriction(state, playerId, targetSpaceId);
@@ -12723,6 +12730,18 @@ var BrokerBossEngine = (() => {
             error: null
           };
         }
+        // [v68.22] Worth two meeples + 2 PT? Ask the strategy planner.
+        if (player.archetype) {
+          const verdict = require_botStrategyPlanner().shouldClaimSpecialist(state, playerId, activeCard.catalogId);
+          if (!verdict.claim) {
+            return {
+              state: appendLog(state, { type: "BOT_SPECIALIST_DECISION_SKIPPED", playerId, reason: "NOT_WORTH_TWO_ACTIONS", catalogId: activeCard.catalogId, value: Math.round(verdict.value * 10) / 10, giveUp: Math.round(verdict.giveUp * 10) / 10 }),
+              decision: "SKIPPED",
+              reason: "NOT_WORTH_TWO_ACTIONS",
+              error: null
+            };
+          }
+        }
         const primaryMeepleId = inSupplyMeeples[0].instanceId;
         const additionalMeepleInstanceIds = inSupplyMeeples.slice(1, meepleCost).map((m) => m.instanceId);
         let nextState = appendLog(state, {
@@ -12884,7 +12903,10 @@ var BrokerBossEngine = (() => {
       var ARCHETYPE_WEIGHTS = {
         Aggressive: { poach: 3, recruit: 1, loyalty: 1, engineSpaces: 1, playCard: 1, marketShareSprint: 5 },
         Growth: { poach: 1, recruit: 3, loyalty: 2, engineSpaces: 1, playCard: 1, marketShareSprint: 5 },
-        Engine: { poach: 0.5, recruit: 1, loyalty: 1, engineSpaces: 3, playCard: 1, marketShareSprint: 5 }
+        Engine: { poach: 0.5, recruit: 1, loyalty: 1, engineSpaces: 3, playCard: 1, marketShareSprint: 5 },
+        // [v68.22] Cautious now has its own entry (it used to fall through to the default).
+        // Real decisions come from botStrategyPlanner.js's ARCHETYPE_PROFILES.
+        Cautious: { poach: 0.5, recruit: 1, loyalty: 2, engineSpaces: 1.5, playCard: 1, marketShareSprint: 5 }
       };
       function getArchetypeWeights(archetype) {
         return ARCHETYPE_WEIGHTS[archetype] || { poach: 1, recruit: 1, loyalty: 1, engineSpaces: 1, playCard: 1, marketShareSprint: 5 };
@@ -12895,6 +12917,12 @@ var BrokerBossEngine = (() => {
         // round, so any bid would be thrown away. Bid nothing.
         if (state.session && state.session.guaranteedFirstPlayerNextRound === playerId) {
           return { profitTokensBid: 0, priorityTokensBid: 0 };
+        }
+        // [v68.22] Bid what going first is actually worth next round (see
+        // botStrategyPlanner.planTurnOrderBid) instead of a flat amount.
+        if (player.archetype) {
+          const planned = require_botStrategyPlanner().planTurnOrderBid(state, playerId);
+          return { profitTokensBid: planned.profitTokensBid, priorityTokensBid: planned.priorityTokensBid };
         }
         if (player.wallet.priorityTokens >= 1) {
           return { profitTokensBid: 0, priorityTokensBid: 1 };
@@ -12974,6 +13002,11 @@ var BrokerBossEngine = (() => {
       function evaluateActionCardChoice(state, playerId) {
         const player = state.players[playerId];
         if (player.playCardActionBannedUntilRound === state.phase.round) return null;
+        // [v68.22] Value-based card choice from the strategy planner.
+        if (player.archetype) {
+          const best = require_botStrategyPlanner().bestPlayableCard(state, playerId);
+          return best && best.value > 0 ? best.instanceId : null;
+        }
         const catalog = state.cardCatalog && state.cardCatalog.actionCards || {};
         const playable = player.hand.actionCards.map((entry) => {
           const stats = catalog[entry.catalogId];
@@ -13005,6 +13038,414 @@ var BrokerBossEngine = (() => {
         evaluateActionCardChoice,
         ARCHETYPE_WEIGHTS
       };
+    }
+  });
+
+  // botStrategyPlanner.js
+  // [v68.22 Batch #5] Bot strategy planner — one plug-in module that decides
+  // WHAT a bot wants to do. The worker-placement rules, the placement itself
+  // and every deferred choice stay where they were (workerPlacementReducer,
+  // botInterruptResolver); this module only ranks the legal options.
+  //
+  // How a turn is chosen:
+  //   1. Every board space gets an estimated value in Victory-Point terms
+  //      (what the action is worth by the end of the game for THIS bot, now).
+  //   2. The value is shaped by the bot's archetype (its strategic identity),
+  //      the game phase (early engine-building vs late point-scoring) and
+  //      board opportunities (unshielded prime rival Agents, milestone races).
+  //   3. A small deterministic "mood" wobble (±8%) keeps two bots of the same
+  //      archetype from playing identically, without touching the seeded RNG.
+  // Tuning lives in ARCHETYPE_PROFILES / PHASE_MULTIPLIERS below — change a
+  // number there to retune a personality; nothing else needs to move.
+  var require_botStrategyPlanner = __commonJS({
+    "botStrategyPlanner.js"(exports, module) {
+      var ARCHETYPE_PROFILES = {
+        // The Shark: contested spaces, poaching, rival-targeting cards; only
+        // fights for turn order when there is something worth fighting for.
+        Aggressive: {
+          label: "Shark", mult: { recruit: 1, poach: 1.7, loyalty: 0.7, office: 0.9, staff: 0.9, coach: 0.9, track: 0.9, combo: 1, profit: 0.9, marketShare: 1, playCard: 1.1, clearMarket: 0.8 },
+          rivalCardBonus: 2.5, contestedBonus: 1.5, bidFactor: 1, priorityTokenThreshold: 3, marketShareCommit: 0.8, specialistMult: 1.15, favoriteSpecialists: ["SPEC_2", "SPEC_3", "SPEC_13", "SPEC_9"]
+        },
+        // Operations: offices, staff and tech early — a big late-game action machine.
+        Engine: {
+          label: "Operations", mult: { recruit: 1, poach: 0.6, loyalty: 0.9, office: 1.4, staff: 1.35, coach: 1.15, track: 1.1, combo: 1.2, profit: 1, marketShare: 0.9, playCard: 1.1, clearMarket: 0.8 },
+          favoriteTrack: "technology", rivalCardBonus: 0.5, contestedBonus: 0.5, bidFactor: 0.5, priorityTokenThreshold: 5, marketShareCommit: 0.8, specialistMult: 1, favoriteSpecialists: ["SPEC_7", "SPEC_8", "SPEC_10", "SPEC_5"]
+        },
+        // Headhunter: fill desks fast, climb Recognition, race Market Share milestones.
+        Growth: {
+          label: "Headhunter", mult: { recruit: 1.3, poach: 0.8, loyalty: 0.9, office: 1.1, staff: 0.85, coach: 0.9, track: 1, combo: 1, profit: 0.9, marketShare: 1.15, playCard: 1, clearMarket: 1.3 },
+          favoriteTrack: "recognition", rivalCardBonus: 0.5, contestedBonus: 0.8, bidFactor: 0.7, priorityTokenThreshold: 4, marketShareCommit: 1.2, specialistMult: 1, favoriteSpecialists: ["SPEC_4", "SPEC_12", "SPEC_5"]
+        },
+        // Defensive: steady PT, Loyalty shields, coaching, safe combo payouts.
+        Cautious: {
+          label: "Defensive", mult: { recruit: 1.1, poach: 0.5, loyalty: 1.6, office: 1.05, staff: 0.8, coach: 1.3, track: 1, combo: 1.25, profit: 1.2, marketShare: 1.15, playCard: 0.9, clearMarket: 0.9 },
+          rivalCardBonus: 0, contestedBonus: 0.3, bidFactor: 0.3, priorityTokenThreshold: 6, marketShareCommit: 1.0, specialistMult: 0.85, favoriteSpecialists: ["SPEC_5", "SPEC_8"]
+        }
+      };
+      var DEFAULT_PROFILE = ARCHETYPE_PROFILES.Cautious;
+      // Early (R1-3) build the engine; mid (R4-5) recruit and climb; late (R6-7) cash in points.
+      var PHASE_MULTIPLIERS = {
+        early: { office: 1.3, staff: 1.3, track: 1.15, marketShare: 0.85, coach: 0.9, loyalty: 0.8 },
+        mid: { recruit: 1.1, track: 1.05 },
+        late: { office: 0.8, track: 0.7, marketShare: 1.2, coach: 1.25, loyalty: 1.25, clearMarket: 0.7 }
+      };
+      var VALUE_DIMENSIONS = ["training", "technology", "recognition"];
+      var AVERAGE_ACTION_VALUE = 3.5; // what one extra meeple action is typically worth, in VP
+      var MAX_TIME_MEEPLES = 6;
+
+      function deps() {
+        const wpv = require_workerPlacementValidation();
+        const rec = require_agentRecruitmentReducer();
+        const bde = require_botDecisionEngine();
+        const board = require_boardConfigLoader();
+        return { wpv, rec, bde, MS: board.MARKET_SHARE_TRACK_SPACES };
+      }
+      function getProfile(player) {
+        return ARCHETYPE_PROFILES[player && player.archetype] || DEFAULT_PROFILE;
+      }
+      function gamePhase(state) {
+        const r = state.phase.round;
+        if (r <= 3) return "early";
+        if (r <= 5) return "mid";
+        return "late";
+      }
+      function roundsAfterThis(state) {
+        return Math.max(0, (state.phase.maxRounds || 7) - state.phase.round);
+      }
+      // Value of one Profit Token, in VP. Scarce PT is worth more; in the final
+      // round PT only converts at 4:1 at Final Scoring.
+      function profitTokenValue(state, player) {
+        if (roundsAfterThis(state) === 0) return 0.3;
+        const pt = player.wallet.profitTokens;
+        return Math.max(0.3, Math.min(0.9, 0.95 - 0.04 * pt));
+      }
+      function agentStatsOf(state, catalogId) {
+        const agents = state.cardCatalog && state.cardCatalog.agentCards || {};
+        return agents[catalogId] || null;
+      }
+      // VP an Agent is worth to the bot: printed profit + 2 for the head count + culture x2.
+      function agentEndValue(stats) {
+        if (!stats) return 0;
+        return (stats.totalProfit || 0) + 2 + 2 * (stats.culture || 0);
+      }
+      function deskInfo(state, playerId) {
+        const { rec } = deps();
+        const player = state.players[playerId];
+        const used = rec.computeDeskUsage(state, playerId);
+        return { used, cap: player.tracks.offices.unlocked, open: used < player.tracks.offices.unlocked };
+      }
+      function recruitableAgents(state, playerId, tracksOverride) {
+        const { rec } = deps();
+        const player = state.players[playerId];
+        const tracks = tracksOverride || player.tracks;
+        return (state.board.openMarketAgents || []).map((entry) => agentStatsOf(state, entry.catalogId)).filter((stats) => {
+          if (!stats) return false;
+          const shift = rec.evaluateShiftRecruitRestrictions ? rec.evaluateShiftRecruitRestrictions(state, playerId, stats, "open_market") : { error: null };
+          if (shift.error) return false;
+          const need = shift.doubled && rec.doubledRecruitRequirements ? rec.doubledRecruitRequirements(stats) : stats;
+          return VALUE_DIMENSIONS.filter((d) => tracks[d].value >= need[d]).length >= (rec.MIN_MATCHING_VALUES_TO_RECRUIT || 1);
+        });
+      }
+      function bestAgentValue(agents) {
+        return agents.reduce((best, s) => Math.max(best, agentEndValue(s)), 0);
+      }
+      function milestoneOpen(state, key) {
+        return !Object.values(state.players).some((p) => (p.milestonesClaimed || []).includes(key));
+      }
+      // Deterministic per-bot, per-turn wobble in [-0.08, +0.08] — no shared RNG draw.
+      function moodWobble(state, playerId, spaceId) {
+        const s = `${playerId}|${state.phase.round}|${state.log.length}|${spaceId}`;
+        let h = 2166136261;
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = Math.imul(h, 16777619);
+        }
+        return ((h >>> 0) % 1601) / 10000 - 0.08;
+      }
+
+      // ---- per-category value estimates (VP, before personality) ----------
+      function trackStepValue(state, playerId, dim, steps) {
+        const player = state.players[playerId];
+        const track = player.tracks[dim];
+        if (!track || track.value >= (track.max || 10)) return 0;
+        const realSteps = Math.min(steps, (track.max || 10) - track.value);
+        let value = 0.8 * realSteps;
+        const after = track.value + realSteps;
+        // Crossing a branch / milestone level (5, 7, 9) unlocks a track power.
+        [5, 7, 9].forEach((lvl) => {
+          if (track.value < lvl && after >= lvl) value += 2.5;
+        });
+        // Opens up an Agent we could not recruit before (only matters with a free desk).
+        const desks = deskInfo(state, playerId);
+        if (desks.open) {
+          const before = recruitableAgents(state, playerId).length;
+          const tracks = { ...player.tracks, [dim]: { ...track, value: after } };
+          const afterList = recruitableAgents(state, playerId, tracks);
+          if (afterList.length > before) value += Math.min(4, 0.35 * bestAgentValue(afterList));
+        }
+        // Lets a roster Agent take a Loyalty Token (needs all three values).
+        const catalogStats = player.roster.filter((r) => !r.isVoided && !(r.loyaltyToken && r.loyaltyToken.active)).map((r) => agentStatsOf(state, r.catalogId)).filter(Boolean);
+        const exposedCoaches = player.roster.reduce((sum, r) => sum + (!r.isVoided && !(r.loyaltyToken && r.loyaltyToken.active) ? r.coachTokens || 0 : 0), 0);
+        if (player.loyaltyTokensUsed < player.loyaltyTokensMax && catalogStats.some((s) => track.value < s[dim] && after >= s[dim] && VALUE_DIMENSIONS.every((d) => d === dim || player.tracks[d].value >= s[d]))) value += 1.5 + Math.min(4, exposedCoaches);
+        const fav = getProfile(player).favoriteTrack;
+        if (fav === dim) value *= 1.3;
+        return value;
+      }
+      function marketShareStepValue(state, playerId, steps = 1) {
+        const { MS } = deps();
+        const player = state.players[playerId];
+        const pos = player.tracks.marketShare.position;
+        const target = Math.min(MS.length - 1, pos + steps);
+        if (target === pos) return 0;
+        // A human doesn't judge the track by the next step alone: the points
+        // grow the higher you climb. Value a step at the average gain over the
+        // climb this bot would realistically make (its archetype's commitment
+        // times the rounds left), but never below the step's own gain.
+        const roundsLeftInclThis = roundsAfterThis(state) + 1;
+        const plannedClimb = Math.max(steps, Math.min(MS.length - 1 - pos, Math.round(roundsLeftInclThis * getProfile(player).marketShareCommit)));
+        const climbTarget = Math.min(MS.length - 1, pos + plannedClimb);
+        let value = Math.max(MS[target] - MS[pos], ((MS[climbTarget] - MS[pos]) / plannedClimb) * steps);
+        // Tiered bonus stacks at 4 / 10 / 17.
+        const stacks = state.marketShareTrack && state.marketShareTrack.bonusStacks || {};
+        Object.keys(stacks).forEach((k) => {
+          const m = Number(k);
+          const stack = stacks[k];
+          if (MS[pos] < m && MS[target] >= m && stack.claimedBy.length < 2 && !stack.claimedBy.includes(playerId)) value += stack.claimedBy.length === 0 ? 3 : 1.5;
+        });
+        if (MS[pos] < 17 && MS[target] >= 17 && milestoneOpen(state, "MARKET_LEADER")) value += 5;
+        return value;
+      }
+      function officeValue(state, playerId) {
+        const player = state.players[playerId];
+        const desks = deskInfo(state, playerId);
+        const r = roundsAfterThis(state);
+        if (player.tracks.offices.unlocked >= (player.tracks.offices.max || 16)) return 0;
+        // A desk only matters if we can fill it before the game ends.
+        const market = recruitableAgents(state, playerId);
+        const futureAgent = market.length ? bestAgentValue(market) : 7;
+        const fillChance = desks.open ? (desks.cap - desks.used >= 2 ? 0.15 : 0.35) : market.length ? 0.9 : 0.6;
+        let value = futureAgent * fillChance * (r >= 1 ? 1 : 0.3);
+        if (player.tracks.offices.unlocked + 1 >= 6 && milestoneOpen(state, "OFFICE_MOGUL")) value += 5;
+        return value;
+      }
+      function staffValue(state, playerId) {
+        const player = state.players[playerId];
+        const r = roundsAfterThis(state);
+        const total = player.timeMeeples.active.length + (player.timeMeeples.staffInTraining || []).length;
+        if (r <= 1 || total >= MAX_TIME_MEEPLES) return 0;
+        const pt = profitTokenValue(state, player);
+        const taxPerRound = total >= 3 ? 4 : 0; // meeples past the starting 3 pay 4 PT overhead per round
+        // Each extra meeple is worth a bit less than the one before (the best spaces go first).
+        const marginalAction = AVERAGE_ACTION_VALUE - 0.4 * Math.max(0, total - 3);
+        return r * (marginalAction - taxPerRound * pt) - 1;
+      }
+      function coachValue(state, playerId) {
+        const player = state.players[playerId];
+        if (!player.roster.some((r) => !r.isVoided)) return 0;
+        let value = 3;
+        // Coaching an unshielded Agent is a risk: rivals can poach it (and Shift
+        // cards can fire it), taking the coach points with it.
+        if (!player.roster.some((r) => !r.isVoided && r.loyaltyToken && r.loyaltyToken.active)) value *= 0.75;
+        const coaches = player.roster.reduce((s, r) => s + (r.isVoided ? 0 : r.coachTokens || 0), 0);
+        if (coaches + 1 >= 4 && milestoneOpen(state, "THE_MENTOR")) value += 7;
+        return value;
+      }
+      function poachTarget(state, playerId) {
+        const { bde } = deps();
+        const pick = bde.evaluatePoachCandidates(state, playerId);
+        if (!pick) return null;
+        const rival = state.players[pick.targetPlayerId];
+        const entry = rival.roster.find((r) => r.agentInstanceId === pick.targetAgentInstanceId);
+        return entry ? agentStatsOf(state, entry.catalogId) : null;
+      }
+      function estimateCardValue(state, playerId, catalogId) {
+        const card = state.cardCatalog && state.cardCatalog.actionCards && state.cardCatalog.actionCards[catalogId];
+        if (!card) return 0;
+        const player = state.players[playerId];
+        const profile = getProfile(player);
+        const d = String(card.description || "").toLowerCase();
+        const pt = profitTokenValue(state, player);
+        const num = (re, fallback = 1) => {
+          const m = d.match(re);
+          return m ? Number(m[1]) : fallback;
+        };
+        let v = 0.5;
+        const ptGain = d.match(/gain (\d+)\s*(?:total\s*)?(?:profit|proift|income|pt)/);
+        if (ptGain) v += Number(ptGain[1]) * pt;
+        if (/operation hub value|broker values|operation values|opporation hub values/.test(d)) v += num(/(\d+) operation hub value/, /all|each/.test(d) ? 3 : 2) * 0.9;
+        const trackUp = d.match(/increase your (?:brokers )?(training|technology|recognition)[a-z ]*?by (\d+)/);
+        if (trackUp) v += trackStepValue(state, playerId, trackUp[1], Number(trackUp[2]));
+        if (/to level \d+/.test(d)) v += 2;
+        if (/market share/.test(d) && !/lose|down/.test(d)) v += marketShareStepValue(state, playerId, num(/market share track (\d+)/, 1));
+        if (/office/.test(d) && /increase|gain|\+/.test(d) && !/lose/.test(d)) v += num(/by (\d+)/, 1) * officeValue(state, playerId) * 0.8;
+        if (/recruit/.test(d) && !/block|protect/.test(d)) v += deskInfo(state, playerId).open ? 0.6 * Math.max(7, bestAgentValue(recruitableAgents(state, playerId))) : 1;
+        if (/coach/.test(d)) v += coachValue(state, playerId);
+        if (/loyalty token/.test(d)) v += 3;
+        if (/(acquire|aquire|draw) (\d+)/.test(d)) v += Number(d.match(/(acquire|aquire|draw) (\d+)/)[2]) * 0.8;
+        if (/priority token/.test(d)) v += 1.5;
+        if (/rival|opponent|another (player|brokerage)|all rivals/.test(d)) v += 1 + profile.rivalCardBonus;
+        if (/draw 1 shift card/.test(d)) v -= 1;
+        return v - (card.cost || 0) * pt;
+      }
+      function bestPlayableCard(state, playerId) {
+        const actionCardReducer = require_actionCardReducer();
+        const player = state.players[playerId];
+        if (player.playCardActionBannedUntilRound === state.phase.round) return null;
+        const catalog = state.cardCatalog && state.cardCatalog.actionCards || {};
+        let best = null;
+        player.hand.actionCards.forEach((entry) => {
+          const stats = catalog[entry.catalogId];
+          if (!stats || stats.cost > player.wallet.profitTokens) return;
+          if (!actionCardReducer.verifyPlayRequirement(state, playerId, entry.catalogId).ok) return;
+          const value = estimateCardValue(state, playerId, entry.catalogId);
+          if (!best || value > best.value) best = { instanceId: entry.instanceId, catalogId: entry.catalogId, value };
+        });
+        return best;
+      }
+
+      // ---- ranking -------------------------------------------------------
+      // Returns [{ spaceId, category, score, evaluatorKey }] best-first, only
+      // for spaces that are open and affordable for this bot right now.
+      function rankBotSpaceCandidates(state, playerId) {
+        const { wpv, bde } = deps();
+        const player = state.players[playerId];
+        const profile = getProfile(player);
+        const phase = gamePhase(state);
+        const phaseMult = PHASE_MULTIPLIERS[phase];
+        const pt = profitTokenValue(state, player);
+        const desks = deskInfo(state, playerId);
+        const out = [];
+        const consider = (spaceId, category, rawValue, ptCost, evaluatorKey, note) => {
+          if (!(rawValue > 0)) return;
+          const open = wpv.verifySpaceOpen(state, spaceId, playerId, null);
+          if (!open.ok) return;
+          if (!wpv.verifyCanAffordSpace(state, playerId, open.space).ok) return;
+          const contested = open.space.capacity != null && open.space.capacity <= 2 ? profile.contestedBonus : 0;
+          const mult = (profile.mult[category] || 1) * (phaseMult[category] || 1);
+          const score = (rawValue + contested) * mult - ptCost * pt;
+          out.push({ spaceId, category, score: score * (1 + moodWobble(state, playerId, spaceId)), evaluatorKey, note });
+        };
+        const space = (id) => state.board.actionSpaces.find((s) => s.spaceId === id);
+        const arrival = (id) => space(id) ? space(id).occupiedBy.length : 0;
+
+        // Growth hub
+        if (desks.open) {
+          const market = recruitableAgents(state, playerId);
+          if (market.length) {
+            const best = market.reduce((a, b) => agentEndValue(b) > agentEndValue(a) ? b : a);
+            consider("GRW_RECRUIT_AGENT", "recruit", agentEndValue(best) + best.totalProfit * pt * 0.5, 0, "recruit", best.name);
+          } else {
+            consider("EXEC_CLEAR_OPEN_MARKET", "clearMarket", 2.5, 0, null, "no recruitable Agent in the market");
+          }
+          const target = poachTarget(state, playerId);
+          if (target) {
+            const prime = (target.totalProfit || 0) >= 10 ? 1.5 : 1; // opportunity: an unshielded star
+            consider("GRW_POACH_AGENT", "poach", (agentEndValue(target) + 0.4 * agentEndValue(target)) * prime, 0, "poach", target.name);
+          }
+        }
+        if (bde.evaluateLoyaltyCandidates(state, playerId)) {
+          const exposed = Object.keys(state.players).length > 1 ? 1.5 : 0;
+          const coachedAtRisk = player.roster.reduce((sum, r) => sum + (!r.isVoided && !(r.loyaltyToken && r.loyaltyToken.active) ? r.coachTokens || 0 : 0), 0);
+          consider("GRW_LOYALTY_TOKEN", "loyalty", 4 + exposed + Math.min(6, 1.5 * coachedAtRisk), 0, "loyalty");
+        }
+        consider("GRW_MARKET_SHARE_ADVANCE", "marketShare", marketShareStepValue(state, playerId), 0, null);
+        // Leadership hub
+        const officeVal = officeValue(state, playerId);
+        // Desks full (or one away) while the market has Agents we can sign: expand.
+        const deskPressure = desks.used >= desks.cap ? 1.7 : desks.used >= desks.cap - 1 ? 1.3 : 1;
+        consider("LDR_OFFICE_EXPANSION", "office", officeVal * deskPressure, 4, null);
+        if (player.wallet.profitTokens >= 4 + (player.wallet.profitTokens > 12 ? 0 : 2)) consider("LDR_HIRE_STAFF", "staff", staffValue(state, playerId) + (player.wallet.profitTokens > 12 ? 1.5 : 0), 4, null);
+        consider("LDR_HIRE_COACH", "coach", coachValue(state, playerId), 3, "hireCoach");
+        // Operations hub
+        VALUE_DIMENSIONS.forEach((dim) => {
+          const id = { training: "OPS_TRAINING", technology: "OPS_TECHNOLOGY", recognition: "OPS_RECOGNITION" }[dim];
+          const steps = arrival(id) === 0 ? 2 : 1;
+          consider(id, "track", trackStepValue(state, playerId, dim, steps), 0, null);
+        });
+        const combo = VALUE_DIMENSIONS.map((dim) => trackStepValue(state, playerId, dim, 1)).sort((a, b) => b - a);
+        consider("OPS_2X_COMBO", "combo", combo[0] + combo[1], 0, null);
+        // Executive decisions hub
+        const profitAmounts = [5, 4, 3, 3, 3, 3];
+        consider("EXEC_ADDITIONAL_PROFIT", "profit", profitAmounts[Math.min(arrival("EXEC_ADDITIONAL_PROFIT"), 5)] * Math.max(pt, 0.45), 0, null);
+        const card = bestPlayableCard(state, playerId);
+        const acquireValue = player.hand.actionCards.length < 3 ? 1.2 : 0.6;
+        consider("EXEC_TAKE_PLAY_CARD", "playCard", card ? Math.max(card.value, acquireValue) : acquireValue, 0, "playCard", card ? card.catalogId : "acquire");
+        out.sort((a, b) => b.score - a.score);
+        return out;
+      }
+
+      // ---- Specialist hub ------------------------------------------------
+      // The hub costs 2 PT and TWO meeples, so a bot only takes the revealed
+      // Specialist when it beats the two best ordinary actions it has.
+      function specialistBaseValue(state, playerId, catalogId) {
+        const player = state.players[playerId];
+        const r = roundsAfterThis(state);
+        const desks = deskInfo(state, playerId);
+        const freeDesks = Math.max(0, desks.cap - desks.used);
+        switch (catalogId) {
+          case "SPEC_1": return 2.5;
+          case "SPEC_2": return 4;
+          case "SPEC_3": return 3;
+          case "SPEC_4": return Math.min(2, freeDesks) * 10 + 1.5;
+          case "SPEC_5": return officeValue(state, playerId) + 1.5 + 0.3 * r;
+          case "SPEC_6": return 1.5;
+          case "SPEC_7": return r * 2.8;
+          case "SPEC_8": return r * 1.6;
+          case "SPEC_9": return 4.5;
+          case "SPEC_10": return 3;
+          case "SPEC_11": return 2;
+          case "SPEC_12": return freeDesks >= 1 ? 10 : 2;
+          case "SPEC_13": return 5;
+          default: return 3;
+        }
+      }
+      function shouldClaimSpecialist(state, playerId, catalogId) {
+        const player = state.players[playerId];
+        const profile = getProfile(player);
+        const favorite = (profile.favoriteSpecialists || []).includes(catalogId) ? 1.3 : 1;
+        const value = specialistBaseValue(state, playerId, catalogId) * (profile.specialistMult || 1) * favorite - 2 * profitTokenValue(state, player);
+        const ranked = rankBotSpaceCandidates(state, playerId);
+        const giveUp = (ranked[0] ? ranked[0].score : 0) + (ranked[1] ? ranked[1].score : 0) * 0.6;
+        return { claim: value > giveUp, value, giveUp };
+      }
+
+      // ---- turn-order bidding -------------------------------------------
+      // Going first next round is worth: the first-arrival bonuses (+2 instead
+      // of +1 on Operations, 5 PT instead of 3 on Additional Profit) plus the
+      // contested one-slot spaces this bot actually wants. Everyone pays their
+      // bid, so a bot only bids when that is worth more than the PT.
+      function planTurnOrderBid(state, playerId) {
+        const player = state.players[playerId];
+        if (state.session && state.session.guaranteedFirstPlayerNextRound === playerId) {
+          return { profitTokensBid: 0, priorityTokensBid: 0, firstPlaceValue: 0 };
+        }
+        const profile = getProfile(player);
+        const rivals = Object.keys(state.players).length - 1;
+        if (rivals === 0) return { profitTokensBid: 0, priorityTokensBid: 0, firstPlaceValue: 0 };
+        let value = 1;
+        const target = deskInfo(state, playerId).open ? poachTarget(state, playerId) : null;
+        if (target && (target.totalProfit || 0) >= 8) value += profile === ARCHETYPE_PROFILES.Aggressive ? 4 : 1.5;
+        const market = recruitableAgents(state, playerId);
+        const topAgent = bestAgentValue(market);
+        if (deskInfo(state, playerId).open && topAgent >= 12) value += profile === ARCHETYPE_PROFILES.Growth ? 2.5 : 1;
+        value += profile.contestedBonus * 0.5;
+        const activeCard = state.specialistDeck && state.specialistDeck.activeCard;
+        if (activeCard && activeCard.catalogId && !activeCard.claimedByPlayerId && (profile.favoriteSpecialists || []).includes(activeCard.catalogId)) value += 2;
+        value *= Math.min(1, 0.4 + rivals * 0.15);
+        const pt = profitTokenValue(state, player);
+        const reserve = officeValue(state, playerId) > 4 || staffValue(state, playerId) > 4 ? 4 : 0;
+        const spendable = Math.max(0, player.wallet.profitTokens - reserve);
+        if (player.wallet.priorityTokens >= 1 && value >= profile.priorityTokenThreshold) {
+          return { profitTokensBid: 0, priorityTokensBid: 1, firstPlaceValue: value };
+        }
+        // Everyone pays their bid, and every seat after 1st is paid 1 PT per
+        // place — so first place must beat the bid AND the lost compensation.
+        const compensationGivenUp = (rivals / 2) * pt;
+        const surplus = value * profile.bidFactor - compensationGivenUp;
+        const bid = surplus > 0 ? Math.floor((surplus / Math.max(pt, 0.3)) * 0.4) : 0;
+        return { profitTokensBid: Math.max(0, Math.min(bid, spendable, 5)), priorityTokensBid: 0, firstPlaceValue: value };
+      }
+      module.exports = { ARCHETYPE_PROFILES, PHASE_MULTIPLIERS, rankBotSpaceCandidates, planTurnOrderBid, estimateCardValue, bestPlayableCard, getProfile, shouldClaimSpecialist };
     }
   });
 
@@ -13208,7 +13649,10 @@ var BrokerBossEngine = (() => {
         }
         if (choiceType === "STR074_RIVAL_TARGET" || choiceType === "STR080_RIVAL_TARGET") {
           const turnOrder = state.phase.turnOrder || [];
-          const rivalIds = turnOrder.filter((id) => id !== playerId);
+          // [v68.22] A two-target card's second pick goes to a different rival when there is one.
+          const alreadyTargeted = interruptData && interruptData.firstTargetPlayerId;
+          const allRivals = turnOrder.filter((id) => id !== playerId);
+          const rivalIds = allRivals.filter((id) => id !== alreadyTargeted).length ? allRivals.filter((id) => id !== alreadyTargeted) : allRivals;
           const sorted = [...rivalIds].sort((a, b) => (state.players[b] ? state.players[b].wallet.profitTokens : 0) - (state.players[a] ? state.players[a].wallet.profitTokens : 0));
           return { targetPlayerId: sorted[0] || null };
         }
@@ -13936,6 +14380,7 @@ var BrokerBossEngine = (() => {
       var { evaluateBotSpecialistDecision } = require_specialistReducer();
       var { resolveBotInterrupt } = require_botInterruptResolver();
       var { getArchetypeWeights, evaluateRecruitCandidates, evaluatePoachCandidates, evaluateLoyaltyCandidates, evaluateActionCardChoice } = require_botDecisionEngine();
+      var { rankBotSpaceCandidates } = require_botStrategyPlanner();
       var { hasOpenDesk } = require_agentRecruitmentReducer();
       var { MARKET_SHARE_TRACK_SPACES } = require_boardConfigLoader();
       var OUT_OF_TURN_ACTION_TYPES = /* @__PURE__ */ new Set(["SUBMIT_TURN_ORDER_BID"]);
@@ -14040,47 +14485,37 @@ var BrokerBossEngine = (() => {
           return { state: specialistResult.state, action: "SPECIALIST_CLAIMED", reason: null };
         }
         let nextState = specialistResult.state;
-        const weights = getArchetypeWeights(player.archetype);
-        const deferredTierAttempts = [
-          { key: "poach", weight: weights.poach, spaceId: "GRW_POACH_AGENT", evaluator: evaluatePoachCandidates, actionLabel: "POACH_FALLBACK_PLACEMENT_AND_RESOLVED" },
-          { key: "recruit", weight: weights.recruit, spaceId: "GRW_RECRUIT_AGENT", evaluator: evaluateRecruitCandidates, actionLabel: "RECRUIT_FALLBACK_PLACEMENT_AND_RESOLVED" },
-          { key: "loyalty", weight: weights.loyalty, spaceId: "GRW_LOYALTY_TOKEN", evaluator: evaluateLoyaltyCandidates, actionLabel: "LOYALTY_FALLBACK_PLACEMENT_AND_RESOLVED" },
-          { key: "dualTrack", weight: weights.engineSpaces, spaceId: "OPS_2X_COMBO", evaluator: () => true, actionLabel: "DUAL_TRACK_FALLBACK_PLACEMENT_AND_RESOLVED" },
-          { key: "playCard", weight: weights.playCard, spaceId: "EXEC_TAKE_PLAY_CARD", evaluator: evaluateActionCardChoice, actionLabel: "PLAY_CARD_FALLBACK_PLACEMENT_AND_RESOLVED" },
-          {
-            key: "hireCoach",
-            weight: 1,
-            spaceId: "LDR_HIRE_COACH",
-            evaluator: (s, pid) => s.players[pid].roster.some((r) => !r.isVoided) && s.players[pid].wallet.profitTokens >= 3,
-            actionLabel: "HIRE_COACH_FALLBACK_PLACEMENT_AND_RESOLVED"
-          },
-          {
-            key: "marketShareSprint",
-            weight: weights.marketShareSprint || 3,
-            spaceId: "GRW_MARKET_SHARE_ADVANCE",
-            evaluator: (s, pid) => {
-              const currentIndex = s.players[pid].tracks.marketShare.position;
-              const currentValue = MARKET_SHARE_TRACK_SPACES[currentIndex];
-              const nextValue = MARKET_SHARE_TRACK_SPACES[Math.min(currentIndex + 1, MARKET_SHARE_TRACK_SPACES.length - 1)];
-              return Object.keys(s.marketShareTrack.bonusStacks).some((milestoneKey) => {
-                const milestoneValue = Number(milestoneKey);
-                const stack = s.marketShareTrack.bonusStacks[milestoneKey];
-                return currentValue < milestoneValue && nextValue >= milestoneValue && stack.claimedBy.length < 2 && !stack.claimedBy.includes(pid);
-              });
-            },
-            actionLabel: "MARKET_SHARE_SPRINT_FALLBACK_PLACEMENT_AND_RESOLVED"
-          }
-        ].sort((a, b) => b.weight - a.weight);
-        for (const attempt of deferredTierAttempts) {
-          const deferredFallback = findAgentActionFallback(nextState, activePlayerId, attempt.spaceId, attempt.evaluator);
+        // [v68.22 Batch #5] The bot's strategy planner ranks every open,
+        // affordable space by its value to THIS bot (archetype identity, game
+        // phase, board opportunities). We try them best-first; deferred spaces
+        // are resolved by botInterruptResolver exactly as before.
+        const BOT_SPACE_EVALUATORS = {
+          recruit: evaluateRecruitCandidates,
+          poach: evaluatePoachCandidates,
+          loyalty: evaluateLoyaltyCandidates,
+          hireCoach: (s, pid) => s.players[pid].roster.some((r) => !r.isVoided) && s.players[pid].wallet.profitTokens >= 3
+        };
+        const rankedSpaces = rankBotSpaceCandidates(nextState, activePlayerId);
+        for (const attempt of rankedSpaces) {
+          const evaluator = BOT_SPACE_EVALUATORS[attempt.evaluatorKey] || (() => true);
+          const deferredFallback = findAgentActionFallback(nextState, activePlayerId, attempt.spaceId, evaluator);
           if (!deferredFallback) continue;
           const deferredPlacement = placeMeeple(nextState, activePlayerId, deferredFallback.meepleInstanceId, deferredFallback.space.spaceId);
-          if (deferredPlacement.error === null && deferredPlacement.deferred) {
-            const resumed = resolveBotInterrupt(deferredPlacement.state);
-            return { state: resumed.state, action: attempt.actionLabel, reason: null };
-          }
-          if (deferredPlacement.error === null && !deferredPlacement.deferred) {
-            return { state: deferredPlacement.state, action: attempt.actionLabel, reason: null };
+          if (deferredPlacement.error === null) {
+            const decided = appendLog(deferredPlacement.state, {
+              type: "BOT_STRATEGY_DECISION",
+              playerId: activePlayerId,
+              archetype: player.archetype || null,
+              spaceId: attempt.spaceId,
+              category: attempt.category,
+              score: Math.round(attempt.score * 10) / 10,
+              note: attempt.note || null
+            });
+            if (deferredPlacement.deferred) {
+              const resumed = resolveBotInterrupt(decided);
+              return { state: resumed.state, action: "STRATEGY_PLACEMENT_AND_RESOLVED", reason: null };
+            }
+            return { state: decided, action: "STRATEGY_PLACEMENT", reason: null };
           }
           nextState = appendLog(nextState, {
             type: "BOT_TURN_FALLBACK_REJECTED",
@@ -14102,8 +14537,11 @@ var BrokerBossEngine = (() => {
             reason: placement.error
           });
         }
+        // [v68.22] Distinguish a bot that simply has no meeples left (a normal
+        // end of its round) from one that forfeits an action it could take.
+        const hasMeepleLeft = player.timeMeeples.active.some((m) => m.status === "in_supply");
         nextState = appendLog(nextState, {
-          type: "BOT_TURN_NO_VALID_ACTION",
+          type: hasMeepleLeft ? "BOT_TURN_NO_VALID_ACTION" : "BOT_TURN_DONE_NO_MEEPLES",
           playerId: activePlayerId
         });
         nextState = {

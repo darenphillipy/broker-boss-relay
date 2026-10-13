@@ -11,7 +11,7 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-12 (v68.21-polish) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-13 (v68.22-bot-ai) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 
 // [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
@@ -4779,7 +4779,10 @@ function renderBoard(board, vm) {
       const isHireCoachWithNoAgents =
         space.spaceId === 'LDR_HIRE_COACH' &&
         !(state.players[HUMAN_PLAYER_ID].roster || []).some((a) => !a.isVoided);
-      const isBlocked = space.status === 'blocked' || space.status === 'void' || isHireCoachWithNoAgents;
+      // [v68.22] The Lobbyist's own hub stays open for the player who blocked it.
+      const boardSpace = state.board.actionSpaces.find((s) => s.spaceId === space.spaceId) || space;
+      const ownLobbyistBlock = boardSpace.blockedByCatalogId === 'SPEC_3' && boardSpace.blockedByPlayerId === HUMAN_PLAYER_ID;
+      const isBlocked = (space.status === 'blocked' && !ownLobbyistBlock) || space.status === 'void' || isHireCoachWithNoAgents;
       const clickable =
         pendingFreeAction || pendingLiquidityStaffPT || pendingExecutiveOverdrive
           ? vm.meta.phase === 'WORKER_PLACEMENT' && vm.meta.activePlayerId === HUMAN_PLAYER_ID && !isBlocked
