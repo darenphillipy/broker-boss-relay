@@ -11,7 +11,7 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-13 (v68.24-bot-tuning) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-13 (v68.26-six-rounds) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 
 // [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
@@ -884,7 +884,7 @@ function buildAgentCardHtml(agent, options = {}) {
     </div>`;
 
   return `
-    <div class="agent-card agent-card-full-art ${clickable ? 'agent-card-clickable' : ''}" ${dataAttr} data-tooltip="${escapeAttr(tooltip)}">
+    <div class="agent-card agent-card-full-art ${clickable ? 'agent-card-clickable' : ''}" ${dataAttr} data-tooltip="${escapeAttr(tooltip)}" data-card-text="${escapeAttr(tooltip && String(tooltip).includes('\n') ? tooltip : buildAgentHoverTooltip(agent, null))}">
       <div class="agent-card-token-stack">${networkBadgeHtml}${tokenBadgesHtml}</div>
       ${buildFullCardImageHtml(agent.image, 'agents', fallbackHtml)}
     </div>`;
@@ -1615,7 +1615,11 @@ function renderShiftCardResolutionModal(overlayEl, vm, humanDash) {
   const cardArtHtml = cardEntry
     ? buildFullCardImageHtml(cardEntry.cardImage, 'shift-cards', `<div class="shift-reveal-fallback-name">${escapeAttr(cardEntry.name || catalogId)}</div>`)
     : '<p class="empty-hand-message">Card details unavailable.</p>';
-  const cardTextHtml = cardEntry ? `<p class="shift-resolution-card-title">${escapeAttr(cardEntry.name)}</p><p class="shift-resolution-card-text">${escapeAttr(cardEntry.description || '')}</p>` : '';
+  // [v68.25] A Shift card drawn by an Action Card says who it hits.
+  const UIM = window.BrokerBossUiMessages;
+  const forcedNoteText = interrupt.forcedShiftNote && UIM ? UIM.fixYouGrammar(UIM.polishText(interrupt.forcedShiftNote, state, catalog)) : interrupt.forcedShiftNote;
+  const forcedNoteHtml = forcedNoteText ? `<p class="shift-resolution-card-text"><strong>${escapeAttr(forcedNoteText)}</strong></p>` : '';
+  const cardTextHtml = cardEntry ? `<p class="shift-resolution-card-title">${escapeAttr(cardEntry.name)}</p><p class="shift-resolution-card-text">${escapeAttr(cardEntry.description || '')}</p>${forcedNoteHtml}` : forcedNoteHtml;
 
   if (stage === 'announcement') {
     // Stage 1: the card is revealed, but NOTHING has been applied yet —
@@ -2019,6 +2023,22 @@ function buildStartCardChoiceBodyHtml(modal, playerDash, vm) {
       .join('')}</div>`;
   }
 
+  // [v68.25] Advanced Training: pick a board space for each free action (or skip).
+  if (modal.choiceType === 'STR084_FREE_ACTION_SPACE') {
+    const ids = modal.candidateSpaceIds || [];
+    return `<div class="modal-hand-cards">${ids
+      .map((id) => `<button type="button" class="modal-skip-btn" data-free-action-space-id="${id}">${escapeAttr((window.BrokerBossUiMessages && window.BrokerBossUiMessages.spaceName ? window.BrokerBossUiMessages.spaceName(id) : id))}</button>`)
+      .join(' ')}</div>
+      <div class="modal-actions"><button type="button" class="modal-cancel-btn" id="free-action-skip-btn">Skip remaining free actions</button></div>`;
+  }
+  // [v68.25] Fee Reduction: the targeted broker decides whether to block.
+  if (modal.choiceType === 'INF098_BLOCK_DECISION') {
+    return `<div class="modal-actions">
+      <button type="button" class="modal-skip-btn" id="inf098-block-btn">Block (lose 1 Training, Technology &amp; Recognition)</button>
+      <button type="button" class="modal-cancel-btn" id="inf098-allow-btn">Let the Agent go</button>
+    </div>`;
+  }
+
   if (modal.choiceType === 'STR074_RIVAL_TARGET' || modal.choiceType === 'STR080_RIVAL_TARGET') {
     const rivals = Object.keys(vm.players)
       .filter((pid) => pid !== modal.sourcePlayerId)
@@ -2179,6 +2199,17 @@ function wireStartCardChoiceHandlers(choiceType, requiredCount) {
     document.querySelectorAll('.track-boost-btn[data-single-track]').forEach((el) => {
       el.addEventListener('click', () => handleStartCardChoice({ trackChoice: el.dataset.singleTrack }));
     });
+  } else if (choiceType === 'STR084_FREE_ACTION_SPACE') {
+    document.querySelectorAll('[data-free-action-space-id]').forEach((el) => {
+      el.addEventListener('click', () => handleStartCardChoice({ spaceId: el.dataset.freeActionSpaceId }));
+    });
+    const skipBtn = document.getElementById('free-action-skip-btn');
+    if (skipBtn) skipBtn.addEventListener('click', () => handleStartCardChoice({ skip: true }));
+  } else if (choiceType === 'INF098_BLOCK_DECISION') {
+    const blockBtn = document.getElementById('inf098-block-btn');
+    const allowBtn = document.getElementById('inf098-allow-btn');
+    if (blockBtn) blockBtn.addEventListener('click', () => handleStartCardChoice({ block: true }));
+    if (allowBtn) allowBtn.addEventListener('click', () => handleStartCardChoice({ block: false }));
   } else if (choiceType === 'STR074_RIVAL_TARGET' || choiceType === 'STR080_RIVAL_TARGET') {
     document.querySelectorAll('.agent-card-clickable[data-rival-only-player-id]').forEach((el) => {
       el.addEventListener('click', () => handleStartCardChoice({ targetPlayerId: el.dataset.rivalOnlyPlayerId }));
@@ -3351,7 +3382,7 @@ function renderActiveShiftSlot(vm) {
   el.className = 'active-shift-slot active-shift-slot-visible';
   el.innerHTML = `
     <div class="active-shift-label">⚡ Active Shift</div>
-    <div class="active-shift-box" title="${escapeAttr(activeShiftCard.cardDescription)}">
+    <div class="active-shift-box" title="${escapeAttr(activeShiftCard.cardDescription)}" data-card-text="${escapeAttr(`${activeShiftCard.cardName}\nShift Card\n${activeShiftCard.cardDescription || ''}`)}">
       ${buildPortraitHtml(activeShiftCard.cardImage, activeShiftCard.cardName, 'shift-cards')}
       <div class="active-shift-name">${escapeAttr(activeShiftCard.cardName)}</div>
     </div>
@@ -4130,7 +4161,8 @@ function renderTurnOrderTrack(vm) {
 }
 
 function renderHeader(vm) {
-  document.getElementById('round-info').textContent = `Round ${vm.meta.round} / ${vm.meta.maxRounds}`;
+  // [v68.26] the final screen reads "Round 6 / 6 FINAL SCORING"
+  document.getElementById('round-info').textContent = `Round ${Math.min(vm.meta.round, vm.meta.maxRounds)} / ${vm.meta.maxRounds}${vm.meta.phase === 'FINAL_SCORING' ? ' FINAL SCORING' : ''}`;
   document.getElementById('phase-info').textContent = vm.meta.phase;
   document.getElementById('active-player-info').textContent = vm.players[vm.meta.activePlayerId]
     ? vm.players[vm.meta.activePlayerId].displayName
@@ -7191,6 +7223,46 @@ function leaveOnlineRoom() {
  */
 const ZOOMABLE_CARD_SELECTOR = '.hand-card:not(.hand-card-placeholder):not(.hand-card-facedown), .agent-card:not(.agent-card-placeholder), .specialist-card-panel:not(.specialist-card-empty), .active-shift-box';
 
+// [v68.26] Live-text panel for the card zoom. Uses the card's own rich text
+// (data-card-text / data-tooltip / title) and, when that's only a name, looks
+// the card up in the catalog by any catalog id the element carries.
+const CARD_ID_ATTRIBUTES = ['data-catalog-id', 'data-target-catalog-id-action', 'data-target-catalog-id', 'data-recruit-catalog-id', 'data-agent-catalog-id', 'data-specialist-catalog-id'];
+function cardTextFromCatalog(id) {
+  if (!id || !catalog) return null;
+  const a = catalog.actionCards && catalog.actionCards[id];
+  if (a) {
+    const req = a.playRequirement ? (a.playRequirement.type === 'track' ? `Requires ${a.playRequirement.track[0].toUpperCase()}${a.playRequirement.track.slice(1)} ${a.playRequirement.level}` : a.playRequirement.type === 'marketShare' ? `Requires Market Share ${a.playRequirement.level}` : a.playRequirement.type === 'rosterSize' ? `Requires ${a.playRequirement.count}+ Agents` : '') : '';
+    return [`${a.name} — $${a.cost} PT`, req, a.description].filter(Boolean).join('\n');
+  }
+  const s = catalog.shiftCards && catalog.shiftCards[id];
+  if (s) return `${s.name}\nShift Card\n${s.description || ''}`;
+  const sp = catalog.specialistCards && catalog.specialistCards[id];
+  if (sp) return `${sp.name}\nSpecialist\n${sp.description || ''}`;
+  const ag = catalog.agentCards && catalog.agentCards[id];
+  if (ag) return `${ag.name}\nTraining ${ag.training} · Technology ${ag.technology} · Recognition ${ag.recognition} · Culture ${ag.culture}\nNet Profit: $${ag.totalProfit} PT`;
+  return null;
+}
+function buildCardZoomTextHtml(card) {
+  let text = card.dataset.cardText || card.dataset.tooltip || card.getAttribute('title') || '';
+  if (!text.includes('\n')) {
+    const holder = [card, ...card.querySelectorAll('[' + CARD_ID_ATTRIBUTES.join('],[') + ']')].find((el) => CARD_ID_ATTRIBUTES.some((a) => el.getAttribute && el.getAttribute(a)));
+    const id = holder && CARD_ID_ATTRIBUTES.map((a) => holder.getAttribute(a)).find(Boolean);
+    const fromCatalog = cardTextFromCatalog(id);
+    if (fromCatalog) text = fromCatalog;
+  }
+  text = String(text || '').trim();
+  if (!text) return '';
+  let lines = text.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
+  // "Name: effect" on one line (Specialist panel) -> title + body
+  if (lines.length === 1 && lines[0].indexOf(': ') > 0 && lines[0].indexOf(': ') < 48) {
+    const i = lines[0].indexOf(': ');
+    lines = [lines[0].slice(0, i), lines[0].slice(i + 2)];
+  }
+  const [title, ...rest] = lines;
+  const cls = (l) => (/^\s*✓/.test(l) ? ' class="card-zoom-ok"' : /^\s*✗/.test(l) ? ' class="card-zoom-bad"' : /^\s*(Requires|Training \d|Shift Card$|Specialist$|Net Profit|Network)/.test(l) ? ' class="card-zoom-meta"' : '');
+  return `<div class="card-zoom-text"><div class="card-zoom-text-title">${escapeAttr(title)}</div>${rest.map((l) => `<p${cls(l)}>${escapeAttr(l.trim())}</p>`).join('')}</div>`;
+}
+
 function buildCardZoomOverlay() {
   const el = document.createElement('div');
   el.id = 'card-zoom-overlay';
@@ -7307,7 +7379,10 @@ function showCardZoom(card) {
     return;
   }
 
-  cardZoomOverlay.innerHTML = card.innerHTML;
+  // [v68.26] The zoom shows the card art LARGER plus the card's words as live,
+  // sharp HTML text (name, cost, requirement, effect / stats) — the printed text
+  // on a scaled-down card scan was too small and soft to read.
+  cardZoomOverlay.innerHTML = `<div class="card-zoom-art">${card.innerHTML}</div>${buildCardZoomTextHtml(card)}`;
   cardZoomOverlay.className = 'card-zoom-overlay card-zoom-visible card-zoom-vertical';
 
   // Measure the overlay's REAL rendered size now that its real content
@@ -7327,6 +7402,11 @@ function showCardZoom(card) {
 
   let top = rect.top;
   top = Math.max(8, Math.min(top, window.innerHeight - zoomHeight - 8));
+  // [v68.26] Phones: no room beside the card, so centre the zoom on screen.
+  if (window.innerWidth < 700) {
+    left = Math.max(4, (window.innerWidth - zoomWidth) / 2);
+    top = Math.max(8, (window.innerHeight - zoomHeight) / 2);
+  }
 
   cardZoomOverlay.style.left = `${left}px`;
   cardZoomOverlay.style.top = `${top}px`;
@@ -7510,8 +7590,10 @@ document.getElementById('log-drawer-close-btn').addEventListener('click', () => 
   boardColumn.addEventListener(
     'touchstart',
     (e) => {
+      // [v68.26] A second finger means a pinch: stop any board pan at once so
+      // the browser's own pinch-zoom gets the whole gesture (in or out).
+      if (e.touches.length !== 1) { endTouchPan(); return; }
       if (e.target.closest(NON_PANNABLE_SELECTOR)) return;
-      if (e.touches.length !== 1) return;
       // FIX: only engage touch-pan once the board is actually zoomed in
       // — at the default zoom (1) or zoomed out, there's nothing
       // meaningful to pan to, and intercepting every single-finger drag
@@ -7534,7 +7616,8 @@ document.getElementById('log-drawer-close-btn').addEventListener('click', () => 
   viewport.addEventListener(
     'touchmove',
     (e) => {
-      if (!isPanning || e.touches.length !== 1) return;
+      if (e.touches.length !== 1) { endTouchPan(); return; } // [v68.26] pinch: never block it
+      if (!isPanning) return;
       e.preventDefault(); // only reached when isPanning is true (zoom > 1), so this never blocks normal page scroll at default zoom
       panX = panOriginX + (e.touches[0].clientX - panStartX);
       panY = panOriginY + (e.touches[0].clientY - panStartY);

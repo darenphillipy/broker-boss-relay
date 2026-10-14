@@ -3663,3 +3663,165 @@ body {
     width: 17.9487cqw;
   }
 }
+
+/* =====================================================================
+   v68.26 — Mobile pinch-zoom + card legibility (appended last so these
+   rules win the cascade). Presentation only.
+   ===================================================================== */
+
+/* ---- Mobile: the header used to be one unbreakable row of buttons
+   (~600px), which made phones lay the page out wider than the screen. */
+#game-header { min-width: 0; }
+.header-info { flex-wrap: wrap; min-width: 0; row-gap: 6px; align-items: center; }
+
+/* ---- Native pinch-zoom works anywhere on the board. `pan-y` (old) let
+   you scroll but blocked pinch-zoom inside the board, so a zoomed-in
+   player could get stuck with no non-board area left to pinch out on.
+   `manipulation` = pan + pinch-zoom (no double-tap zoom delay). */
+.board-zoom-viewport,
+.board-zoom-viewport * {
+  touch-action: manipulation;
+}
+/* A permanent will-change:transform freezes the board's raster at its
+   first size, so the in-game board zoom looked soft. Only promote while
+   actually dragging. */
+.board-column { will-change: auto; }
+.board-column.board-panning { will-change: transform; }
+
+/* ---- Card zoom (hover / tap any card): bigger art + live text ------- */
+.card-zoom-overlay {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* scaling the whole popup (scale 0.92 -> 1) and will-change:transform
+     rasterised the text mid-animation and left it blurry: fade only */
+  transform: none;
+  will-change: opacity;
+  transition: opacity 0.12s ease;
+}
+.card-zoom-overlay.card-zoom-visible { transform: none; }
+.card-zoom-overlay.card-zoom-pinned { pointer-events: auto; }
+.card-zoom-overlay.card-zoom-vertical {
+  width: min(360px, 92vw);
+  aspect-ratio: auto;
+  height: auto;
+  max-height: 94vh;
+  overflow-y: auto;
+  justify-content: flex-start;
+  padding: 10px;
+  gap: 10px;
+}
+.card-zoom-overlay.card-zoom-vertical:has(.agent-card-token-stack) {
+  width: min(460px, 94vw);
+  aspect-ratio: auto;
+}
+.card-zoom-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 840 / 1092;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.card-zoom-overlay:has(.agent-card-token-stack) .card-zoom-art { aspect-ratio: 1.3 / 1; background: #fff; }
+.card-zoom-art > .full-card-image-wrap,
+.card-zoom-art > .full-card-text-fallback { width: 100%; height: 100%; }
+.card-zoom-art > .agent-card-token-stack { position: absolute; top: 6px; right: 6px; z-index: 2; }
+/* Agent art is stored sideways and rotated -90deg; centre the rotated
+   image exactly in the zoom box (flex centring can't centre an item
+   that's taller than its box, which left a gap above the card). */
+.card-zoom-overlay:has(.agent-card-token-stack) .card-zoom-art .full-card-image-wrap { position: relative; display: block; }
+.card-zoom-overlay:has(.agent-card-token-stack) .card-zoom-art .full-card-image {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: 0;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+.card-zoom-text {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  background: #0d1118;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+.card-zoom-text-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffd76a;
+  margin-bottom: 4px;
+  line-height: 1.25;
+}
+.card-zoom-text p { margin: 4px 0 0; }
+.card-zoom-text .card-zoom-meta { color: #cfe3ff; font-weight: 600; }
+.card-zoom-text .card-zoom-ok { color: #8ef09a; font-weight: 600; }
+.card-zoom-text .card-zoom-bad { color: #ff9a9a; font-weight: 600; }
+
+/* ---- Card art everywhere: high-quality scaling (no transform-induced
+   soft rasters on hover) -------------------------------------------- */
+.full-card-image,
+.card-portrait img,
+.shift-resolution-card-art img,
+.shift-reveal-card-art img,
+.specialist-card-panel img {
+  image-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Shift card screens: bigger art, high-contrast text -------------- */
+.shift-resolution-card-art,
+.shift-reveal-card-art {
+  width: min(240px, 62vw);
+}
+.shift-resolution-card-title {
+  font-size: 1.3em;
+  color: #ffd76a;
+}
+.shift-resolution-card-text {
+  font-size: 1.05em;
+  line-height: 1.5;
+  color: #ffffff;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+}
+.shift-resolution-modal-box,
+.modal-box {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+@media (max-width: 600px) {
+  .shift-resolution-card-art,
+  .shift-reveal-card-art { width: min(220px, 60vw); }
+  .modal-box { width: 94vw; max-width: 94vw; padding: 14px; box-sizing: border-box; max-height: 92vh; overflow-y: auto; }
+  .card-zoom-text { font-size: 16px; }
+  .card-zoom-text-title { font-size: 18px; }
+}
+
+/* ---- Lobby on phones: long bot-name dropdowns pushed the page wider
+   than the screen (and over the Start button). */
+.lobby-box { box-sizing: border-box; max-width: min(480px, 96vw); }
+.lobby-slot { gap: 8px; min-width: 0; }
+.lobby-archetype-select { min-width: 0; max-width: 100%; flex: 1 1 auto; text-overflow: ellipsis; }
+@media (max-width: 600px) {
+  .lobby-box { padding: 20px 14px; width: 96vw; }
+  .lobby-slot { flex-wrap: wrap; }
+  .lobby-archetype-select { width: 100%; font-size: 16px; }
+}
+
+/* ---- Very small phones (320-360px): let the 5 milestone tiles shrink
+   instead of pushing the page wider than the screen. */
+@media (max-width: 380px) {
+  .top-panel-column.milestones-column { gap: 4px; }
+  .milestone-slot { flex: 1 1 0; width: auto; min-width: 0; }
+  .milestone-slot-name { min-width: 0; overflow-wrap: anywhere; font-size: 0.85em; }
+}
