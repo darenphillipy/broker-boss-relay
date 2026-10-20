@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-13 (v68.26-six-rounds) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-19 (v68.28-host-mode) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -15159,6 +15159,70 @@ var BrokerBossEngine = (() => {
     }
   });
 
+  // earlyGameEnd.js
+  // [v68.28] Rules module for ending a game early (host time limit).
+  //   after_round: the current round is played out normally, then the game
+  //                goes straight to Final Scoring (same path as the last
+  //                round: no bidding, no new round). Done by lowering
+  //                phase.maxRounds to the current round, so every other
+  //                module (round loop, bot planner, header) just sees a
+  //                shorter game.
+  //   now:         Final Scoring runs immediately on the current state.
+  //   cancel:      undo a pending after_round request.
+  // If the current round has already finished (Turn Order Bidding etc.),
+  // after_round ends the game now: there is no "rest of the round" left.
+  var require_earlyGameEnd = __commonJS({
+    "earlyGameEnd.js"(exports, module) {
+      var NULL_INTERRUPT = { type: "NULL", sourcePlayerId: null, data: {} };
+      function appendLog(state, entry) {
+        return { ...state, log: [...state.log, { seq: state.log.length + 1, timestamp: (/* @__PURE__ */ new Date()).toISOString(), round: state.phase.round, ...entry }] };
+      }
+      var ROUND_IN_PROGRESS_PHASES = /* @__PURE__ */ new Set(["WORKER_PLACEMENT", "END_OF_ROUND_TECH_BONUSES"]);
+      function finishNow(state, requestedBy, why) {
+        const original = state.phase.earlyEnd && state.phase.earlyEnd.originalMaxRounds || state.phase.maxRounds;
+        let next = {
+          ...state,
+          phase: {
+            ...state.phase,
+            maxRounds: state.phase.round,
+            pendingInterrupt: NULL_INTERRUPT,
+            cardFollowUpQueue: [],
+            earlyEnd: { mode: "now", round: state.phase.round, originalMaxRounds: original, requestedBy: requestedBy || null }
+          }
+        };
+        next = appendLog(next, { type: "GAME_ENDED_EARLY", mode: "now", requestedBy: requestedBy || null, message: why || `The host ended the game during Round ${state.phase.round}. Final Scoring is calculated from the current board.` });
+        return require_scoringEngine().runFinalScoring(next);
+      }
+      function requestEarlyGameEnd(state, options = {}) {
+        const mode = options.mode;
+        const requestedBy = options.requestedBy || null;
+        if (!state || !state.phase) return { state, error: "NO_GAME", detail: null };
+        if (state.phase.current === "FINAL_SCORING") return { state, error: "GAME_ALREADY_FINISHED", detail: null };
+        if (mode === "cancel") {
+          const ee = state.phase.earlyEnd;
+          if (!ee || ee.mode !== "after_round") return { state, error: "NO_EARLY_END_PENDING", detail: null };
+          let next = { ...state, phase: { ...state.phase, maxRounds: ee.originalMaxRounds, earlyEnd: null } };
+          next = appendLog(next, { type: "GAME_END_EARLY_CANCELLED", requestedBy, message: `The host cancelled the early finish — the game goes back to ${ee.originalMaxRounds} rounds.` });
+          return { state: next, error: null, detail: null };
+        }
+        if (mode === "now") {
+          return { state: finishNow(state, requestedBy), error: null, detail: null };
+        }
+        if (mode === "after_round") {
+          if (!ROUND_IN_PROGRESS_PHASES.has(state.phase.current)) {
+            return { state: finishNow(state, requestedBy, `The host ended the game. Round ${state.phase.round} is already complete, so Final Scoring starts now.`), error: null, detail: null };
+          }
+          const original = state.phase.earlyEnd && state.phase.earlyEnd.originalMaxRounds || state.phase.maxRounds;
+          let next = { ...state, phase: { ...state.phase, maxRounds: state.phase.round, earlyEnd: { mode: "after_round", round: state.phase.round, originalMaxRounds: original, requestedBy } } };
+          next = appendLog(next, { type: "GAME_END_EARLY_SCHEDULED", mode: "after_round", requestedBy, round: state.phase.round, message: `The host is ending the game after this round. Round ${state.phase.round} is the final round — Final Scoring follows right after it.` });
+          return { state: next, error: null, detail: null };
+        }
+        return { state, error: "INVALID_EARLY_END_MODE", detail: { mode } };
+      }
+      module.exports = { requestEarlyGameEnd };
+    }
+  });
+
   // gameLoopController.js
   var require_gameLoopController = __commonJS({
     "gameLoopController.js"(exports, module) {
@@ -15754,7 +15818,9 @@ var BrokerBossEngine = (() => {
       var { renderPlayerDashboard } = require_playerDashboardRenderer();
       var { renderInterruptOverlay } = require_interruptOverlayRenderer();
       var { MARKET_SHARE_TRACK_SPACES } = require_boardConfigLoader();
+      var { requestEarlyGameEnd } = require_earlyGameEnd();
       module.exports = {
+        requestEarlyGameEnd,
         initializeGame,
         createInitialState,
         executeUserAction,

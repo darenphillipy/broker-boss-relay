@@ -2007,6 +2007,7 @@ body {
 .connection-banner--lost { background: #f2b33d; color: #201a0a; }
 .connection-banner--restored { background: #3fa76a; color: #fff; }
 .connection-banner--failed { background: #b4483c; color: #fff; }
+.lobby-rejoin-row { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 16px; }
 .connection-banner-btn { border: none; border-radius: 6px; padding: 6px 12px; font-weight: 700; cursor: pointer; background: #fff; color: #201a0a; }
 
 .modal-cancel-btn {
@@ -3824,4 +3825,113 @@ body {
   .top-panel-column.milestones-column { gap: 4px; }
   .milestone-slot { flex: 1 1 0; width: auto; min-width: 0; }
   .milestone-slot-name { min-width: 0; overflow-wrap: anywhere; font-size: 0.85em; }
+}
+
+/* =====================================================================
+   v68.28 — Phase 2: Host / Spectator mode + live teaching tools.
+   Presentation only. Appended last so it wins the cascade.
+   ===================================================================== */
+
+/* ---- lobby ---------------------------------------------------------- */
+.lobby-host-only-row { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 14px; font-size: 0.92em; color: var(--text-dim, #c7cbd6); cursor: pointer; text-align: left; }
+.lobby-host-only-row input { margin-top: 3px; width: 18px; height: 18px; flex: 0 0 auto; }
+.lobby-host-only-row strong { color: var(--text-main, #fff); }
+.lobby-online-join-row { flex-wrap: wrap; }
+.lobby-spectate-btn { background: transparent !important; color: var(--accent, #e8b64c) !important; border: 2px solid var(--accent, #e8b64c) !important; }
+.waiting-room-host-line, .waiting-room-spectators { margin: 8px 0; font-size: 0.9em; color: var(--text-dim, #c7cbd6); }
+
+/* ---- header badge + early-end banner --------------------------------- */
+.viewer-role-badge { background: #2c3e66; color: #fff; border: 1px solid #6f8fd6; border-radius: 999px; padding: 2px 10px; font-weight: 700; font-size: 0.85em; white-space: nowrap; }
+.early-end-banner { background: #f2b33d; color: #201a0a; font-weight: 800; text-align: center; padding: 8px 14px; border-bottom: 2px solid #b8861f; }
+
+/* ---- Table Overview (god-eye) ---------------------------------------- */
+.god-eye-panel {
+  position: fixed; top: 84px; right: 10px; z-index: 900;
+  width: min(360px, 92vw); max-height: calc(100vh - 110px);
+  display: flex; flex-direction: column; gap: 6px;
+  -webkit-font-smoothing: antialiased;
+}
+.god-eye-toggle { align-self: flex-end; background: #1d2433; color: #fff; border: 1px solid #6f8fd6; border-radius: 8px; padding: 6px 12px; font-weight: 700; cursor: pointer; }
+.god-eye-body { overflow-y: auto; background: rgba(13, 17, 24, 0.96); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 10px; padding: 10px; color: #fff; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5); }
+.god-eye-collapsed .god-eye-body { display: none; }
+.god-eye-body h3 { margin: 0 0 8px; font-size: 16px; color: #ffd76a; }
+.god-eye-player { border-left: 4px solid var(--ge-accent, #888); background: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 13.5px; line-height: 1.4; }
+.god-eye-player-active { background: rgba(255, 214, 51, 0.12); box-shadow: 0 0 0 1px #ffd633 inset; }
+.god-eye-player header { font-size: 15px; margin-bottom: 4px; }
+.god-eye-turn { color: #ffd633; font-weight: 800; font-size: 12px; }
+.god-eye-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; color: #cfe3ff; font-weight: 600; margin-bottom: 4px; }
+.god-eye-line { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
+.god-eye-line em { font-style: normal; color: #9aa6bd; font-size: 12px; margin-right: 2px; min-width: 64px; }
+.god-eye-chip { background: #26324a; border: 1px solid #3c4d70; border-radius: 6px; padding: 1px 6px; font-size: 12.5px; }
+.god-eye-chip-agent { background: #2a2f22; border-color: #56603f; }
+.god-eye-chip-ms { background: #3b2f12; border-color: #8a6a1f; }
+.god-eye-dim { color: #9aa6bd; font-weight: 500; }
+
+/* ---- host control panel ---------------------------------------------- */
+.host-control-panel {
+  position: fixed; left: 10px; bottom: 10px; z-index: 950;
+  width: min(300px, calc(100vw - 20px));
+  background: rgba(13, 17, 24, 0.97); color: #fff;
+  border: 2px solid #e8b64c; border-radius: 12px; padding: 10px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55); font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+.host-panel-title { font-weight: 800; color: #ffd76a; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+.host-panel-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.host-panel-row .host-tool-btn { flex: 1; }
+.host-tool-btn { background: #1d2433; color: #fff; border: 1px solid #4d5d80; border-radius: 8px; padding: 8px 10px; font-weight: 700; cursor: pointer; text-align: left; font-size: 13.5px; }
+.host-tool-btn:hover { border-color: #e8b64c; }
+.host-tool-on { background: #b4232f; border-color: #ff6b6b; }
+.host-end-menu { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.host-end-menu .host-tool-btn span { display: block; font-weight: 500; font-size: 12px; color: #c7cbd6; }
+.host-end-primary { background: #2f4a2a; border-color: #6fb35c; }
+.host-end-danger { background: #4a1f1f; border-color: #c25050; }
+.host-panel-note { background: #3b2f12; border: 1px solid #8a6a1f; border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; font-weight: 700; }
+.host-panel-check { display: flex; gap: 6px; align-items: center; font-size: 13px; color: #c7cbd6; cursor: pointer; }
+body.host-ping-mode, body.host-ping-mode * { cursor: crosshair !important; }
+body.host-ping-mode .host-control-panel, body.host-ping-mode .host-control-panel * { cursor: pointer !important; }
+
+/* ---- host laser pointer (on everyone else's screen) ------------------ */
+.host-laser-dot {
+  position: fixed; left: 0; top: 0; z-index: 10060; pointer-events: none; display: none;
+  width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 18%, #ff2a2a 26% 55%, rgba(255, 42, 42, 0.35) 62%, rgba(255, 42, 42, 0) 72%);
+  box-shadow: 0 0 14px 6px rgba(255, 40, 40, 0.65);
+  transition: transform 70ms linear;
+  will-change: transform;
+}
+.host-laser-label { position: absolute; left: 22px; top: -4px; background: #ff2a2a; color: #fff; font: 700 11px/1 system-ui, sans-serif; padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+
+/* ---- host ping -------------------------------------------------------- */
+.host-ping-pulse { animation: host-ping-pulse 0.85s ease-out 3; outline: 4px solid #ffd633; outline-offset: 2px; position: relative; z-index: 5; }
+@keyframes host-ping-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 214, 51, 0.95); }
+  100% { box-shadow: 0 0 0 22px rgba(255, 214, 51, 0); }
+}
+.host-ping-ripple { position: fixed; z-index: 10055; pointer-events: none; width: 0; height: 0; }
+.host-ping-ripple::before, .host-ping-ripple::after {
+  content: ''; position: absolute; left: -40px; top: -40px; width: 80px; height: 80px; border-radius: 50%;
+  border: 4px solid #ffd633; animation: host-ping-ring 1.3s ease-out 2; opacity: 0;
+}
+.host-ping-ripple::after { animation-delay: 0.35s; }
+@keyframes host-ping-ring { 0% { transform: scale(0.2); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+.host-ping-label { position: absolute; left: 14px; top: -46px; background: #ffd633; color: #201a0a; font: 800 13px/1.2 system-ui, sans-serif; padding: 4px 8px; border-radius: 8px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45); }
+
+/* ---- phones ------------------------------------------------------------ */
+@media (max-width: 700px) {
+  .god-eye-panel { top: auto; bottom: 0; right: 0; width: 100vw; max-height: 48vh; }
+  .god-eye-toggle { margin-right: 8px; }
+  .god-eye-body { border-radius: 12px 12px 0 0; }
+  .host-control-panel { bottom: auto; top: 70px; left: 8px; width: min(280px, calc(100vw - 16px)); font-size: 13px; padding: 8px; }
+  .lobby-online-join-row .lobby-start-btn { flex: 1 1 100%; }
+}
+
+/* collapsible host panel (phones start folded) */
+.host-panel-collapsed { width: auto; padding: 4px; }
+.host-panel-expand { padding: 6px 10px; }
+.host-panel-min { background: transparent; border: 1px solid #4d5d80; color: #fff; border-radius: 6px; margin-left: 6px; padding: 0 7px; cursor: pointer; font-weight: 800; }
+@media (max-width: 700px) {
+  .host-control-panel.host-panel-collapsed { top: auto; bottom: 8px; left: 50%; transform: translateX(-50%); }
+  .god-eye-panel { pointer-events: none; }
+  .god-eye-panel > * { pointer-events: auto; }
 }

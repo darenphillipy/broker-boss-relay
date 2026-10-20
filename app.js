@@ -11,8 +11,27 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-13 (v68.26-six-rounds) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-19 (v68.28-host-mode) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
+// [v68.28] A non-playing host or a spectator has no seat. HUMAN_PLAYER_ID is
+// set to VIEWER_PLAYER_ID, which matches no player: every "is this mine?"
+// check is false (no turn prompts, no choice screens), and the few places
+// that read "my" player use VIEWER_PLACEHOLDER_PLAYER instead.
+const VIEWER_PLAYER_ID = '__viewer__';
+const VIEWER_PLACEHOLDER_PLAYER = Object.freeze({
+  timeMeeples: { active: [], staffInTraining: [], copycatMeeple: null },
+  wallet: { profitTokens: 0, priorityTokens: 0 },
+  roster: [],
+  hand: { actionCards: [], personalDrawPile: [], personalDiscardPile: [], maxHandSize: 0 },
+  tracks: {},
+  bankedBonusTokens: [],
+});
+function isViewer() {
+  return HUMAN_PLAYER_ID === VIEWER_PLAYER_ID;
+}
+function myRawPlayer() {
+  return (state && state.players && state.players[HUMAN_PLAYER_ID]) || VIEWER_PLACEHOLDER_PLAYER;
+}
 
 // [v68.18 UI] Engine error codes (e.g. NO_MATCHING_VALUE) are never shown
 // raw any more — uiMessages.js turns them into plain English.
@@ -370,7 +389,7 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
     dismissedInterruptKey = null;
     logLine('');
     showToast('');
-    const player = state.players[HUMAN_PLAYER_ID];
+    const player = myRawPlayer();
     const availableMeeples = player.timeMeeples.active.filter((m) => m.status === 'in_supply');
     pendingOvertimeManager = false;
     if (availableMeeples.length === 0) {
@@ -443,7 +462,7 @@ function handleSpaceClick(spaceId, preferredMeepleInstanceId = null) {
     return; // wrong phase, not your turn, or a choice is pending — clicking a space does nothing
   }
 
-  const player = state.players[HUMAN_PLAYER_ID];
+  const player = myRawPlayer();
   const space = vm.board.actionSpaces.find((s) => s.spaceId === spaceId);
   const meepleCost = (space && space.cost && space.cost.meepleCost) || 1;
 
@@ -2560,7 +2579,7 @@ function buildMilestoneChoiceBodyHtml(milestoneKey, vm, playerDash, dashboards) 
     // between this preview and the real submit) and let the player
     // make a genuine, informed choice instead of an automatic default.
     const drawCount = milestoneKey === 'SILICON_VALLEY_SWEEP' ? 4 : 1;
-    const rawPlayer = state.players[HUMAN_PLAYER_ID];
+    const rawPlayer = myRawPlayer();
     const previewIds = (rawPlayer.hand.personalDrawPile || []).slice(0, drawCount);
     if (previewIds.length === 0) {
       return '<p class="empty-hand-message">Your personal draw pile is empty — this milestone will be forfeited.</p>';
@@ -3527,6 +3546,7 @@ function render() {
     renderOverlay(overlay.modal, dashboards[HUMAN_PLAYER_ID], vm.board.openMarketActionCards, vm, dashboards);
     renderClientModal(dashboards[HUMAN_PLAYER_ID], vm);
   }
+  renderPhase2Layer(); // [v68.28] host / spectator layer
 }
 
 function buildClientModalOverlay() {
@@ -4189,7 +4209,7 @@ function renderHeader(vm) {
     const lines = vm.leaderboard.map((e) => `#${e.rank} ${vm.players[e.playerId].displayName} — ${e.finalScore} pts`);
     document.getElementById('leaderboard').textContent = lines.join('   |   ');
     document.getElementById('leaderboard').style.display = 'block';
-    if (!endGameSurveyCompleted) {
+    if (!endGameSurveyCompleted && !isViewer()) {
       // v=45: was called unconditionally here every render() tick — since
       // render() fires on essentially any state change (bot "thinking"
       // updates, multiplayer sync messages, etc.), this modal was being
@@ -4782,7 +4802,7 @@ function renderBoard(board, vm) {
   const container = document.getElementById('board-hubs');
   container.innerHTML = '';
 
-  const humanAvailableMeeples = state.players[HUMAN_PLAYER_ID].timeMeeples.active.filter((m) => m.status === 'in_supply').length;
+  const humanAvailableMeeples = myRawPlayer().timeMeeples.active.filter((m) => m.status === 'in_supply').length;
 
   Object.entries(board.hubs).forEach(([hubName, spaces]) => {
     if (spaces.length === 0) return;
@@ -4798,7 +4818,7 @@ function renderBoard(board, vm) {
       const meepleCost = (space.cost && space.cost.meepleCost) || 1;
       const profitCost = (space.cost && space.cost.profitTokens) || 0;
       const priorityCost = (space.cost && space.cost.priorityTokens) || 0;
-      const humanWallet = state.players[HUMAN_PLAYER_ID].wallet;
+      const humanWallet = myRawPlayer().wallet;
       const canAfford = humanWallet.profitTokens >= profitCost && humanWallet.priorityTokens >= priorityCost;
       // FIX: no real agents to coach meant the meeple/space cost was
       // still spent for a fallback (the Coach Token gets banked, not
@@ -4810,7 +4830,7 @@ function renderBoard(board, vm) {
       // condition four separate times.
       const isHireCoachWithNoAgents =
         space.spaceId === 'LDR_HIRE_COACH' &&
-        !(state.players[HUMAN_PLAYER_ID].roster || []).some((a) => !a.isVoided);
+        !(myRawPlayer().roster || []).some((a) => !a.isVoided);
       // [v68.22] The Lobbyist's own hub stays open for the player who blocked it.
       const boardSpace = state.board.actionSpaces.find((s) => s.spaceId === space.spaceId) || space;
       const ownLobbyistBlock = boardSpace.blockedByCatalogId === 'SPEC_3' && boardSpace.blockedByPlayerId === HUMAN_PLAYER_ID;
@@ -6378,6 +6398,18 @@ function renderLobby() {
   });
   document.getElementById('lobby-choice-offline-btn').addEventListener('click', renderOfflineLobbySetup);
   document.getElementById('lobby-choice-online-btn').addEventListener('click', renderOnlineLandingScreen);
+  // [v68.27] A saved online seat (e.g. the player left the rejoin screen,
+  // or the server was unreachable) can be rejoined from the main menu.
+  const saved = loadSessionCredentials();
+  if (saved) {
+    const box = lobbyEl.querySelector('.lobby-landing-box');
+    const row = document.createElement('div');
+    row.className = 'lobby-rejoin-row';
+    row.innerHTML = `<button type="button" id="lobby-rejoin-btn" class="lobby-landing-btn">🔄 Rejoin your game<br /><span class="lobby-landing-btn-sub">Room ${escapeAttr(saved.roomId)}</span></button><button type="button" id="lobby-forget-btn" class="connection-banner-btn">Forget this game</button>`;
+    box.appendChild(row);
+    document.getElementById('lobby-rejoin-btn').addEventListener('click', () => { attemptAutoReconnect(); });
+    document.getElementById('lobby-forget-btn').addEventListener('click', () => { clearSessionCredentials(); renderLobby(); });
+  }
 }
 
 /**
@@ -6517,6 +6549,9 @@ function patchEngineForNetworkMode() {
   if (localExecuteUserAction) return; // already patched
   localExecuteUserAction = BrokerBossEngine.executeUserAction;
   BrokerBossEngine.executeUserAction = function networkAwareExecuteUserAction(currentState, payload, options) {
+    if (multiplayerClient.isOnline && isViewer()) {
+      return { state: currentState, error: 'VIEWER_CANNOT_ACT', detail: null }; // [v68.28] host/spectator
+    }
     if (multiplayerClient.isOnline && multiplayerClient.ws && multiplayerClient.ws.readyState === WebSocket.OPEN) {
       multiplayerClient.ws.send(JSON.stringify({ type: 'GAME_ACTION', action: payload }));
       // [v68.20-a] The relay always answers an action (STATE_UPDATE or
@@ -6548,7 +6583,7 @@ function connectRelay(onOpen, isReconnectAttempt, mode) {
   ws.addEventListener('error', () => {
     // [v68.20-a] A mid-game resume attempt that fails is just one try — the
     // connection monitor schedules the next one from the 'close' event.
-    if (mode === 'resume') return;
+    if (mode === 'resume' || mode === 'boot') return;
     if (isReconnectAttempt) {
       // FIX: this used to only call showLobbyError(), which writes to
       // #online-lobby-error — an element that doesn't exist yet this
@@ -6569,6 +6604,9 @@ function connectRelay(onOpen, isReconnectAttempt, mode) {
     // [v68.20-a] Ignore sockets we've already replaced or deliberately dropped.
     if (ws.__abandoned || ws !== multiplayerClient.ws) return;
     if (mode === 'resume') { connectionMonitorAttemptFailed(); return; }
+    // [v68.27] a boot rejoin socket that closes before RECONNECTED: retry;
+    // once rejoined, a later drop is handled like any mid-game drop.
+    if (mode === 'boot' && bootRejoin.active) { bootRejoinFailed(); return; }
     if (multiplayerClient.isOnline) declareConnectionLost('socket closed');
   });
 
@@ -6660,9 +6698,7 @@ function attemptResumeNow() {
   if (Date.now() - connectionMonitor.lostAt > RECONNECT_GIVE_UP_MS) { connectionMonitor.status = 'failed'; showConnectionBanner('failed'); return; }
   connectionMonitor.attempt += 1;
   showConnectionBanner('lost');
-  connectRelay(() => {
-    multiplayerClient.ws.send(JSON.stringify({ type: 'RECONNECT_PLAYER', roomCode: multiplayerClient.roomCode, seatIndex: multiplayerClient.mySeatIndex, reconnectToken: multiplayerClient.reconnectToken }));
-  }, true, 'resume');
+  connectRelay(() => sendRejoinRoom(multiplayerClient.ws), true, 'resume');
 }
 
 function connectionMonitorAttemptFailed() {
@@ -6707,6 +6743,9 @@ function showConnectionBanner(kind) {
   } else if (kind === 'failed') {
     el.className = 'connection-banner connection-banner--failed';
     el.innerHTML = `<span>❌ Still can't reach the game server after 3 minutes.</span><button type="button" class="connection-banner-btn" id="connection-banner-retry-btn">Try Again</button>${backBtn}`;
+  } else if (kind === 'replaced') {
+    el.className = 'connection-banner connection-banner--failed';
+    el.innerHTML = `<span>📱 This game is now open in another tab or device.</span><button type="button" class="connection-banner-btn" id="connection-banner-takeover-btn">Play here instead</button>${backBtn}`;
   } else if (kind === 'room-gone') {
     el.className = 'connection-banner connection-banner--failed';
     el.innerHTML = `<span>❌ The game server restarted and this game room no longer exists, so this game can't be resumed.</span>${backBtn}`;
@@ -6717,6 +6756,8 @@ function showConnectionBanner(kind) {
   el.style.display = 'flex';
   const retry = document.getElementById('connection-banner-retry-btn');
   if (retry) retry.addEventListener('click', () => { connectionMonitor.status = 'reconnecting'; connectionMonitor.lostAt = Date.now(); connectionMonitor.attempt = 0; attemptResumeNow(); });
+  const takeover = document.getElementById('connection-banner-takeover-btn');
+  if (takeover) takeover.addEventListener('click', () => { connectionMonitor.status = 'reconnecting'; connectionMonitor.lostAt = Date.now(); connectionMonitor.attempt = 0; attemptResumeNow(); });
   const back = document.getElementById('connection-banner-lobby-btn');
   if (back) back.addEventListener('click', () => {
     el.style.display = 'none';
@@ -6730,6 +6771,354 @@ function showConnectionBanner(kind) {
   });
 }
 
+// [v68.27] Tell everyone at the table when a player drops, when a bot
+// covers for them, and when they're back.
+function announceSeatConnectionChanges(prevRoom, room) {
+  if (!prevRoom || !prevRoom.seats) return;
+  const seconds = Math.round(((room && room.reconnectWindowMs) || 60000) / 1000);
+  room.seats.forEach((seat) => {
+    const prev = prevRoom.seats[seat.seatIndex];
+    if (!prev || seat.seatIndex === multiplayerClient.mySeatIndex) return;
+    const name = (state && state.players && state.players[`p${seat.seatIndex + 1}`] && state.players[`p${seat.seatIndex + 1}`].displayName) || seat.displayName || `Player ${seat.seatIndex + 1}`;
+    let text = null;
+    if (seat.type === 'human' && seat.connectionStatus === 'disconnected' && prev.connectionStatus !== 'disconnected') {
+      text = `📡 ${name} lost connection. Their seat is saved; if they're not back in ${seconds}s a bot plays for them until they return.`;
+    } else if (seat.standIn && !prev.standIn) {
+      text = `🤖 A bot is playing for ${prev.displayName || name} until they reconnect.`;
+    } else if (seat.type === 'human' && seat.connectionStatus === 'connected' && (prev.connectionStatus === 'disconnected' || prev.standIn)) {
+      text = `✅ ${seat.displayName || name} is back in the game.`;
+    }
+    if (text) {
+      logLine(text);
+      showToast(text);
+      setTimeout(() => showToast(null), 6000);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// [v68.28] Phase 2 — Host / Spectator mode, live teaching tools, host game end.
+// Presentation only: every rule (who may point, ping or end the game, early
+// Final Scoring) is enforced by relay-server.js and the engine's
+// earlyGameEnd.js. This code just sends requests and draws what comes back.
+
+function myRole() {
+  return multiplayerClient.role || 'player';
+}
+function seatForRole(seatIndex, role) {
+  return role === 'host' && (seatIndex === null || seatIndex === undefined) ? 'host' : role;
+}
+// Viewers (presenter host, spectator) have no seat → VIEWER_PLAYER_ID.
+function playerIdForMe() {
+  const r = myRole();
+  if (r === 'spectator' || (r === 'host' && (multiplayerClient.mySeatIndex === null || multiplayerClient.mySeatIndex === undefined))) return VIEWER_PLAYER_ID;
+  return `p${multiplayerClient.mySeatIndex + 1}`;
+}
+function iAmHost() {
+  return !!(multiplayerClient.isOnline && multiplayerClient.isHost);
+}
+
+// ---- Table Overview ("god-eye") for the host and spectators ---------------
+// phones start with the overview folded away so the board stays visible
+const godEyeUi = { open: !(window.matchMedia && window.matchMedia('(max-width: 700px)').matches) };
+function cardNameOf(catalogId) {
+  const c = catalog && catalog.actionCards && catalog.actionCards[catalogId];
+  return c ? c.name : catalogId;
+}
+function agentNameOf(catalogId) {
+  const a = catalog && catalog.agentCards && catalog.agentCards[catalogId];
+  return a ? a.name : catalogId;
+}
+function renderGodEyePanel() {
+  let el = document.getElementById('god-eye-panel');
+  if (!isViewer() || !multiplayerClient.isOnline || !state || !state.players) {
+    if (el) el.style.display = 'none';
+    return;
+  }
+  if (!el) {
+    el = document.createElement('aside');
+    el.id = 'god-eye-panel';
+    el.className = 'god-eye-panel';
+    document.body.appendChild(el);
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('#god-eye-toggle-btn')) { godEyeUi.open = !godEyeUi.open; renderGodEyePanel(); }
+    });
+  }
+  el.style.display = '';
+  el.classList.toggle('god-eye-collapsed', !godEyeUi.open);
+  const room = multiplayerClient.lastRoom || {};
+  const showHands = myRole() === 'host' || !!room.spectatorsSeeHands;
+  const seats = (state.session && state.session.seats) || [];
+  const nameOf = (pid) => { const s = seats.find((x) => x.playerId === pid); return (s && s.displayName) || pid; };
+  const MS = BrokerBossEngine.MARKET_SHARE_TRACK_SPACES || [];
+  const rows = (state.phase.turnOrder || Object.keys(state.players)).map((pid) => {
+    const p = state.players[pid];
+    if (!p) return '';
+    const active = state.phase.activePlayerId === pid && state.phase.current === 'WORKER_PLACEMENT';
+    const inSupply = p.timeMeeples.active.filter((m) => m.status === 'in_supply').length;
+    const agents = p.roster.filter((r) => !r.isVoided);
+    const coaches = agents.reduce((n, r) => n + (r.coachTokens || 0), 0);
+    const loyal = agents.filter((r) => r.loyaltyToken && r.loyaltyToken.active).length;
+    const hand = p.hand.actionCards || [];
+    const handHtml = showHands
+      ? (hand.length ? hand.map((c) => `<span class="god-eye-chip" data-catalog-id="${escapeAttr(c.catalogId)}">${escapeAttr(cardNameOf(c.catalogId))}</span>`).join('') : '<span class="god-eye-dim">empty</span>')
+      : `<span class="god-eye-dim">${hand.length} card${hand.length === 1 ? '' : 's'} (hidden)</span>`;
+    const agentsHtml = agents.length ? agents.map((r) => `<span class="god-eye-chip god-eye-chip-agent" data-agent-instance-id="${escapeAttr(r.agentInstanceId)}">${escapeAttr(agentNameOf(r.catalogId))}${r.coachTokens ? ` 🎓${r.coachTokens}` : ''}${r.loyaltyToken && r.loyaltyToken.active ? ' ❤' : ''}</span>`).join('') : '<span class="god-eye-dim">none</span>';
+    const milestones = (p.milestonesClaimed || []).map((m) => (typeof m === 'string' ? m : m.key || m.milestoneKey || '')).filter(Boolean);
+    const specialists = (p.claimedSpecialistCards || []).map((c) => (c && (c.catalogId || c)) || '').filter(Boolean).map((id) => (catalog.specialistCards && catalog.specialistCards[id] ? catalog.specialistCards[id].name : id));
+    return `
+      <section class="god-eye-player${active ? ' god-eye-player-active' : ''}" data-player-id="${pid}" style="--ge-accent:${colorSafe(p.color)}">
+        <header><strong>${escapeAttr(nameOf(pid))}</strong>${p.isBot ? ' <span class="god-eye-dim">🤖</span>' : ''}${active ? ' <span class="god-eye-turn">▶ turn</span>' : ''}</header>
+        <div class="god-eye-stats">
+          <span title="Profit Tokens">💰 ${p.wallet.profitTokens} PT</span>
+          <span title="Priority Tokens">⭐ ${p.wallet.priorityTokens}</span>
+          <span title="Training / Technology / Recognition">T ${p.tracks.training.value} · Te ${p.tracks.technology.value} · R ${p.tracks.recognition.value}</span>
+          <span title="Offices">🏢 ${p.tracks.offices.unlocked}</span>
+          <span title="Market Share">📈 ${MS[p.tracks.marketShare.position] !== undefined ? MS[p.tracks.marketShare.position] : p.tracks.marketShare.position}</span>
+          <span title="Meeples in supply">⏳ ${inSupply} left</span>
+          <span title="Coaches / Loyalty">🎓 ${coaches} · ❤ ${loyal}</span>
+        </div>
+        <div class="god-eye-line"><em>Hand</em>${handHtml}</div>
+        <div class="god-eye-line"><em>Agents (${agents.length})</em>${agentsHtml}</div>
+        ${specialists.length ? `<div class="god-eye-line"><em>Specialists</em>${specialists.map((n) => `<span class="god-eye-chip">${escapeAttr(n)}</span>`).join('')}</div>` : ''}
+        ${milestones.length ? `<div class="god-eye-line"><em>Milestones</em>${milestones.map((n) => `<span class="god-eye-chip god-eye-chip-ms">${escapeAttr(String(n).replace(/_/g, ' '))}</span>`).join('')}</div>` : ''}
+      </section>`;
+  }).join('');
+  el.innerHTML = `
+    <button type="button" id="god-eye-toggle-btn" class="god-eye-toggle">${godEyeUi.open ? '▸ Hide overview' : '◂ Table overview'}</button>
+    <div class="god-eye-body">
+      <h3>Table Overview <span class="god-eye-dim">${showHands ? '— all hands visible' : '— hands hidden'}</span></h3>
+      ${rows}
+    </div>`;
+}
+
+// ---- role badge + early-end banner ----------------------------------------
+function renderViewerBadge() {
+  const info = document.querySelector('.header-info');
+  if (!info) return;
+  let badge = document.getElementById('viewer-role-badge');
+  const label = !multiplayerClient.isOnline ? null : myRole() === 'spectator' ? '👁 Spectating' : (myRole() === 'host' && isViewer()) ? '🎓 Hosting (not playing)' : null;
+  if (!label) { if (badge) badge.remove(); return; }
+  if (!badge) { badge = document.createElement('span'); badge.id = 'viewer-role-badge'; badge.className = 'viewer-role-badge'; info.prepend(badge); }
+  badge.textContent = label;
+}
+function renderEarlyEndBanner() {
+  let el = document.getElementById('early-end-banner');
+  const ee = state && state.phase && state.phase.earlyEnd;
+  const show = ee && ee.mode === 'after_round' && state.phase.current !== 'FINAL_SCORING';
+  if (!show) { if (el) el.style.display = 'none'; return; }
+  if (!el) { el = document.createElement('div'); el.id = 'early-end-banner'; el.className = 'early-end-banner'; const main = document.getElementById('game-main'); main.parentNode.insertBefore(el, main); }
+  el.style.display = '';
+  el.textContent = `⏱ Final round: the host is ending the game after Round ${ee.round}. Final Scoring follows right after.`;
+}
+
+// ---- host control panel ---------------------------------------------------
+const hostTools = { laser: false, ping: false, menu: false, lastSent: 0, raf: null, pendingMove: null, collapsed: !!(window.matchMedia && window.matchMedia('(max-width: 700px)').matches) };
+function renderHostPanel() {
+  let el = document.getElementById('host-control-panel');
+  if (!iAmHost() || !state || !state.phase) {
+    if (el) el.style.display = 'none';
+    if (hostTools.laser) setLaser(false);
+    if (hostTools.ping) setPingMode(false);
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'host-control-panel';
+    el.className = 'host-control-panel';
+    document.body.appendChild(el);
+    el.addEventListener('click', onHostPanelClick);
+    el.addEventListener('change', (e) => {
+      if (e.target.id === 'host-spectator-hands') multiplayerClient.ws.send(JSON.stringify({ type: 'HOST_SET_SPECTATOR_HANDS', visible: e.target.checked }));
+    });
+  }
+  el.style.display = '';
+  const over = state.phase.current === 'FINAL_SCORING';
+  const ee = state.phase.earlyEnd;
+  const pendingEnd = ee && ee.mode === 'after_round' && !over;
+  const room = multiplayerClient.lastRoom || {};
+  const spectators = (room.spectators || []).filter((s) => s.connectionStatus === 'connected').length;
+  el.classList.toggle('host-panel-collapsed', !!hostTools.collapsed);
+  if (hostTools.collapsed) {
+    el.innerHTML = `<button type="button" class="host-tool-btn host-panel-expand" id="host-panel-toggle-btn" title="Show host controls">🎓 Host${hostTools.laser ? ' · 🔴' : ''}${hostTools.ping ? ' · 📍' : ''}${pendingEnd ? ' · ⏱' : ''}</button>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="host-panel-title">🎓 Host Controls <span class="god-eye-dim">${spectators} watching <button type="button" class="host-panel-min" id="host-panel-toggle-btn" title="Fold the panel away">—</button></span></div>
+    <div class="host-panel-row">
+      <button type="button" class="host-tool-btn${hostTools.laser ? ' host-tool-on' : ''}" id="host-laser-btn" title="Show your pointer on everyone's screen">🔴 Laser ${hostTools.laser ? 'ON' : 'off'}</button>
+      <button type="button" class="host-tool-btn${hostTools.ping ? ' host-tool-on' : ''}" id="host-ping-btn" title="Click any space or card to make it pulse on everyone's screen">📍 Ping ${hostTools.ping ? 'ON' : 'off'}</button>
+    </div>
+    ${over ? '<div class="host-panel-note">Game over — final scores are on every screen.</div>' : pendingEnd
+      ? `<div class="host-panel-note">⏱ Ending after Round ${ee.round}.</div>
+         <div class="host-panel-row"><button type="button" class="host-tool-btn" id="host-end-now-btn">End Immediately</button><button type="button" class="host-tool-btn" id="host-end-cancel-btn">Cancel</button></div>`
+      : hostTools.menu
+        ? `<div class="host-end-menu">
+             <button type="button" class="host-tool-btn host-end-primary" id="host-end-after-round-btn">⏱ End Game After Current Round <span>(recommended — everyone finishes Round ${state.phase.round})</span></button>
+             <button type="button" class="host-tool-btn host-end-danger" id="host-end-now-btn">⛔ End Game Immediately <span>(score the board as it is now)</span></button>
+             <button type="button" class="host-tool-btn" id="host-end-menu-close-btn">Keep playing</button>
+           </div>`
+        : '<div class="host-panel-row"><button type="button" class="host-tool-btn" id="host-end-menu-btn">⏱ End Game…</button></div>'}
+    ${room.hostMode === 'presenter' ? `<label class="host-panel-check"><input type="checkbox" id="host-spectator-hands" ${room.spectatorsSeeHands ? 'checked' : ''}/> Spectators can see hands</label>` : ''}`;
+}
+function onHostPanelClick(e) {
+  const id = e.target.closest('button') && e.target.closest('button').id;
+  if (!id) return;
+  const send = (m) => multiplayerClient.ws && multiplayerClient.ws.readyState === WebSocket.OPEN && multiplayerClient.ws.send(JSON.stringify(m));
+  if (id === 'host-panel-toggle-btn') hostTools.collapsed = !hostTools.collapsed;
+  else if (id === 'host-laser-btn') setLaser(!hostTools.laser);
+  else if (id === 'host-ping-btn') setPingMode(!hostTools.ping);
+  else if (id === 'host-end-menu-btn') hostTools.menu = true;
+  else if (id === 'host-end-menu-close-btn') hostTools.menu = false;
+  else if (id === 'host-end-after-round-btn') { hostTools.menu = false; send({ type: 'HOST_END_GAME', mode: 'after_round' }); }
+  else if (id === 'host-end-now-btn') {
+    if (!window.confirm || window.__bbSkipConfirm || window.confirm('End the game right now and go to Final Scoring?')) { hostTools.menu = false; send({ type: 'HOST_END_GAME', mode: 'now' }); }
+  } else if (id === 'host-end-cancel-btn') send({ type: 'HOST_END_GAME', mode: 'cancel' });
+  renderHostPanel();
+}
+
+// ---- laser pointer ----------------------------------------------------------
+// Positions are sent as fractions (0-1). Over the board they're relative to
+// the board itself (#board-column, which already includes each viewer's own
+// zoom/pan), so the dot lands on the same space for everyone whatever their
+// screen size; elsewhere they're relative to the window.
+function pointerFractions(clientX, clientY) {
+  const col = document.getElementById('board-column');
+  const r = col && col.getBoundingClientRect();
+  if (r && r.width > 0 && clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+    return { area: 'board', x: (clientX - r.left) / r.width, y: (clientY - r.top) / r.height };
+  }
+  return { area: 'page', x: clientX / window.innerWidth, y: clientY / window.innerHeight };
+}
+function fractionsToClient(area, x, y) {
+  if (area === 'board') {
+    const col = document.getElementById('board-column');
+    const r = col && col.getBoundingClientRect();
+    if (r && r.width > 0) return { left: r.left + x * r.width, top: r.top + y * r.height };
+  }
+  return { left: x * window.innerWidth, top: y * window.innerHeight };
+}
+function sendPointer(visible, clientX, clientY) {
+  if (!multiplayerClient.ws || multiplayerClient.ws.readyState !== WebSocket.OPEN) return;
+  if (!visible) { multiplayerClient.ws.send(JSON.stringify({ type: 'HOST_POINTER', visible: false })); return; }
+  const f = pointerFractions(clientX, clientY);
+  multiplayerClient.ws.send(JSON.stringify({ type: 'HOST_POINTER', visible: true, ...f }));
+}
+function onHostPointerMove(e) {
+  hostTools.pendingMove = { x: e.clientX, y: e.clientY };
+  if (hostTools.raf) return;
+  hostTools.raf = requestAnimationFrame(() => {
+    hostTools.raf = null;
+    const now = Date.now();
+    if (now - hostTools.lastSent < 40) { hostTools.raf = requestAnimationFrame(() => { hostTools.raf = null; if (hostTools.pendingMove) sendPointer(true, hostTools.pendingMove.x, hostTools.pendingMove.y); hostTools.lastSent = Date.now(); }); return; }
+    hostTools.lastSent = now;
+    if (hostTools.pendingMove) sendPointer(true, hostTools.pendingMove.x, hostTools.pendingMove.y);
+  });
+}
+function onHostPointerLeave() { sendPointer(false); }
+function setLaser(on) {
+  hostTools.laser = on;
+  document.body.classList.toggle('host-laser-active', on);
+  if (on) {
+    window.addEventListener('pointermove', onHostPointerMove, { passive: true });
+    document.addEventListener('mouseleave', onHostPointerLeave);
+    window.addEventListener('blur', onHostPointerLeave);
+  } else {
+    window.removeEventListener('pointermove', onHostPointerMove);
+    document.removeEventListener('mouseleave', onHostPointerLeave);
+    window.removeEventListener('blur', onHostPointerLeave);
+    sendPointer(false);
+  }
+  renderHostPanel();
+}
+const remoteLaser = { el: null, hideTimer: null, last: null };
+function showRemoteLaser(msg) {
+  if (!remoteLaser.el) {
+    remoteLaser.el = document.createElement('div');
+    remoteLaser.el.className = 'host-laser-dot';
+    remoteLaser.el.innerHTML = '<span class="host-laser-label">Host</span>';
+    document.body.appendChild(remoteLaser.el);
+  }
+  clearTimeout(remoteLaser.hideTimer);
+  if (!msg.visible) { remoteLaser.el.style.display = 'none'; remoteLaser.last = null; return; }
+  remoteLaser.last = msg;
+  const p = fractionsToClient(msg.area, msg.x, msg.y);
+  remoteLaser.el.style.display = 'block';
+  remoteLaser.el.style.transform = `translate(${p.left}px, ${p.top}px)`;
+  remoteLaser.hideTimer = setTimeout(() => { remoteLaser.el.style.display = 'none'; }, 4000);
+}
+// keep the dot on the same board spot when this viewer scrolls/zooms/resizes
+window.addEventListener('scroll', () => { if (remoteLaser.last && remoteLaser.el.style.display !== 'none') showRemoteLaser(remoteLaser.last); }, { passive: true });
+window.addEventListener('resize', () => { if (remoteLaser.last && remoteLaser.el.style.display !== 'none') showRemoteLaser(remoteLaser.last); });
+
+// ---- element ping -----------------------------------------------------------
+const PING_ATTRS = ['data-space-id', 'data-ping-id', 'data-player-id', 'data-catalog-id', 'data-agent-instance-id', 'data-milestone-key'];
+const PING_SELECTOR = PING_ATTRS.map((a) => `[${a}]`).join(',');
+// Give stable ids to things that have none, so a ping finds the same element
+// on every screen (same state -> same layout order).
+function tagPingTargets() {
+  const tag = (sel, prefix) => document.querySelectorAll(sel).forEach((el, i) => { if (!el.hasAttribute('data-ping-id')) el.setAttribute('data-ping-id', `${prefix}:${i}`); });
+  tag('.milestone-slot', 'milestone');
+  tag('.agency-slot-action', 'market-card');
+  tag('.agency-slot-agent', 'market-agent');
+  tag('.specialist-card-panel', 'specialist');
+  tag('.active-shift-box', 'shift');
+  document.querySelectorAll('[data-tab-player-id]').forEach((el) => { if (!el.hasAttribute('data-ping-id')) el.setAttribute('data-ping-id', `player-tab:${el.dataset.tabPlayerId}`); });
+  const ri = document.getElementById('round-info'); if (ri) ri.setAttribute('data-ping-id', 'round-info');
+}
+function onHostPingClick(e) {
+  if (!hostTools.ping) return;
+  if (e.target.closest('#host-control-panel')) return; // the panel itself still works
+  e.preventDefault();
+  e.stopPropagation();
+  const el = e.target.closest(PING_SELECTOR);
+  let target = null, label = null;
+  if (el) {
+    const attr = PING_ATTRS.find((a) => el.hasAttribute(a));
+    target = { attr, value: el.getAttribute(attr) };
+    label = (el.getAttribute('title') || el.innerText || '').trim().split('\n')[0].slice(0, 60) || null;
+  }
+  const f = pointerFractions(e.clientX, e.clientY);
+  multiplayerClient.ws.send(JSON.stringify({ type: 'HOST_PING', target, label, ...f }));
+}
+function setPingMode(on) {
+  hostTools.ping = on;
+  document.body.classList.toggle('host-ping-mode', on);
+  if (on) document.addEventListener('click', onHostPingClick, true);
+  else document.removeEventListener('click', onHostPingClick, true);
+  renderHostPanel();
+}
+function showPing(msg) {
+  let pos = null;
+  if (msg.target) {
+    const els = [...document.querySelectorAll(`[${msg.target.attr}="${CSS.escape(msg.target.value)}"]`)].filter((n) => n.offsetParent !== null || n.getClientRects().length);
+    els.forEach((n) => {
+      n.classList.remove('host-ping-pulse');
+      void n.offsetWidth; // restart the animation
+      n.classList.add('host-ping-pulse');
+      setTimeout(() => n.classList.remove('host-ping-pulse'), 2600);
+    });
+    if (els[0]) { const r = els[0].getBoundingClientRect(); pos = { left: r.left + r.width / 2, top: r.top + r.height / 2 }; }
+  }
+  if (!pos && msg.x !== null && msg.y !== null) pos = fractionsToClient(msg.area, msg.x, msg.y);
+  if (!pos) return;
+  const ripple = document.createElement('div');
+  ripple.className = 'host-ping-ripple';
+  ripple.style.left = `${pos.left}px`;
+  ripple.style.top = `${pos.top}px`;
+  if (msg.label) ripple.innerHTML = `<span class="host-ping-label">📍 ${escapeAttr(msg.label)}</span>`;
+  document.body.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 2600);
+}
+
+function renderPhase2Layer() {
+  tagPingTargets();
+  renderViewerBadge();
+  renderEarlyEndBanner();
+  renderGodEyePanel();
+  renderHostPanel();
+}
+
 function showLobbyError(text) {
   const el = document.getElementById('online-lobby-error');
   if (el) el.textContent = text;
@@ -6738,16 +7127,12 @@ function showLobbyError(text) {
 function handleRelayMessage(msg) {
   switch (msg.type) {
     case 'ROOM_CREATED':
-      multiplayerClient.roomCode = msg.roomCode;
-      multiplayerClient.mySeatIndex = msg.seatIndex;
-      multiplayerClient.reconnectToken = msg.reconnectToken;
+      adoptSessionCredentials(msg);
       multiplayerClient.isHost = true;
       saveSessionCredentials();
       break;
     case 'ROOM_JOINED':
-      multiplayerClient.roomCode = msg.roomCode;
-      multiplayerClient.mySeatIndex = msg.seatIndex;
-      multiplayerClient.reconnectToken = msg.reconnectToken;
+      adoptSessionCredentials(msg);
       multiplayerClient.isHost = false;
       saveSessionCredentials();
       break;
@@ -6759,15 +7144,19 @@ function handleRelayMessage(msg) {
             ? 'That room is full.'
             : msg.reason === 'GAME_ALREADY_STARTED'
               ? 'That game has already started.'
-              : 'Could not join that room.'
+              : msg.reason === 'SPECTATORS_FULL'
+                ? 'That room has the maximum number of spectators.'
+                : 'Could not join that room.'
       );
       break;
     case 'ROOM_STATE':
+      if (msg.room.gameStarted) announceSeatConnectionChanges(multiplayerClient.lastRoom, msg.room);
       multiplayerClient.lastRoom = msg.room;
       // Once the game is live, ROOM_STATE broadcasts (seat status
       // changes, e.g. someone else disconnecting) shouldn't yank the
       // player back to a waiting-room screen mid-game.
       if (!msg.room.gameStarted) renderWaitingRoomScreen(msg.room);
+      else if (state && state.phase) renderPhase2Layer();
       break;
     case 'ROOM_CLOSED':
       // FIX: showLobbyError wrote to #online-lobby-error, which doesn't
@@ -6788,7 +7177,8 @@ function handleRelayMessage(msg) {
       renderLobby();
       break;
     case 'GAME_STARTED':
-      HUMAN_PLAYER_ID = `p${multiplayerClient.mySeatIndex + 1}`;
+      if (msg.role) multiplayerClient.role = msg.role;
+      HUMAN_PLAYER_ID = playerIdForMe(); // [v68.28] seatless host/spectator -> viewer
       multiplayerClient.isOnline = true;
       patchEngineForNetworkMode();
       state = msg.state;
@@ -6846,11 +7236,10 @@ function handleRelayMessage(msg) {
       break;
     case 'RECONNECTED':
       reconnectRetryCount = 0;
+      stopBootRejoin();
       if (msg.gameStarted) startConnectionMonitor();
       connectionMonitorResumed();
-      multiplayerClient.roomCode = msg.roomCode;
-      multiplayerClient.mySeatIndex = msg.seatIndex;
-      multiplayerClient.reconnectToken = msg.reconnectToken;
+      adoptSessionCredentials(msg);
       multiplayerClient.isOnline = msg.gameStarted;
       // FIX: previously hardcoded to false here, which permanently
       // stripped a host of their own host status (and all host
@@ -6863,7 +7252,7 @@ function handleRelayMessage(msg) {
       multiplayerClient.isHost = !!msg.isHost;
       saveSessionCredentials();
       if (msg.gameStarted) {
-        HUMAN_PLAYER_ID = `p${msg.seatIndex + 1}`;
+        HUMAN_PLAYER_ID = playerIdForMe(); // [v68.28]
         patchEngineForNetworkMode();
         // FORCE_STATE_SYNC (sent right after this by the server) carries
         // the actual state and triggers the real render — this message
@@ -6873,7 +7262,36 @@ function handleRelayMessage(msg) {
         document.getElementById('app-shell').style.display = 'block';
       }
       break;
+    // [v68.28] host teaching tools
+    case 'HOST_POINTER':
+      showRemoteLaser(msg);
+      break;
+    case 'HOST_PING':
+      showPing(msg);
+      break;
+    case 'HOST_END_GAME_UPDATE': {
+      const text = msg.mode === 'after_round'
+        ? `⏱ ${msg.hostName || 'The host'} is ending the game after this round. Round ${msg.round} is the final round.`
+        : msg.mode === 'now'
+          ? `⏱ ${msg.hostName || 'The host'} ended the game. Final scores are in!`
+          : `▶ ${msg.hostName || 'The host'} cancelled the early finish. The game continues.`;
+      logLine(text);
+      showToast(text);
+      setTimeout(() => showToast(null), 7000);
+      break;
+    }
+    case 'SESSION_REPLACED':
+      // [v68.27] This seat was opened in another tab/device. Stand down
+      // without auto-reconnecting (two tabs would keep stealing the seat
+      // from each other); the player can take it back here on purpose.
+      if (multiplayerClient.ws) multiplayerClient.ws.__abandoned = true;
+      stopBootRejoin();
+      clearTimeout(connectionMonitor.retryTimer);
+      connectionMonitor.status = 'replaced';
+      showConnectionBanner('replaced');
+      break;
     case 'RECONNECT_ERROR':
+      stopBootRejoin();
       // [v68.20-a] Mid-game resume: tell the player plainly instead of
       // silently dumping them on the lobby.
       if (connectionMonitor.status === 'reconnecting') {
@@ -6921,11 +7339,32 @@ function handleRelayMessage(msg) {
  */
 const ONLINE_SESSION_KEY = 'brokerBossOnlineSession';
 
+// [v68.27] The single place the client asks to rejoin its seat.
+// REJOIN_ROOM { roomId, playerToken } — seatIndex is a hint only.
+function sendRejoinRoom(ws) {
+  ws.send(JSON.stringify({ type: 'REJOIN_ROOM', roomId: multiplayerClient.roomCode, playerToken: multiplayerClient.reconnectToken, seatIndex: multiplayerClient.mySeatIndex }));
+}
+// Server messages carry playerToken/roomId (older servers: reconnectToken/roomCode).
+function adoptSessionCredentials(msg) {
+  multiplayerClient.roomCode = msg.roomId || msg.roomCode;
+  multiplayerClient.mySeatIndex = msg.seatIndex;
+  multiplayerClient.reconnectToken = msg.playerToken || msg.reconnectToken;
+  // [v68.28] 'player' (has a seat), 'host' (presenter: no seat) or 'spectator'
+  if (msg.role) multiplayerClient.role = msg.role;
+  else if (msg.seatIndex !== null && msg.seatIndex !== undefined) multiplayerClient.role = 'player';
+}
+
 function saveSessionCredentials() {
   try {
     window.localStorage.setItem(
       ONLINE_SESSION_KEY,
-      JSON.stringify({ roomCode: multiplayerClient.roomCode, seatIndex: multiplayerClient.mySeatIndex, reconnectToken: multiplayerClient.reconnectToken })
+      JSON.stringify({
+        roomId: multiplayerClient.roomCode,
+        playerToken: multiplayerClient.reconnectToken,
+        seatIndex: multiplayerClient.mySeatIndex,
+        role: multiplayerClient.role || 'player',
+        savedAt: Date.now(),
+      })
     );
   } catch (err) {
     // localStorage can throw in some privacy/incognito configurations —
@@ -6936,7 +7375,12 @@ function saveSessionCredentials() {
 function loadSessionCredentials() {
   try {
     const raw = window.localStorage.getItem(ONLINE_SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    // accept both the v68.27 shape and the older { roomCode, reconnectToken } one
+    const roomId = c.roomId || c.roomCode;
+    const playerToken = c.playerToken || c.reconnectToken;
+    return roomId && playerToken ? { roomId, playerToken, seatIndex: c.seatIndex, role: c.role || 'player' } : null;
   } catch (err) {
     return null;
   }
@@ -6964,16 +7408,70 @@ function clearSessionCredentials() {
  */
 function attemptAutoReconnect() {
   const creds = loadSessionCredentials();
-  if (!creds || !creds.roomCode || creds.seatIndex === undefined || !creds.reconnectToken) {
+  if (!creds) {
     return false;
   }
-  multiplayerClient.roomCode = creds.roomCode;
+  multiplayerClient.roomCode = creds.roomId;
   multiplayerClient.mySeatIndex = creds.seatIndex;
-  multiplayerClient.reconnectToken = creds.reconnectToken;
-  connectRelay(() => {
-    multiplayerClient.ws.send(JSON.stringify({ type: 'RECONNECT_PLAYER', roomCode: creds.roomCode, seatIndex: creds.seatIndex, reconnectToken: creds.reconnectToken }));
-  }, true);
+  multiplayerClient.reconnectToken = creds.playerToken;
+  multiplayerClient.role = creds.role || 'player';
+  bootRejoin.active = true;
+  bootRejoin.startedAt = Date.now();
+  bootRejoin.attempt = 0;
+  bootRejoinTry();
   return true;
+}
+
+// [v68.27] Boot-time rejoin. A refresh while the relay is restarting or
+// waking up (Render: up to about a minute) used to throw the saved session
+// away on the first failed connection. Now it keeps trying for 2 minutes
+// on a "Rejoining your game…" screen. The session is only forgotten when
+// the server says the room or seat is gone (RECONNECT_ERROR), or the
+// player chooses the main menu.
+const BOOT_REJOIN_GIVE_UP_MS = 120000;
+const bootRejoin = { active: false, startedAt: 0, attempt: 0, timer: null };
+
+function renderBootRejoinScreen(note) {
+  const lobbyEl = document.getElementById('lobby-screen');
+  lobbyEl.style.display = '';
+  document.getElementById('app-shell').style.display = 'none';
+  lobbyEl.innerHTML = `
+    <div class="lobby-box lobby-landing-box">
+      <h1>BROKER BOSS <span class="header-subtitle">ONLINE</span></h1>
+      <p class="lobby-subtitle">🔄 Rejoining your game (room <strong>${escapeAttr(multiplayerClient.roomCode || '')}</strong>)…</p>
+      <p class="lobby-subtitle">${note ? escapeAttr(note) : 'Hang tight — this can take up to a minute if the game server was asleep.'}</p>
+      <button type="button" id="boot-rejoin-menu-btn" class="lobby-landing-btn">Back to Main Menu</button>
+    </div>`;
+  document.getElementById('boot-rejoin-menu-btn').addEventListener('click', () => {
+    stopBootRejoin();
+    if (multiplayerClient.ws) { multiplayerClient.ws.__abandoned = true; try { multiplayerClient.ws.close(); } catch (err) { /* ignore */ } }
+    renderLobby(); // credentials are kept: the main menu offers "Rejoin"
+  });
+}
+
+function bootRejoinTry() {
+  if (!bootRejoin.active) return;
+  bootRejoin.attempt += 1;
+  renderBootRejoinScreen(bootRejoin.attempt > 1 ? `Still trying to reach the game server… (try ${bootRejoin.attempt})` : null);
+  connectRelay(() => sendRejoinRoom(multiplayerClient.ws), true, 'boot');
+}
+
+function bootRejoinFailed() {
+  if (!bootRejoin.active) return;
+  if (Date.now() - bootRejoin.startedAt > BOOT_REJOIN_GIVE_UP_MS) {
+    stopBootRejoin();
+    renderLobby();
+    showToast("Couldn't reach the game server. Your seat is saved — tap \"Rejoin your game\" to try again.");
+    setTimeout(() => showToast(null), 8000);
+    return;
+  }
+  clearTimeout(bootRejoin.timer);
+  bootRejoin.timer = setTimeout(bootRejoinTry, Math.min(2000 * bootRejoin.attempt, 10000));
+}
+
+function stopBootRejoin() {
+  bootRejoin.active = false;
+  clearTimeout(bootRejoin.timer);
 }
 
 let reconnectRetryCount = 0;
@@ -6996,9 +7494,7 @@ function scheduleReconnectRetry() {
   const delayMs = Math.min(1000 * 2 ** reconnectRetryCount, 15000);
   setTimeout(() => {
     if (multiplayerClient.ws && multiplayerClient.ws.readyState === WebSocket.OPEN) return; // already reconnected some other way
-    connectRelay(() => {
-      multiplayerClient.ws.send(JSON.stringify({ type: 'RECONNECT_PLAYER', roomCode: multiplayerClient.roomCode, seatIndex: multiplayerClient.mySeatIndex, reconnectToken: multiplayerClient.reconnectToken }));
-    }, true);
+    connectRelay(() => sendRejoinRoom(multiplayerClient.ws), true);
   }, delayMs);
 }
 
@@ -7044,9 +7540,11 @@ function renderOnlineLandingScreen() {
 
       <div class="lobby-online-actions">
         <button type="button" id="online-create-room-btn" class="lobby-start-btn">Create New Game Room</button>
+        <label class="lobby-host-only-row"><input type="checkbox" id="online-host-only" /> <span><strong>Host / Presenter mode</strong> — I'm running or teaching this game, not playing in it</span></label>
         <div class="lobby-online-join-row">
           <input type="text" id="online-room-code-input" class="lobby-text-input lobby-room-code-input" placeholder="ROOM CODE" maxlength="4" style="text-transform:uppercase" />
           <button type="button" id="online-join-room-btn" class="lobby-start-btn">Join Room</button>
+          <button type="button" id="online-spectate-room-btn" class="lobby-start-btn lobby-spectate-btn" title="Watch the game without a seat">👁 Join as Spectator</button>
         </div>
       </div>
     </div>
@@ -7066,7 +7564,8 @@ function renderOnlineLandingScreen() {
     showLobbyError('Connecting…');
     connectRelay(() => {
       showLobbyError('');
-      multiplayerClient.ws.send(JSON.stringify({ type: 'CREATE_ROOM', displayName }));
+      const hostOnly = !!(document.getElementById('online-host-only') || {}).checked;
+      multiplayerClient.ws.send(JSON.stringify({ type: 'CREATE_ROOM', displayName, hostMode: hostOnly ? 'presenter' : 'player' }));
     });
   });
 
@@ -7082,6 +7581,22 @@ function renderOnlineLandingScreen() {
     connectRelay(() => {
       showLobbyError('');
       multiplayerClient.ws.send(JSON.stringify({ type: 'JOIN_ROOM', roomCode, displayName }));
+    });
+  });
+
+  // [v68.28] watch a room without a seat (before or during the game)
+  document.getElementById('online-spectate-room-btn').addEventListener('click', () => {
+    const displayName = document.getElementById('online-display-name').value.trim() || 'Spectator';
+    const roomCode = document.getElementById('online-room-code-input').value.trim().toUpperCase();
+    if (roomCode.length !== 4) {
+      showLobbyError('Room codes are 4 characters.');
+      return;
+    }
+    multiplayerClient.displayName = displayName;
+    showLobbyError('Connecting…');
+    connectRelay(() => {
+      showLobbyError('');
+      multiplayerClient.ws.send(JSON.stringify({ type: 'JOIN_ROOM', roomCode, displayName, asSpectator: true }));
     });
   });
 }
@@ -7114,7 +7629,7 @@ function renderWaitingRoomScreen(room) {
       // the host to accidentally kick/overwrite a real connected player.
       // Only empty seats (open/locked/bot) are ever host-editable.
       const hostControls =
-        isHost && i !== 0 && !isOccupiedHuman
+        isHost && (i !== 0 || room.hostMode === 'presenter') && !isOccupiedHuman
           ? `
         <select class="waiting-seat-control" data-seat-index="${i}">
           <option value="open" ${seat.type === 'open' ? 'selected' : ''}>Open</option>
@@ -7157,9 +7672,12 @@ function renderWaitingRoomScreen(room) {
           : ''
       }
 
+      ${room.hostMode === 'presenter' ? `<p class="waiting-room-host-line">🎓 Hosted by <strong>${escapeAttr((room.host && room.host.displayName) || 'Host')}</strong> (not playing)${isHost ? ' — that\'s you' : ''}</p>` : ''}
       <div class="waiting-room-seats">${seatsHtml}</div>
+      ${(room.spectators || []).length ? `<p class="waiting-room-spectators">👁 Watching: ${(room.spectators || []).map((s) => escapeAttr(s.displayName) + (s.connectionStatus === 'connected' ? '' : ' (away)')).join(', ')}</p>` : ''}
+      ${multiplayerClient.role === 'spectator' ? '<p class="lobby-subtitle">👁 You are spectating — you will see the game as soon as the host starts it.</p>' : ''}
 
-      ${isHost ? `<button type="button" id="waiting-start-btn" class="lobby-start-btn" ${canStart ? '' : 'disabled'}>Start Game${allSeatsFilled ? '' : ' (fill all seats first)'}</button>` : '<p class="lobby-subtitle">Waiting for the host to start the game…</p>'}
+      ${isHost ? `<button type="button" id="waiting-start-btn" class="lobby-start-btn" ${canStart ? '' : 'disabled'}>Start Game${allSeatsFilled ? (humanCount >= 1 ? '' : ' (needs at least 1 player)') : ' (fill all seats first)'}</button>` : '<p class="lobby-subtitle">Waiting for the host to start the game…</p>'}
       <button type="button" id="waiting-leave-btn" class="lobby-back-btn waiting-leave-btn">← Leave Room</button>
     </div>
   `;
@@ -7209,6 +7727,9 @@ function leaveOnlineRoom() {
   multiplayerClient.reconnectToken = null;
   multiplayerClient.isHost = false;
   multiplayerClient.lastRoom = null;
+  multiplayerClient.role = 'player';
+  if (typeof setLaser === 'function' && hostTools.laser) setLaser(false);
+  if (typeof setPingMode === 'function' && hostTools.ping) setPingMode(false);
   clearSessionCredentials();
   renderLobby();
 }
