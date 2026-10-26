@@ -11,7 +11,7 @@
  * it never mutates game state directly.
  */
 
-console.log('[BB_DEBUG] app.js build 2026-10-19 (v68.28-host-mode) — loaded and executing.');
+console.log('[BB_DEBUG] app.js build 2026-10-23 (v68.29-board-limits) — loaded and executing.');
 let HUMAN_PLAYER_ID = 'p1';
 // [v68.28] A non-playing host or a spectator has no seat. HUMAN_PLAYER_ID is
 // set to VIEWER_PLAYER_ID, which matches no player: every "is this mine?"
@@ -3441,9 +3441,17 @@ function showShiftTriggerBanner(catalogId, cardName, cardDescription) {
   // want, same "click for inspection" intent as the card zoom system,
   // just applied to this element's own already-full-detail modal
   // rather than cloning it into a second overlay.
-  el.querySelector('.shift-reveal-box').addEventListener('click', () => {
+  el.querySelector('.shift-reveal-box').addEventListener('click', (e) => {
+    e.stopPropagation();
     clearTimeout(shiftRevealAutoDismissTimer);
   });
+  // [v68.29] clicking the dimmed area around the card closes it right away
+  // (it used to swallow the click for up to 6s, e.g. a Technology placement)
+  el.onclick = (e) => {
+    if (e.target !== el) return;
+    clearTimeout(shiftRevealAutoDismissTimer);
+    el.classList.remove('shift-reveal-visible');
+  };
   clearTimeout(shiftRevealAutoDismissTimer);
   shiftRevealAutoDismissTimer = setTimeout(() => {
     el.classList.remove('shift-reveal-visible');

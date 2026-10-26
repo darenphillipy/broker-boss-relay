@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-19 (v68.28-host-mode) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-23 (v68.29-board-limits) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -348,8 +348,10 @@ var BrokerBossEngine = (() => {
           spaceId: "GRW_RECRUIT_AGENT",
           hub: HUBS.GROWTH,
           type: SPACE_TYPES.DRAFT_OPEN_MARKET_AGENT,
-          capacity: 5,
-          // matches the 5-slot Open Market row itself — up to 5 recruits could theoretically be resolved in a single round if enough meeples/desks/matching values exist. FIXED (item 4): was capacity:1 (an unverified assumption on my part, not backed by explicit rulebook text), which incorrectly disabled the space after a single placement even when the market and desks had room.
+          capacity: 1,
+          capacityRule: "circles_2_to_6",
+          // printed circles 2,3,4,5,6 -> open circles = player count - 1 (v68.29)
+          // (was a fixed 5) matches the 5-slot Open Market row itself — up to 5 recruits could theoretically be resolved in a single round if enough meeples/desks/matching values exist. FIXED (item 4): was capacity:1 (an unverified assumption on my part, not backed by explicit rulebook text), which incorrectly disabled the space after a single placement even when the market and desks had room.
           cost: { profitTokens: 0 },
           // Brokerage Deficit Tax confirmed REMOVED (legacy rule) — recruiting is always $0 PT, gated only by matching-value count.
           reward: null,
@@ -361,6 +363,8 @@ var BrokerBossEngine = (() => {
           type: SPACE_TYPES.DRAFT_OPEN_MARKET_AGENT,
           // same deferred-choice shape as Recruit (choose a target post-placement)
           capacity: 1,
+          capacityRule: "circles_2_to_6",
+          // printed circles 2,3,4,5,6 -> open circles = player count - 1 (v68.29)
           cost: { profitTokens: 0 },
           // Poaching is confirmed $0 PT in the rulebook — no PT payment involved at all.
           reward: null,
@@ -372,6 +376,8 @@ var BrokerBossEngine = (() => {
           type: SPACE_TYPES.DRAFT_OPEN_MARKET_AGENT,
           // same deferred-choice shape (choose which own agent post-placement)
           capacity: 1,
+          capacityRule: "circles_2_to_6",
+          // printed circles 2,3,4,5,6 -> open circles = player count - 1 (v68.29)
           cost: { profitTokens: 0 },
           reward: null,
           notes: `This is the real "Growth Hub 'L' space" the rulebook names directly (confirmed via the Free Loyalty Token bonus-stack entry: "...bypasses the need to spend a worker action on the Growth Hub 'L' space"). FLAGGED_GAP: its own exact cost was not found in the retrievable text \u2014 $0 PT / 1 meeple used as a best-effort placement, matching this hub's other agent-actions. Requires ALL 3 matching values on the target agent. Resolved via agentRecruitmentReducer.js's placeLoyaltyToken / moveLoyaltyToken (built) \u2014 moveLoyaltyToken only once all 3 tokens are already deployed, placeLoyaltyToken otherwise.`
@@ -394,7 +400,8 @@ var BrokerBossEngine = (() => {
           capacity: 1,
           // fallback for a 2-player game (2-1=1) — real capacity is dynamic, see capacityScalesWithPlayerCount
           capacityScalesWithPlayerCount: true,
-          // official v2.0 18x18 board: numbered circles (2,3,4,5,6) mark this space's real capacity as (player count - 1)
+          capacityRule: "circles_2_to_6",
+          // printed circles 2,3,4,5,6 -> open circles = player count - 1 (v68.29)
           cost: { profitTokens: 4 },
           reward: { type: "meeple", destination: "staff_in_training" },
           notes: 'FLAGGED_GAP: new meeple enters "Staff in Training", not the active supply (available next round only) \u2014 existing awardMeeple() helper always creates meeples as in_supply/active, so this needs either a new helper or an awardMeeple param. Not resolved here.'
@@ -406,7 +413,8 @@ var BrokerBossEngine = (() => {
           capacity: 1,
           // fallback for a 2-player game (2-1=1) — real capacity is dynamic, see capacityScalesWithPlayerCount
           capacityScalesWithPlayerCount: true,
-          // official v2.0 18x18 board: numbered circles (2,3,4,5,6) mark this space's real capacity as (player count - 1)
+          capacityRule: "circles_2_to_6",
+          // printed circles 2,3,4,5,6 -> open circles = player count - 1 (v68.29)
           cost: { profitTokens: 4 },
           reward: { type: "office", amount: 1 },
           notes: "Fixed (item 4): office_expansion is now in IMMEDIATE_SPACE_TYPES and applyRewardConfig's 'office' case correctly calls adjustOfficeSlots. Previously silently no-opped \u2014 the player paid the cost and received nothing."
@@ -436,6 +444,8 @@ var BrokerBossEngine = (() => {
           hub: HUBS.OPERATIONS,
           type: SPACE_TYPES.SINGLE_VALUE_BOOST,
           capacity: null,
+          capacityRule: "two_x_plus_circles",
+          // printed "2x" circle + circles 2..6 -> open circles = player count (v68.29)
           cost: null,
           rewardByArrivalOrder: [2, 1, 1, 1, 1, 1],
           trackName: "training",
@@ -446,6 +456,8 @@ var BrokerBossEngine = (() => {
           hub: HUBS.OPERATIONS,
           type: SPACE_TYPES.SINGLE_VALUE_BOOST,
           capacity: null,
+          capacityRule: "two_x_plus_circles",
+          // printed "2x" circle + circles 2..6 -> open circles = player count (v68.29)
           cost: null,
           rewardByArrivalOrder: [2, 1, 1, 1, 1, 1],
           trackName: "technology",
@@ -456,6 +468,8 @@ var BrokerBossEngine = (() => {
           hub: HUBS.OPERATIONS,
           type: SPACE_TYPES.SINGLE_VALUE_BOOST,
           capacity: null,
+          capacityRule: "two_x_plus_circles",
+          // printed "2x" circle + circles 2..6 -> open circles = player count (v68.29)
           cost: null,
           rewardByArrivalOrder: [2, 1, 1, 1, 1, 1],
           trackName: "recognition",
@@ -596,6 +610,14 @@ var BrokerBossEngine = (() => {
         const agentDrawPile = shuffle([...nonStarterCatalogIds]);
         return { openMarketAgents, agentDrawPile };
       }
+      // [v68.29] The printed board sets each space's limit from the player
+      // count. This is the only place that formula lives.
+      function capacityForPlayerCount(template, playerCount) {
+        const pc = Number.isInteger(playerCount) ? playerCount : 2;
+        if (template.capacityRule === "circles_2_to_6" || template.capacityScalesWithPlayerCount) return Math.max(1, pc - 1);
+        if (template.capacityRule === "two_x_plus_circles") return 1 + Math.max(1, pc - 1);
+        return template.capacity;
+      }
       function loadBoardConfig(playerCount, options = {}) {
         if (!Number.isInteger(playerCount) || playerCount < MIN_PLAYERS || playerCount > MAX_PLAYERS) {
           throw new Error(
@@ -606,7 +628,8 @@ var BrokerBossEngine = (() => {
           spaceId: template.spaceId,
           hub: template.hub,
           type: template.type,
-          capacity: template.capacity,
+          capacity: capacityForPlayerCount(template, playerCount),
+          ...template.capacityRule ? { capacityRule: template.capacityRule } : {},
           ...template.capacityScalesWithPlayerCount ? { capacityScalesWithPlayerCount: true } : {},
           cost: template.cost ? { ...template.cost } : null,
           ...template.reward !== void 0 ? { reward: template.reward ? { ...template.reward } : null } : {},
@@ -635,6 +658,7 @@ var BrokerBossEngine = (() => {
         SPECIALIST_ROUNDS,
         buildMarketShareTrack,
         buildSpecialistDeck,
+        capacityForPlayerCount,
         loadBoardConfig
       };
     }
@@ -2538,7 +2562,7 @@ var BrokerBossEngine = (() => {
             return { ok: false, error: "OFFICES_AT_MAX", detail: { unlocked: offices.unlocked, max: offices.max } };
           }
         }
-        const effectiveCapacity = space.capacityScalesWithPlayerCount ? Math.max(1, (state.settings.playerCount || 2) - 1) : space.capacity;
+        const effectiveCapacity = require_boardConfigLoader().capacityForPlayerCount(space, state.settings.playerCount);
         if (effectiveCapacity !== null && space.occupiedBy.length >= effectiveCapacity) {
           const player = state.players[playerId];
           const allowsSharing = cardGrantsSpaceSharing(state, playerId, extra) || meepleIsCopycatBypass(player, meeple);
@@ -7801,7 +7825,12 @@ var BrokerBossEngine = (() => {
       function getSpaceRewardConfig(space, occupantOrder) {
         if (space.rewardByArrivalOrder) {
           const arrivalIndex = Math.max(0, occupantOrder - 1);
-          const amount = space.rewardByArrivalOrder[arrivalIndex] ?? 0;
+          // [v68.29] A meeple that arrives after the printed list runs out
+          // (Overtime Manager, Copycat, Liquidity Staff on a full row) still
+          // gets the last printed payout: Ops rows are "+1 after the first",
+          // Additional Profit is "5|4|3|3|3|3". It used to fall to 0.
+          const list = space.rewardByArrivalOrder;
+          const amount = arrivalIndex < list.length ? list[arrivalIndex] : (space.trackName || space.type === "flat_resource_grant" ? list[list.length - 1] : 0);
           if (space.trackName) {
             return { type: "track", trackName: space.trackName, amount };
           }
@@ -8128,7 +8157,8 @@ var BrokerBossEngine = (() => {
         }
         const { meeple, space, additionalMeeples } = validation;
         const player = state.players[playerId];
-        const overtimeManagerWasUsed = !!(extra && extra.useOvertimeManager) && space.capacity !== null && space.occupiedBy.length >= space.capacity;
+        const otCap = require_boardConfigLoader().capacityForPlayerCount(space, state.settings.playerCount);
+        const overtimeManagerWasUsed = !!(extra && extra.useOvertimeManager) && otCap !== null && space.occupiedBy.length >= otCap;
         const committedMeeples = [meeple, ...additionalMeeples];
         const committedInstanceIds = new Set(committedMeeples.map((m) => m.instanceId));
         const updatedActive = player.timeMeeples.active.map(
@@ -11630,7 +11660,7 @@ var BrokerBossEngine = (() => {
           // count via numbered circles (confirmed formula: playerCount - 1)
           // rather than a fixed number — this is the real capacity the UI
           // should show and gate against, not the static fallback field.
-          capacity: space.capacityScalesWithPlayerCount ? Math.max(1, (state.settings.playerCount || 2) - 1) : space.capacity,
+          capacity: require_boardConfigLoader().capacityForPlayerCount(space, state.settings.playerCount),
           cost: space.cost ? { ...space.cost } : null,
           reward: space.reward ? { ...space.reward } : null,
           occupiedBy: (space.occupiedBy || []).map((entry) => ({ ...entry })),
