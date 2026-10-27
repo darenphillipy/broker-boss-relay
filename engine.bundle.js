@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-23 (v68.29-board-limits) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-27 (v68.33-rulings) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -1271,6 +1271,11 @@ var BrokerBossEngine = (() => {
           if (targetEntry.loyaltyToken.active) {
             return { state, error: "TARGET_AGENT_LOYALED", detail: null };
           }
+          // [v68.30] Hostile Buyout brings an Agent into your brokerage, so like
+          // every hire it needs an open Office desk.
+          if (!require_agentRecruitmentReducer().hasOpenDesk(state, playerId)) {
+            return { state, error: "NO_OPEN_DESK", detail: { capacity: player.tracks.offices.unlocked } };
+          }
           let nextState = adjustWallet(state, playerId, -6, 0);
           nextState = {
             ...nextState,
@@ -1299,7 +1304,7 @@ var BrokerBossEngine = (() => {
           return { state, error: "PLAYER_NOT_FOUND", detail: { playerId } };
         }
         const tech = player.tracks.technology;
-        const hasAbility = tech.branch === "B" && tech.value >= 5 || player.ghostInTheMachineBorrowedBranch === "B";
+        const hasAbility = tech.branch === "B" && tech.value >= 5 || (player.ghostInTheMachineBorrowed && player.ghostInTheMachineBorrowed.trackName === "technology" && player.ghostInTheMachineBorrowed.branch === "B");
         if (!hasAbility) {
           return { state, error: "ABILITY_NOT_UNLOCKED", detail: null };
         }
@@ -1371,7 +1376,7 @@ var BrokerBossEngine = (() => {
           return { state, error: "PLAYER_NOT_FOUND", detail: { playerId } };
         }
         const recognition = player.tracks.recognition;
-        const hasAbility = recognition.branch === "A" && recognition.value >= 5;
+        const hasAbility = recognition.branch === "A" && recognition.value >= 5 || (player.ghostInTheMachineBorrowed && player.ghostInTheMachineBorrowed.trackName === "recognition" && player.ghostInTheMachineBorrowed.branch === "A");
         if (!hasAbility) {
           return { state, error: "ABILITY_NOT_UNLOCKED", detail: null };
         }
@@ -1702,12 +1707,9 @@ var BrokerBossEngine = (() => {
         // for +3 PT each, +6 PT total, matching the card's printed rules
         // text ("whenever you advance a track cube ONTO any odd number").
         if (delta > 0 && player.ventureCapitalistActive && newTrack.value !== track.value) {
-          const crossedBonusValues = [];
-          for (let v = track.value + 1; v <= newTrack.value; v += 1) {
-            if (VENTURE_CAPITALIST_BONUS_SPACES.has(v)) {
-              crossedBonusValues.push(v);
-            }
-          }
+          // [v68.33] Rulebook v5.2: only the space the cube LANDS on pays —
+          // leaping past an odd space (2 -> 4) pays nothing.
+          const crossedBonusValues = VENTURE_CAPITALIST_BONUS_SPACES.has(newTrack.value) ? [newTrack.value] : [];
           crossedBonusValues.forEach((value) => {
             nextState = adjustWallet(nextState, playerId, 3, 0);
             nextState = appendLog(nextState, {
@@ -1720,11 +1722,14 @@ var BrokerBossEngine = (() => {
             });
           });
         }
-        const bridgeActive = player.bridgedTracks && player.bridgedTracksUntilRound === state.phase.round && player.bridgedTracks.includes(trackName) && newTrack.value !== track.value;
+        // [v68.33] Rulebook v5.2: only a FORWARD move triggers the bridge, and the
+        // linked track gets a flat +1 (not the full amount). No recursion.
+        const bridgeActive = delta > 0 && player.bridgedTracks && player.bridgedTracksUntilRound === state.phase.round && player.bridgedTracks.includes(trackName) && newTrack.value !== track.value;
         if (bridgeActive) {
           const linkedTrackName = player.bridgedTracks.find((t) => t !== trackName);
           const linkedTrack = player.tracks[linkedTrackName];
-          const newLinkedTrack = { ...linkedTrack, value: clamp(linkedTrack.value + delta, 0, linkedTrack.max) };
+          const MERGER_BONUS = 1;
+          const newLinkedTrack = { ...linkedTrack, value: clamp(linkedTrack.value + MERGER_BONUS, 0, linkedTrack.max) };
           nextState = {
             ...nextState,
             players: {
@@ -1738,14 +1743,19 @@ var BrokerBossEngine = (() => {
           if (newLinkedTrack.value !== linkedTrack.value) {
             const { checkLevel10Milestone } = require_techTrackReducer();
             nextState = checkLevel10Milestone(nextState, playerId, linkedTrackName, linkedTrack.value, newLinkedTrack.value);
+            // the free +1 is a real landing for The Venture Capitalist
+            if (player.ventureCapitalistActive && VENTURE_CAPITALIST_BONUS_SPACES.has(newLinkedTrack.value)) {
+              nextState = adjustWallet(nextState, playerId, 3, 0);
+              nextState = appendLog(nextState, { type: "SPECIALIST_EFFECT_VENTURE_CAPITALIST_TRIGGERED", playerId, trackName: linkedTrackName, value: newLinkedTrack.value, totalPayout: 3, message: `${playerId}'s ${linkedTrackName} track lands on odd space ${newLinkedTrack.value} \u2014 The Venture Capitalist grants +3 PT.` });
+            }
           }
           nextState = appendLog(nextState, {
             type: "SPECIALIST_EFFECT_CORPORATE_MERGER_TRIGGERED",
             playerId,
             primaryTrack: trackName,
             linkedTrack: linkedTrackName,
-            delta,
-            message: `${playerId}'s Corporate Merger auto-advances ${linkedTrackName} by ${delta} to match ${trackName}.`
+            delta: newLinkedTrack.value - linkedTrack.value,
+            message: `${playerId}'s Corporate Merger gives ${linkedTrackName} a free +1 (bridged to ${trackName}).`
           });
         }
         if (newTrack.value !== track.value) {
@@ -2515,7 +2525,7 @@ var BrokerBossEngine = (() => {
           return false;
         }
         const tech = player.tracks.technology;
-        const hasAbility = tech.branch === "A" && tech.value >= 5 || player.ghostInTheMachineBorrowedBranch === "A";
+        const hasAbility = tech.branch === "A" && tech.value >= 5 || (player.ghostInTheMachineBorrowed && player.ghostInTheMachineBorrowed.trackName === "technology" && player.ghostInTheMachineBorrowed.branch === "A");
         const alreadyUsed = player.oncePerRoundAbilitiesUsed.includes("OVERTIME_MANAGER");
         const canAfford = player.wallet.profitTokens >= 2;
         return hasAbility && !alreadyUsed && canAfford;
@@ -3578,6 +3588,11 @@ var BrokerBossEngine = (() => {
             }
           }
         };
+        // [v68.31] the new meeple must get a turn this round, even if it was the
+        // player's last placement that played this card
+        if (nextState.phase.current === "WORKER_PLACEMENT" && !nextState.phase.playersWithMeeplesRemaining.includes(playerId)) {
+          nextState = { ...nextState, phase: { ...nextState.phase, playersWithMeeplesRemaining: [...nextState.phase.playersWithMeeplesRemaining, playerId] } };
+        }
         nextState = advanceMarketShareWithBonusCheck(nextState, playerId, 1);
         nextState = appendLog(nextState, {
           type: "ACTION_CARD_EFFECT_APPLIED",
@@ -5970,11 +5985,10 @@ var BrokerBossEngine = (() => {
             return;
           }
           nextState = adjustOfficeSlots(nextState, playerId, -1);
+          // [v68.31] the player chooses which Agent(s) to fire (betweenMovesChecks)
+          if (true) return;
           const updatedPlayer = nextState.players[playerId];
           const capacity = updatedPlayer.tracks.offices.unlocked;
-          if (updatedPlayer.roster.length <= capacity) {
-            return;
-          }
           const sortedByProfitAscending = [...updatedPlayer.roster].sort((a, b) => {
             const profitA = agentCatalog[a.catalogId] && agentCatalog[a.catalogId].totalProfit || 0;
             const profitB = agentCatalog[b.catalogId] && agentCatalog[b.catalogId].totalProfit || 0;
@@ -6109,6 +6123,10 @@ var BrokerBossEngine = (() => {
             ...nextState,
             players: { ...nextState.players, [playerId]: { ...player, hand: { ...player.hand, maxHandSize: Math.max(1, player.hand.maxHandSize - 1) } } }
           };
+          // [v68.31] Agent Conflict takes effect now: a player now over the
+          // lower limit chooses which card(s) to discard right away.
+          const over = player.hand.actionCards.length - Math.max(1, player.hand.maxHandSize - 1);
+          if (over > 0) nextState = require_betweenMovesChecks().addOwedLoss(nextState, playerId, { kind: "discard", count: over, outOfGame: false, source: "SFT_015" });
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
@@ -6130,11 +6148,8 @@ var BrokerBossEngine = (() => {
           nextState = adjustTrack(nextState, playerId, "recognition", -2);
           const updatedPlayer = nextState.players[playerId];
           if (updatedPlayer.hand.actionCards.length > 0) {
-            const [, ...rest] = updatedPlayer.hand.actionCards;
-            nextState = {
-              ...nextState,
-              players: { ...nextState.players, [playerId]: { ...updatedPlayer, hand: { ...updatedPlayer.hand, actionCards: rest } } }
-            };
+            // [v68.31] Fraud Investigation: the player picks the card
+            nextState = require_betweenMovesChecks().addOwedLoss(nextState, playerId, { kind: "discard", count: 1, outOfGame: true, source: "SFT_020" });
           }
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
@@ -6190,6 +6205,8 @@ var BrokerBossEngine = (() => {
       }
       function shrinkOfficeAndFireExcess(state, playerId, agentCatalog, reasonCatalogId) {
         let nextState = adjustOfficeSlots(state, playerId, -1);
+        // [v68.31] the player chooses which Agent(s) to fire (betweenMovesChecks)
+        if (true) return nextState;
         const updatedPlayer = nextState.players[playerId];
         const capacity = updatedPlayer.tracks.offices.unlocked;
         const activeRoster = updatedPlayer.roster.filter((r) => !r.isVoided);
@@ -6315,7 +6332,8 @@ var BrokerBossEngine = (() => {
         Object.keys(nextState.players).forEach((playerId) => {
           if (playerHasShiftImmunity(nextState.players[playerId])) return;
           nextState = adjustWallet(nextState, playerId, -5, 0);
-          nextState = fireAgentBySelector(nextState, playerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "totalProfit", "lowest"), "SFT_041");
+          // [v68.31] Fiduciary Breach: "Fire 1 agent" names no agent, so the player picks
+          nextState = require_betweenMovesChecks().addOwedLoss(nextState, playerId, { kind: "fire", count: 1, outOfGame: true, source: "SFT_041" });
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
@@ -6620,8 +6638,8 @@ var BrokerBossEngine = (() => {
         Object.keys(nextState.players).forEach((playerId) => {
           if (playerHasShiftImmunity(nextState.players[playerId])) return;
           const player = nextState.players[playerId];
-          const remaining = player.hand.actionCards.slice(2);
-          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...player, hand: { ...player.hand, actionCards: remaining } } } };
+          // [v68.31] Internal Audit: the player picks the 2 cards
+          nextState = require_betweenMovesChecks().addOwedLoss(nextState, playerId, { kind: "discard", count: 2, outOfGame: true, source: "SFT_050" });
           nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], additionalProfitBannedUntilRound: nextState.phase.round } } };
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
@@ -6632,10 +6650,8 @@ var BrokerBossEngine = (() => {
           const player = nextState.players[playerId];
           if (playerHasShiftImmunity(player)) return;
           nextState = adjustTrack(nextState, playerId, "technology", -4);
-          const currentPlayer = nextState.players[playerId];
-          const discarded = currentPlayer.hand.actionCards.slice(0, 2);
-          const remaining = currentPlayer.hand.actionCards.slice(2);
-          nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...currentPlayer, hand: { ...currentPlayer.hand, actionCards: remaining } } } };
+          // [v68.31] IT Security Breach: the player picks the 2 cards to trash
+          nextState = require_betweenMovesChecks().addOwedLoss(nextState, playerId, { kind: "discard", count: 2, outOfGame: true, source: "SFT_028" });
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
@@ -7095,87 +7111,57 @@ var BrokerBossEngine = (() => {
           effectOutcome: DEFAULT_OUTCOME
         };
       }
+      // [v68.33] Rulebook v5.2 §11: copy any opponent's Level 5 node on any track.
+      var GHOST_TRACKS = ["training", "technology", "recognition"];
+      var GHOST_L5_NAMES = { training: { A: "Aggressive Poacher", B: "Union Buster" }, technology: { A: "Overtime Manager", B: "Proprietary Algorithm" }, recognition: { A: "The Liquidation Engine", B: "Copycat Marketing" } };
+      function ghostCopyOptions(state, playerId) {
+        const out = [];
+        Object.keys(state.players).filter((pid) => pid !== playerId).forEach((pid) => {
+          GHOST_TRACKS.forEach((trackName) => {
+            const tr = state.players[pid].tracks[trackName];
+            const branches = tr.branch === "A" || tr.branch === "B" ? [tr.branch] : ["A", "B"];
+            branches.forEach((branch) => out.push({ targetPlayerId: pid, trackName, branch, value: tr.value, unlocked: tr.value >= 5 && tr.branch === branch, intended: tr.branch === branch, passiveName: GHOST_L5_NAMES[trackName][branch] }));
+          });
+        });
+        return out;
+      }
       function handleSpec11(state, context) {
         const { playerId, extra } = context;
-        const eligibleOpponents = Object.keys(state.players).filter((pid) => pid !== playerId).map((pid) => ({ playerId: pid, tech: state.players[pid].tracks.technology })).filter((p) => p.tech.branch === "A" || p.tech.branch === "B").filter((p) => p.tech.value >= 5);
+        const copyOptions = ghostCopyOptions(state, playerId);
         if (!extra || !extra.targetPlayerId) {
-          if (eligibleOpponents.length === 0) {
+          if (copyOptions.length === 0) {
             return {
-              state: appendLog(state, {
-                type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE_SKIPPED",
-                playerId,
-                catalogId: "SPEC_11",
-                reason: "NO_ELIGIBLE_OPPONENT",
-                message: `${playerId} claims The Ghost in the Machine, but no opponent has reached Level 5 Technology yet \u2014 nothing to copy.`
-              }),
+              state: appendLog(state, { type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE_SKIPPED", playerId, catalogId: "SPEC_11", reason: "NO_ELIGIBLE_OPPONENT", message: `${playerId} claims The Ghost in the Machine, but there is no opponent to copy.` }),
               effectOutcome: DEFAULT_OUTCOME
             };
           }
           return {
-            state: {
-              ...state,
-              phase: {
-                ...state.phase,
-                pendingInterrupt: {
-                  type: "ACTION_CARD_EFFECT_CHOICE",
-                  sourcePlayerId: playerId,
-                  data: {
-                    catalogId: "SPEC_11",
-                    choiceType: "SPEC11_COPY_TARGET",
-                    cardInstanceId: context.cardInstanceId,
-                    copyOptions: eligibleOpponents.map((o) => ({ targetPlayerId: o.playerId, branch: o.tech.branch, value: o.tech.value })),
-                    isSpecialistCardChoice: true
-                  }
-                }
-              }
-            },
+            state: { ...state, phase: { ...state.phase, pendingInterrupt: { type: "ACTION_CARD_EFFECT_CHOICE", sourcePlayerId: playerId, data: { catalogId: "SPEC_11", choiceType: "SPEC11_COPY_TARGET", cardInstanceId: context.cardInstanceId, copyOptions, isSpecialistCardChoice: true } } } },
             effectOutcome: DEFAULT_OUTCOME
           };
         }
-        const chosenTargetPlayerId = extra.targetPlayerId;
-        if (!chosenTargetPlayerId || !state.players[chosenTargetPlayerId]) {
-          return {
-            state: appendLog(state, {
-              type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE_SKIPPED",
-              playerId,
-              catalogId: "SPEC_11",
-              reason: "NO_ELIGIBLE_OPPONENT",
-              message: `${playerId} claims The Ghost in the Machine, but no opponent has reached Level 5 Technology yet \u2014 nothing to copy.`
-            }),
-            effectOutcome: DEFAULT_OUTCOME
-          };
+        const targetPlayerId = extra.targetPlayerId;
+        const trackName = GHOST_TRACKS.includes(extra.trackName) ? extra.trackName : "technology";
+        if (!state.players[targetPlayerId] || targetPlayerId === playerId) {
+          return { state: appendLog(state, { type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE_SKIPPED", playerId, catalogId: "SPEC_11", reason: "NO_ELIGIBLE_OPPONENT", message: `${playerId}'s Ghost in the Machine has no valid opponent to copy.` }), effectOutcome: DEFAULT_OUTCOME };
         }
-        const targetTech = state.players[chosenTargetPlayerId].tracks.technology;
-        if (targetTech.branch !== "A" && targetTech.branch !== "B") {
-          return {
-            state: appendLog(state, {
-              type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE_SKIPPED",
-              playerId,
-              catalogId: "SPEC_11",
-              reason: "TARGET_HAS_NO_LEVEL_5_BRANCH",
-              message: `${playerId}'s Ghost in the Machine target has not reached a Level 5 Technology branch \u2014 nothing to copy.`
-            }),
-            effectOutcome: DEFAULT_OUTCOME
-          };
+        const targetTrack = state.players[targetPlayerId].tracks[trackName];
+        // their chosen path wins; with no path yet the player picks the node's A or B text
+        const branch = targetTrack.branch === "A" || targetTrack.branch === "B" ? targetTrack.branch : (extra.branch === "B" ? "B" : "A");
+        const me = state.players[playerId];
+        let timeMeeples = me.timeMeeples;
+        if (trackName === "recognition" && branch === "B" && !timeMeeples.copycatMeeple) {
+          timeMeeples = { ...timeMeeples, copycatMeeple: { instanceId: `copycat-ghost-${playerId}`, status: "in_supply", locationSpaceId: null, ghostGranted: true } };
         }
         const nextState = {
           ...state,
           phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } },
-          players: {
-            ...state.players,
-            [playerId]: { ...state.players[playerId], ghostInTheMachineBorrowedBranch: targetTech.branch }
-          }
+          players: { ...state.players, [playerId]: { ...me, timeMeeples, ghostInTheMachineBorrowed: { trackName, branch, targetPlayerId }, ghostInTheMachineBorrowedBranch: trackName === "technology" ? branch : null } }
         };
-        const passiveName = targetTech.branch === "A" ? "Overtime Manager" : "Proprietary Algorithm";
+        const passiveName = GHOST_L5_NAMES[trackName][branch];
+        const how = targetTrack.value >= 5 && targetTrack.branch === branch ? "" : targetTrack.branch ? " (the power they are working toward)" : " (that node's baseline power — they have no path yet)";
         return {
-          state: appendLog(nextState, {
-            type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE",
-            playerId,
-            catalogId: "SPEC_11",
-            targetPlayerId: chosenTargetPlayerId,
-            copiedBranch: targetTech.branch,
-            message: `${playerId}'s Ghost in the Machine copies ${chosenTargetPlayerId}'s Technology-${targetTech.branch} passive (${passiveName}) for the rest of this round.`
-          }),
+          state: appendLog(nextState, { type: "SPECIALIST_EFFECT_GHOST_IN_THE_MACHINE", playerId, catalogId: "SPEC_11", targetPlayerId, trackName, copiedBranch: branch, message: `${playerId}'s Ghost in the Machine copies ${targetPlayerId}'s ${trackName} Level 5 ${passiveName}${how} for the rest of this round.` }),
           effectOutcome: DEFAULT_OUTCOME
         };
       }
@@ -7405,21 +7391,38 @@ var BrokerBossEngine = (() => {
         };
       }
       function handleSpec7(state, context) {
-        const { playerId } = context;
-        const defaultSpaceId = "OPS_TRAINING";
-        const nextState = { ...state, players: { ...state.players, [playerId]: { ...state.players[playerId], copiedActionSpaceId: defaultSpaceId, automationEngineerUsedThisRound: false } } };
+        const { playerId, extra } = context;
+        // [v68.32] rulebook v5.2: the player selects any standard Action Space
+        const standardSpaceIds = (state.board.actionSpaces || []).map((s) => s.spaceId).filter((id) => id !== "EXEC_SEARCH_SPECIALTY_AGENT_HUB");
+        const isBotPlayer = !!(state.players[playerId] && state.players[playerId].isBot);
+        if (!isBotPlayer && !(extra && extra.targetSpaceId && standardSpaceIds.includes(extra.targetSpaceId))) {
+          return {
+            state: { ...state, phase: { ...state.phase, pendingInterrupt: { type: "ACTION_CARD_EFFECT_CHOICE", sourcePlayerId: playerId, data: { catalogId: "SPEC_7", choiceType: "SPEC7_SPACE_TARGET", cardInstanceId: context.cardInstanceId, availableSpaceIds: standardSpaceIds, isSpecialistCardChoice: true } } } },
+            effectOutcome: DEFAULT_OUTCOME
+          };
+        }
+        const defaultSpaceId = extra && extra.targetSpaceId && standardSpaceIds.includes(extra.targetSpaceId) ? extra.targetSpaceId : "OPS_TRAINING";
+        const nextState = { ...state, players: { ...state.players, [playerId]: { ...state.players[playerId], copiedActionSpaceId: defaultSpaceId, automationEngineerUsedThisRound: false } }, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
         return {
           state: appendLog(nextState, { type: "SPECIALIST_EFFECT_AUTOMATION_ENGINEER_CLAIMED", playerId, catalogId: "SPEC_7", copiedSpaceId: defaultSpaceId, message: `${playerId} claims The Automation Engineer, copying ${defaultSpaceId} \u2014 use the Automation Engineer button on your dashboard once per round to trigger it with no Meeple spent (standard costs still apply).` }),
           effectOutcome: DEFAULT_OUTCOME
         };
       }
       function handleSpec10(state, context) {
-        const { playerId } = context;
+        const { playerId, extra } = context;
         const player = state.players[playerId];
         const trackNames = ["training", "technology", "recognition"];
+        // [v68.32] rulebook v5.2: the player places the meeple across two tracks of their choice
+        const picked = extra && Array.isArray(extra.bridgedTracks) ? [...new Set(extra.bridgedTracks)].filter((t) => trackNames.includes(t)) : [];
+        if (!player.isBot && picked.length !== 2) {
+          return {
+            state: { ...state, phase: { ...state.phase, pendingInterrupt: { type: "ACTION_CARD_EFFECT_CHOICE", sourcePlayerId: playerId, data: { catalogId: "SPEC_10", choiceType: "SPEC10_TRACK_PAIR", cardInstanceId: context.cardInstanceId, availableTracks: trackNames, isSpecialistCardChoice: true } } } },
+            effectOutcome: DEFAULT_OUTCOME
+          };
+        }
         const sorted = [...trackNames].sort((a, b) => player.tracks[a].value - player.tracks[b].value);
-        const bridged = sorted.slice(0, 2);
-        const nextState = { ...state, players: { ...state.players, [playerId]: { ...player, bridgedTracks: bridged, bridgedTracksUntilRound: state.phase.round } } };
+        const bridged = picked.length === 2 ? picked : sorted.slice(0, 2);
+        const nextState = { ...state, players: { ...state.players, [playerId]: { ...player, bridgedTracks: bridged, bridgedTracksUntilRound: state.phase.round } }, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
         return {
           state: appendLog(nextState, { type: "SPECIALIST_EFFECT_CORPORATE_MERGER", playerId, catalogId: "SPEC_10", bridgedTracks: bridged, message: `${playerId}'s Corporate Merger bridges ${bridged.join(" and ")} for the round \u2014 advancing either track now auto-advances the other.` }),
           effectOutcome: DEFAULT_OUTCOME
@@ -9447,7 +9450,7 @@ var BrokerBossEngine = (() => {
         return VALUE_DIMENSIONS.filter((dim) => playerTracks[dim].value >= Math.max(0, agentStats[dim] - requirementReduction)).length;
       }
       function getAggressivePoacherReduction(player) {
-        const hasAbility = player.tracks.training.branch === "A" && player.tracks.training.value >= 5;
+        const hasAbility = player.tracks.training.branch === "A" && player.tracks.training.value >= 5 || (player.ghostInTheMachineBorrowed && player.ghostInTheMachineBorrowed.trackName === "training" && player.ghostInTheMachineBorrowed.branch === "A");
         const alreadyUsed = player.oncePerRoundAbilitiesUsed.includes("AGGRESSIVE_POACHER");
         return hasAbility && !alreadyUsed ? 2 : 0;
       }
@@ -9653,6 +9656,8 @@ var BrokerBossEngine = (() => {
         return nextState;
       }
       function networkBreakSpaceCheck(state, playerId) {
+        // [v68.31] the player chooses which Agent(s) to fire (betweenMovesChecks)
+        if (true) return state;
         const player = state.players[playerId];
         const used = computeDeskUsage(state, playerId);
         const capacity = player.tracks.offices.unlocked;
@@ -10407,7 +10412,7 @@ var BrokerBossEngine = (() => {
           // tax of $0)". This reduction was previously never applied here —
           // meepleTaxSweep charged the full rate regardless of the player's
           // branch/level.
-          const unionBusterActive = taxPlayer.tracks.training.branch === "B" && taxPlayer.tracks.training.value >= 5;
+          const unionBusterActive = taxPlayer.tracks.training.branch === "B" && taxPlayer.tracks.training.value >= 5 || (taxPlayer.ghostInTheMachineBorrowed && taxPlayer.ghostInTheMachineBorrowed.trackName === "training" && taxPlayer.ghostInTheMachineBorrowed.branch === "B");
           const taxOwed = unionBusterActive ? Math.max(0, grossTaxOwed - UNION_BUSTER_TAX_REDUCTION) : grossTaxOwed;
           if (unionBusterActive && grossTaxOwed > 0) {
             nextState = appendLog(nextState, {
@@ -10903,7 +10908,10 @@ var BrokerBossEngine = (() => {
       function oncePerRoundAbilitiesResetSweep(state) {
         const updatedPlayers = {};
         Object.keys(state.players).forEach((playerId) => {
-          updatedPlayers[playerId] = { ...state.players[playerId], oncePerRoundAbilitiesUsed: [], ghostInTheMachineBorrowedBranch: null };
+          const pl = state.players[playerId];
+          const cc = pl.timeMeeples && pl.timeMeeples.copycatMeeple;
+          const timeMeeples = cc && cc.ghostGranted ? { ...pl.timeMeeples, copycatMeeple: null } : pl.timeMeeples;
+          updatedPlayers[playerId] = { ...pl, timeMeeples, oncePerRoundAbilitiesUsed: [], ghostInTheMachineBorrowedBranch: null, ghostInTheMachineBorrowed: null };
         });
         return { ...state, players: { ...state.players, ...updatedPlayers } };
       }
@@ -11036,7 +11044,7 @@ var BrokerBossEngine = (() => {
         }
         const recognition = player.tracks.recognition;
         let copycatOption = null;
-        if (recognition.branch === "B" && recognition.value >= 5 && player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.status === "in_supply") {
+        if ((recognition.branch === "B" && recognition.value >= 5 || (player.ghostInTheMachineBorrowed && player.ghostInTheMachineBorrowed.trackName === "recognition" && player.ghostInTheMachineBorrowed.branch === "B")) && player.timeMeeples.copycatMeeple && player.timeMeeples.copycatMeeple.status === "in_supply") {
           const validTargetSpaceIds = state.board.actionSpaces.filter(
             (space) => space.status !== "blocked" && space.status !== "void" && space.occupiedBy.some((entry) => entry.playerId !== playerId) && require_workerPlacementValidation().verifyShiftSpaceRestriction(state, playerId, space.spaceId).ok
           ).map((space) => space.spaceId);
@@ -11045,7 +11053,7 @@ var BrokerBossEngine = (() => {
           }
         }
         let liquidationOption = null;
-        if (recognition.branch === "A" && recognition.value >= 5 && !player.oncePerRoundAbilitiesUsed.includes("LIQUIDATION_ENGINE")) {
+        if ((recognition.branch === "A" && recognition.value >= 5 || (player.ghostInTheMachineBorrowed && player.ghostInTheMachineBorrowed.trackName === "recognition" && player.ghostInTheMachineBorrowed.branch === "A")) && !player.oncePerRoundAbilitiesUsed.includes("LIQUIDATION_ENGINE")) {
           const validTargetAgentInstanceIds = player.roster.filter((r) => !r.isVoided).map((r) => r.agentInstanceId);
           if (validTargetAgentInstanceIds.length > 0) {
             liquidationOption = { validTargetAgentInstanceIds };
@@ -11086,7 +11094,7 @@ var BrokerBossEngine = (() => {
       function executeCopycatEndOfRoundPlacement(state, playerId, targetSpaceId) {
         const player = state.players[playerId];
         const recognition = player.tracks.recognition;
-        if (!(recognition.branch === "B" && recognition.value >= 5)) {
+        if (!(recognition.branch === "B" && recognition.value >= 5 || (player.ghostInTheMachineBorrowed && player.ghostInTheMachineBorrowed.trackName === "recognition" && player.ghostInTheMachineBorrowed.branch === "B"))) {
           return { state, error: "COPYCAT_MARKETING_NOT_UNLOCKED", detail: null };
         }
         const copycatMeeple = player.timeMeeples.copycatMeeple;
@@ -11646,7 +11654,8 @@ var BrokerBossEngine = (() => {
             ventureCapitalistActive: !!player.ventureCapitalistActive,
             bridgedTracks: player.bridgedTracks ? [...player.bridgedTracks] : null,
             bridgedTracksUntilRound: player.bridgedTracksUntilRound || null,
-            ghostInTheMachineBorrowedBranch: player.ghostInTheMachineBorrowedBranch || null
+            ghostInTheMachineBorrowedBranch: player.ghostInTheMachineBorrowedBranch || null,
+            ghostInTheMachineBorrowed: player.ghostInTheMachineBorrowed ? { ...player.ghostInTheMachineBorrowed } : null
           };
         });
         return playerViewModels;
@@ -11796,7 +11805,7 @@ var BrokerBossEngine = (() => {
           // explicit-field pattern as drawnCatalogIds immediately above.
           stealOptions: Array.isArray(data.stealOptions) ? data.stealOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, cards: [...o.cards || []] })) : [],
           releaseOptions: Array.isArray(data.releaseOptions) ? data.releaseOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, agents: [...o.agents || []] })) : [],
-          copyOptions: Array.isArray(data.copyOptions) ? data.copyOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, branch: o.branch, value: o.value })) : [],
+          copyOptions: Array.isArray(data.copyOptions) ? data.copyOptions.map((o) => ({ targetPlayerId: o.targetPlayerId, trackName: o.trackName || "technology", branch: o.branch, value: o.value, unlocked: !!o.unlocked, intended: !!o.intended, passiveName: o.passiveName || null })) : [],
           // v=67 audit: SPEC_12 (The Shell Company) — same explicit-field
           // pattern as everything else in this block.
           stashOptions: Array.isArray(data.stashOptions) ? data.stashOptions.map((o) => ({ stashInstanceId: o.stashInstanceId, catalogId: o.catalogId })) : [],
@@ -12262,6 +12271,7 @@ var BrokerBossEngine = (() => {
           ventureCapitalistActive: !!player.ventureCapitalistActive,
           bridgedTracks: player.bridgedTracks ? [...player.bridgedTracks] : null,
           ghostInTheMachineBorrowedBranch: player.ghostInTheMachineBorrowedBranch || null,
+          ghostInTheMachineBorrowed: player.ghostInTheMachineBorrowed ? { ...player.ghostInTheMachineBorrowed } : null,
           copiedActionSpaceId: player.copiedActionSpaceId || null,
           automationEngineerUsedThisRound: !!player.automationEngineerUsedThisRound,
           executiveOverdriveAvailable: !!player.executiveOverdriveAvailable
@@ -13800,7 +13810,8 @@ var BrokerBossEngine = (() => {
           return { targetAgentInstanceId: candidate ? candidate.agentInstanceId : null };
         }
         if (choiceType === "S6_RECALL_MEEPLES") {
-          return { meepleInstanceIds: [] };
+          // [v68.33] every recalled meeple is another placement later this round
+          return { meepleInstanceIds: (interruptData && interruptData.candidateMeepleInstanceIds || []).slice(0, 3) };
         }
         if (choiceType === "CRM_UPDATE_RECRUIT") {
           const candidateCatalogIds = interruptData && interruptData.candidateCatalogIds || [];
@@ -13955,6 +13966,7 @@ var BrokerBossEngine = (() => {
               if (entry.isVoided) return;
               if (milestoneKey === "POISON_PILL" && (entry.onboardingToken.active || entry.loyaltyToken.active)) return;
               if (milestoneKey === "HOSTILE_BUYOUT" && entry.loyaltyToken.active) return;
+              if (milestoneKey === "HOSTILE_BUYOUT" && !require_agentRecruitmentReducer().hasOpenDesk(state, playerId)) return;
               candidates.push({ targetPlayerId: rivalId, targetAgentInstanceId: entry.agentInstanceId });
             });
           });
@@ -14096,6 +14108,16 @@ var BrokerBossEngine = (() => {
           }
           return { state: pickResult.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
+        // [v68.32] a seat that becomes a bot (stand-in) mid-choice still answers these
+        if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && (interrupt.data.choiceType === "SPEC7_SPACE_TARGET" || interrupt.data.choiceType === "SPEC10_TRACK_PAIR")) {
+          const isSpec7 = interrupt.data.choiceType === "SPEC7_SPACE_TARGET";
+          const tr = player.tracks;
+          const extra = isSpec7 ? { targetSpaceId: "OPS_TRAINING" } : { bridgedTracks: ["training", "technology", "recognition"].sort((a, b) => tr[a].value - tr[b].value).slice(0, 2) };
+          const loggedState2 = appendLog(state, { type: "BOT_INTERRUPT_DECISION_MADE", playerId: interrupt.sourcePlayerId, archetype: player.archetype || null, interruptType: interrupt.type, choiceType: interrupt.data.choiceType, extra, rationale: "SPECIALIST_DEFAULT" });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, extra);
+          if (result2.error) return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
+          return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
         if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC3_HUB_TARGET") {
           const availableHubs = interrupt.data.availableHubs || [];
           const spacesByHub = {};
@@ -14207,9 +14229,12 @@ var BrokerBossEngine = (() => {
         }
         if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && interrupt.data && interrupt.data.isSpecialistCardChoice && interrupt.data.choiceType === "SPEC11_COPY_TARGET") {
           const copyOptions = interrupt.data.copyOptions || [];
+          // [v68.33] any track; prefer an unlocked power, then the more useful ones
+          const GHOST_PREF = { "technology:A": 4, "recognition:A": 4, "training:A": 3, "training:B": 3, "technology:B": 3, "recognition:B": 2 };
+          const ghostScore = (o) => (o.unlocked ? 100 : o.intended ? 50 : 0) + (GHOST_PREF[(o.trackName || "technology") + ":" + o.branch] || 0) * 10 + (o.value || 0);
           let best = null;
           copyOptions.forEach((opt) => {
-            if (!best || opt.value > best.value) best = opt;
+            if (!best || ghostScore(opt) > ghostScore(best)) best = opt;
           });
           const targetPlayerId = best ? best.targetPlayerId : null;
           const loggedState2 = appendLog(state, {
@@ -14221,7 +14246,7 @@ var BrokerBossEngine = (() => {
             targetPlayerId,
             rationale: "HIGHEST_TECH_VALUE_DEFAULT"
           });
-          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, { targetPlayerId });
+          const result2 = resolveSpecialistCardEffectChoice(loggedState2, interrupt.sourcePlayerId, best ? { targetPlayerId, trackName: best.trackName, branch: best.branch } : { targetPlayerId });
           if (result2.error) {
             return { state: appendLog(loggedState2, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: result2.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: result2.error };
           }
@@ -14273,6 +14298,14 @@ var BrokerBossEngine = (() => {
           }
           return { state: result2.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
+        if (interrupt.type === "FORCED_LOSS_CHOICE") {
+          const bm = require_betweenMovesChecks();
+          const ids = bm.botChooseForcedLoss(state);
+          const logged = appendLog(state, { type: "BOT_INTERRUPT_DECISION_MADE", playerId: interrupt.sourcePlayerId, archetype: player.archetype || null, interruptType: interrupt.type, choiceType: "FORCED_LOSS_CHOICE", chosenInstanceIds: ids, rationale: interrupt.data.kind === "fire" ? "LOWEST_TOTAL_PROFIT" : "CHEAPEST_CARD" });
+          const r = bm.resolveForcedLoss(logged, interrupt.sourcePlayerId, ids);
+          if (r.error) return { state: appendLog(logged, { type: "BOT_INTERRUPT_RESOLUTION_FAILED", playerId: interrupt.sourcePlayerId, error: r.error }), action: "BOT_INTERRUPT_RESOLUTION_FAILED", reason: r.error };
+          return { state: r.state, action: "BOT_INTERRUPT_RESOLVED", reason: null };
+        }
         if (interrupt.type === "TRACK_BRANCH_CHOICE") {
           const { trackName } = interrupt.data;
           const chosenBranch = player.archetype === "Aggressive" ? "A" : "B";
@@ -14294,7 +14327,7 @@ var BrokerBossEngine = (() => {
               reason: result2.error
             };
           }
-          return { state: advanceIfInterruptClear(result2.state), action: "BOT_INTERRUPT_RESOLVED", reason: null };
+          return { state: interrupt.data && interrupt.data.catchUp ? result2.state : advanceIfInterruptClear(result2.state), action: "BOT_INTERRUPT_RESOLVED", reason: null };
         }
         if (interrupt.type === "TRACK_MILESTONE_CHOICE") {
           const { milestoneKey } = interrupt.data;
@@ -14319,7 +14352,7 @@ var BrokerBossEngine = (() => {
               // [v68.5 BUGFIX] The interrupt is force-cleared right above as
               // part of the auto-forfeit — advanceActivePlayer must run here
               // too, or the bot's turn never actually completes.
-              state: advanceActivePlayer(appendLog(clearedState, {
+              state: (interrupt.data && interrupt.data.catchUp ? (x) => x : advanceActivePlayer)(appendLog(clearedState, {
                 type: "TRACK_MILESTONE_FORFEITED",
                 playerId: interrupt.sourcePlayerId,
                 milestoneKey,
@@ -15253,6 +15286,192 @@ var BrokerBossEngine = (() => {
     }
   });
 
+  // trackPathCatchUp.js
+  // [v68.30] Makes the tech tree's Level 5 / 7 / 9 rules apply no matter WHAT
+  // raised the track (card, 2x Wild, specialist, Shift card, Ops row). Called
+  // by the game loop whenever no choice screen is open. Returns the same state
+  // object when there is nothing to do.
+  var require_trackPathCatchUp = __commonJS({
+    "trackPathCatchUp.js"(exports, module) {
+      var TRACKS = ["training", "technology", "recognition"];
+      function appendLog(state, entry) {
+        return { ...state, log: [...state.log, { seq: state.log.length + 1, timestamp: (/* @__PURE__ */ new Date()).toISOString(), round: state.phase.round, ...entry }] };
+      }
+      function orderedPlayerIds(state) {
+        const order = state.phase.turnOrder && state.phase.turnOrder.length ? state.phase.turnOrder : Object.keys(state.players);
+        return [...order, ...Object.keys(state.players).filter((p) => !order.includes(p))];
+      }
+      function catchUpTrackPaths(state) {
+        const intr = state.phase.pendingInterrupt;
+        if (intr && intr.type !== "NULL") return state;
+        if (state.phase.current === "FINAL_SCORING") return state;
+        const tech = require_techTrackReducer();
+        for (const pid of orderedPlayerIds(state)) {
+          const player = state.players[pid];
+          if (!player) continue;
+          for (const t of TRACKS) {
+            const tr = player.tracks[t];
+            // 1. reached Level 5 without choosing a path -> open the normal choice now
+            if (tr.value >= 5 && tr.branch === null) {
+              const next = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "TRACK_BRANCH_CHOICE", sourcePlayerId: pid, data: { trackName: t, catchUp: true } } } };
+              return appendLog(next, { type: "TRACK_BRANCH_CHOICE_CATCH_UP", playerId: pid, trackName: t, value: tr.value, message: `${pid}'s ${t} reached Level ${tr.value} — choose Path A or Path B.` });
+            }
+            // 2. path chosen, Level 7 / 9 passed but never claimed -> award it now
+            if (tr.branch !== null && tr.value >= 7 && [7, 9].some((lvl) => tr.value >= lvl && !tr.claimedMilestones.includes(lvl))) {
+              const after = tech.checkLevel7And9Milestones(state, pid, t, 5, tr.value);
+              if (after !== state) return appendLog(after, { type: "TRACK_MILESTONE_CATCH_UP", playerId: pid, trackName: t, value: tr.value, message: `${pid}'s ${t} Path ${tr.branch} ability for passing Level ${tr.value >= 9 ? "7/9" : "7"} is applied.` });
+            }
+          }
+        }
+        return state;
+      }
+      module.exports = { catchUpTrackPaths };
+    }
+  });
+
+  // betweenMovesChecks.js
+  // [v68.31] Everything the game must check BETWEEN moves, in one place:
+  //   1. forced losses (player's choice): owed discards/fires from cards, more
+  //      agents than desks, more cards than the hand limit
+  //   2. tech tree catch-up (Level 5 Path choice, Level 7/9 abilities)
+  // Every screen opened here carries data.catchUp = true; answering such a
+  // screen never passes the turn (it isn't anyone's turn action).
+  var require_betweenMovesChecks = __commonJS({
+    "betweenMovesChecks.js"(exports, module) {
+      var NULL_INTERRUPT = { type: "NULL", sourcePlayerId: null, data: {} };
+      function appendLog(state, entry) {
+        return { ...state, log: [...state.log, { seq: state.log.length + 1, timestamp: (/* @__PURE__ */ new Date()).toISOString(), round: state.phase.round, ...entry }] };
+      }
+      function agentCardsOf(state) { return state.cardCatalog && state.cardCatalog.agentCards || {}; }
+      function agentName(state, catalogId) { const a = agentCardsOf(state)[catalogId]; return a && a.name || catalogId; }
+      function cardName(state, catalogId) { const c = state.cardCatalog && state.cardCatalog.actionCards && state.cardCatalog.actionCards[catalogId]; return c && c.name || catalogId; }
+      function isFreeFollower(state, player, entry) {
+        const st = agentCardsOf(state)[entry.catalogId];
+        return !!(st && st.network && st.network.role === "follower" && st.network.influencerCatalogId && player.roster.some((x) => !x.isVoided && x.catalogId === st.network.influencerCatalogId));
+      }
+      function orderedPlayerIds(state) {
+        const order = state.phase.turnOrder && state.phase.turnOrder.length ? state.phase.turnOrder : Object.keys(state.players);
+        return [...order, ...Object.keys(state.players).filter((p) => !order.includes(p))];
+      }
+      // candidates the player may pick from for a given need
+      function candidatesFor(state, playerId, need) {
+        const player = state.players[playerId];
+        if (need.kind === "fire") {
+          // over the desk limit: firing a Follower who sits free with their Influencer frees no desk
+          return player.roster.filter((r) => !r.isVoided && !(need.reason === "DESK_LIMIT" && isFreeFollower(state, player, r))).map((r) => r.agentInstanceId);
+        }
+        return player.hand.actionCards.map((c) => c.instanceId);
+      }
+      // what (if anything) this player must give up right now
+      function needFor(state, playerId) {
+        const player = state.players[playerId];
+        if (!player) return null;
+        const owed = player.owedLosses || [];
+        if (owed.length) {
+          const o = owed[0];
+          const need = { kind: o.kind, count: o.count, reason: "OWED", outOfGame: o.outOfGame !== false, source: o.source || null };
+          need.count = Math.min(need.count, candidatesFor(state, playerId, need).length);
+          if (need.count <= 0) return { drop: true };
+          return need;
+        }
+        const { computeDeskUsage } = require_agentRecruitmentReducer();
+        const used = computeDeskUsage(state, playerId);
+        const desks = player.tracks.offices.unlocked;
+        if (used > desks) {
+          const need = { kind: "fire", count: used - desks, reason: "DESK_LIMIT", outOfGame: true, source: null };
+          need.count = Math.min(need.count, candidatesFor(state, playerId, need).length);
+          if (need.count > 0) return need;
+        }
+        // (hand size is a soft cap — v68.20 ruling — so it is NOT checked here;
+        // a card that LOWERS the hand limit records an owed discard instead)
+        return null;
+      }
+      function describe(state, playerId, need) {
+        const p = state.players[playerId];
+        if (need.reason === "DESK_LIMIT") return `${playerId} has more Agents than Office desks (${require_agentRecruitmentReducer().computeDeskUsage(state, playerId)} / ${p.tracks.offices.unlocked}) — choose ${need.count} Agent${need.count === 1 ? "" : "s"} to fire.`;
+        if (need.reason === "HAND_LIMIT") return `${playerId} is over the hand limit (${p.hand.actionCards.length} / ${p.hand.maxHandSize}) — choose ${need.count} card${need.count === 1 ? "" : "s"} to discard.`;
+        const what = need.kind === "fire" ? `fire ${need.count} Agent${need.count === 1 ? "" : "s"}` : `discard ${need.count} Action Card${need.count === 1 ? "" : "s"}`;
+        return `${playerId} must ${what}${need.outOfGame ? " out of the game" : ""}${need.source ? ` (${need.source})` : ""} — their choice.`;
+      }
+      function openForcedLossChoice(state) {
+        for (const pid of orderedPlayerIds(state)) {
+          const need = needFor(state, pid);
+          if (!need) continue;
+          if (need.drop) {
+            const p = state.players[pid];
+            return { ...state, players: { ...state.players, [pid]: { ...p, owedLosses: (p.owedLosses || []).slice(1) } } };
+          }
+          const data = { ...need, candidateIds: candidatesFor(state, pid, need) };
+          const next = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "FORCED_LOSS_CHOICE", sourcePlayerId: pid, data: { ...data, catchUp: true } } } };
+          return appendLog(next, { type: "FORCED_LOSS_REQUIRED", playerId: pid, kind: need.kind, count: need.count, reason: need.reason, source: need.source, message: describe(state, pid, need) });
+        }
+        return state;
+      }
+      function resolveForcedLoss(state, playerId, instanceIds) {
+        const intr = state.phase.pendingInterrupt;
+        if (!intr || intr.type !== "FORCED_LOSS_CHOICE" || intr.sourcePlayerId !== playerId) return { state, error: "NO_PENDING_FORCED_LOSS", detail: null };
+        const need = intr.data;
+        const ids = Array.isArray(instanceIds) ? [...new Set(instanceIds)] : [];
+        const allowed = new Set(candidatesFor(state, playerId, need));
+        if (ids.length !== need.count) return { state, error: "WRONG_SELECTION_COUNT", detail: { required: need.count, selected: ids.length } };
+        if (ids.some((id) => !allowed.has(id))) return { state, error: "INVALID_SELECTION", detail: { allowed: [...allowed] } };
+        const player = state.players[playerId];
+        let next = state;
+        let names;
+        if (need.kind === "fire") {
+          const gone = player.roster.filter((r) => ids.includes(r.agentInstanceId));
+          names = gone.map((r) => agentName(state, r.catalogId));
+          next = { ...next, players: { ...next.players, [playerId]: { ...player, roster: player.roster.filter((r) => !ids.includes(r.agentInstanceId)) } } };
+          gone.forEach((r) => { next = appendLog(next, { type: "AGENT_FIRED", playerId, agentInstanceId: r.agentInstanceId, agentCatalogId: r.catalogId, catalogId: need.source || null, playerChose: true, message: `${playerId} fires ${agentName(state, r.catalogId)}${need.source ? ` (${need.source})` : need.reason === "DESK_LIMIT" ? " to get back within the desk limit" : ""}.` }); });
+        } else {
+          const gone = player.hand.actionCards.filter((c) => ids.includes(c.instanceId));
+          names = gone.map((c) => cardName(state, c.catalogId));
+          const hand = { ...player.hand, actionCards: player.hand.actionCards.filter((c) => !ids.includes(c.instanceId)) };
+          if (!need.outOfGame) hand.personalDiscardPile = [...hand.personalDiscardPile, ...gone];
+          next = { ...next, players: { ...next.players, [playerId]: { ...player, hand } } };
+        }
+        if (need.reason === "OWED") {
+          const p = next.players[playerId];
+          next = { ...next, players: { ...next.players, [playerId]: { ...p, owedLosses: (p.owedLosses || []).slice(1) } } };
+        }
+        next = { ...next, phase: { ...next.phase, pendingInterrupt: NULL_INTERRUPT } };
+        next = appendLog(next, { type: "FORCED_LOSS_RESOLVED", playerId, kind: need.kind, instanceIds: ids, reason: need.reason, source: need.source, message: `${playerId} ${need.kind === "fire" ? "fires" : "discards"} ${names.join(", ")}${need.outOfGame && need.kind === "discard" ? " out of the game" : ""}.` });
+        return { state: next, error: null, detail: null };
+      }
+      // bots: lowest Total Profit agents (Loyalty / new hires last), cheapest cards
+      function botChooseForcedLoss(state) {
+        const intr = state.phase.pendingInterrupt;
+        const need = intr.data; const pid = intr.sourcePlayerId; const player = state.players[pid];
+        const allowed = new Set(candidatesFor(state, pid, need));
+        if (need.kind === "fire") {
+          const cards = agentCardsOf(state);
+          const rank = (r) => (r.loyaltyToken && r.loyaltyToken.active ? 2 : 0) + (r.onboardingToken && r.onboardingToken.active ? 1 : 0);
+          return player.roster.filter((r) => allowed.has(r.agentInstanceId)).sort((a, b) => rank(a) - rank(b) || ((cards[a.catalogId] || {}).totalProfit || 0) - ((cards[b.catalogId] || {}).totalProfit || 0)).slice(0, need.count).map((r) => r.agentInstanceId);
+        }
+        const ac = state.cardCatalog && state.cardCatalog.actionCards || {};
+        return player.hand.actionCards.filter((c) => allowed.has(c.instanceId)).sort((a, b) => ((ac[a.catalogId] || {}).cost || 0) - ((ac[b.catalogId] || {}).cost || 0)).slice(0, need.count).map((c) => c.instanceId);
+      }
+      // the single entry point the game loop calls
+      function runBetweenMovesChecks(state) {
+        const intr = state.phase.pendingInterrupt;
+        if (intr && intr.type !== "NULL") return state;
+        if (state.phase.current === "FINAL_SCORING") return state;
+        const losses = openForcedLossChoice(state);
+        if (losses !== state) return losses;
+        const paths = require_trackPathCatchUp().catchUpTrackPaths(state);
+        // tag the screen so answering it does not pass anyone's turn
+        if (paths !== state && paths.phase.pendingInterrupt && paths.phase.pendingInterrupt.type !== "NULL") return { ...paths, phase: { ...paths.phase, pendingInterrupt: { ...paths.phase.pendingInterrupt, data: { ...paths.phase.pendingInterrupt.data, catchUp: true } } } };
+        return paths;
+      }
+      function addOwedLoss(state, playerId, loss) {
+        const p = state.players[playerId];
+        if (!p) return state;
+        return { ...state, players: { ...state.players, [playerId]: { ...p, owedLosses: [...(p.owedLosses || []), loss] } } };
+      }
+      module.exports = { runBetweenMovesChecks, resolveForcedLoss, botChooseForcedLoss, addOwedLoss, needFor };
+    }
+  });
+
   // gameLoopController.js
   var require_gameLoopController = __commonJS({
     "gameLoopController.js"(exports, module) {
@@ -15428,6 +15647,13 @@ var BrokerBossEngine = (() => {
             const result = resolveDualTrackChoice(state, userIntent.playerId, userIntent.trackA, userIntent.trackB);
             return { state: result.state, error: result.error, detail: result.detail };
           }
+          case "RESOLVE_FORCED_LOSS": {
+            if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
+              return { state, error: "INVALID_PLAYER_ID", detail: null };
+            }
+            const result = require_betweenMovesChecks().resolveForcedLoss(state, userIntent.playerId, userIntent.instanceIds);
+            return { state: result.state, error: result.error, detail: result.detail };
+          }
           case "RESOLVE_TRACK_BRANCH_CHOICE": {
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
@@ -15436,7 +15662,9 @@ var BrokerBossEngine = (() => {
               return { state, error: "INVALID_BRANCH_CHOICE_PARAMS", detail: null };
             }
             const result = resolveTrackBranchChoice(state, userIntent.playerId, userIntent.trackName, userIntent.chosenBranch);
-            return { state: result.error ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
+            // [v68.31] a between-moves (catch-up) screen is not a turn action
+            const wasCatchUp = !!(state.phase.pendingInterrupt && state.phase.pendingInterrupt.data && state.phase.pendingInterrupt.data.catchUp);
+            return { state: result.error ? result.state : wasCatchUp ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
           }
           case "ACKNOWLEDGE_SHIFT_CARD": {
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
@@ -15518,18 +15746,20 @@ var BrokerBossEngine = (() => {
             return { state: result.state, error: result.error, detail: result.detail };
           }
           case "RESOLVE_TRACK_MILESTONE_CHOICE": {
+            const msCatchUp = !!(state.phase.pendingInterrupt && state.phase.pendingInterrupt.data && state.phase.pendingInterrupt.data.catchUp);
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = resolveTargetedMilestone(state, userIntent.playerId, userIntent.options || {});
-            return { state: result.error ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
+            return { state: result.error ? result.state : msCatchUp ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
           }
           case "FORFEIT_TRACK_MILESTONE": {
+            const msCatchUp2 = !!(state.phase.pendingInterrupt && state.phase.pendingInterrupt.data && state.phase.pendingInterrupt.data.catchUp);
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
               return { state, error: "INVALID_PLAYER_ID", detail: null };
             }
             const result = forfeitTargetedMilestone(state, userIntent.playerId);
-            return { state: result.error ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
+            return { state: result.error ? result.state : msCatchUp2 ? result.state : advanceIfInterruptClear(result.state), error: result.error, detail: result.detail };
           }
           case "DEPLOY_BANKED_BONUS_TOKEN": {
             if (typeof userIntent.playerId !== "string" || userIntent.playerId.length === 0) {
@@ -15701,6 +15931,12 @@ var BrokerBossEngine = (() => {
               if (answered.changed) { current = answered.state; continue; }
               return { state: current, settled: true, reason: "WAITING_ON_HUMAN_SHIFT_CHOICE" };
             }
+            // [v68.30] tech tree: Level 5 path choice / Level 7-9 abilities for
+            // any track raise that didn't go through an Operations row.
+            if (!interrupt || interrupt.type === "NULL") {
+              const caught = require_betweenMovesChecks().runBetweenMovesChecks(current);
+              if (caught !== current) { current = caught; continue; }
+            }
             if (interrupt && interrupt.type !== "NULL") {
               const owner = current.players[interrupt.sourcePlayerId];
               if (!owner || !owner.isBot) {
@@ -15759,6 +15995,10 @@ var BrokerBossEngine = (() => {
               const result = triggerBotTurnIfActive(current);
               current = result.state;
               continue;
+            }
+            {
+              const caught = require_betweenMovesChecks().runBetweenMovesChecks(current);
+              if (caught !== current) { current = caught; continue; }
             }
             const nextTechBonusPlayerId = getNextUnprocessedTechBonusPlayerId(current);
             if (nextTechBonusPlayerId === null) {
