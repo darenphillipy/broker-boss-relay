@@ -1,4 +1,4 @@
-console.log('[BB_DEBUG] engine.bundle.js build 2026-10-27 (v68.33-rulings) — loaded and executing.');
+console.log('[BB_DEBUG] engine.bundle.js build 2026-10-27 (v68.38-takeover-deck) — loaded and executing.');
 var BrokerBossEngine = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -2549,6 +2549,13 @@ var BrokerBossEngine = (() => {
           if (player.openMarketRecruitBannedUntilRound === round) return deny("SFT_023");
         }
         if (spaceId === "LDR_HIRE_STAFF" && player.hireStaffBannedUntilRound === round) return deny("SFT_045");
+        // [v68.37] rulebook: "up to a maximum of 6 time meeples" — active (in supply, placed
+        // this round, disabled) + Staff in Training. Refused before any cost is paid.
+        if (spaceId === "LDR_HIRE_STAFF" && player.timeMeeples) {
+          const workers = (player.timeMeeples.active || []).length + (player.timeMeeples.staffInTraining || []).length;
+          const max = player.timeMeeples.maxAllowed || 6;
+          if (workers >= max) return { ok: false, error: "MAX_STAFF_REACHED", detail: { spaceId, workers, max } };
+        }
         if (spaceId === "EXEC_ADDITIONAL_PROFIT" && player.additionalProfitBannedUntilRound === round) return deny("SFT_050");
         if (SHIFT_TRACK_SPACE_IDS.has(spaceId) && player.trackIncreasesBannedUntilRound === round) return deny("SFT_049");
         return { ok: true };
@@ -3140,18 +3147,11 @@ var BrokerBossEngine = (() => {
       function localRemoveAgentFromMarketAndRefill(state, agentCatalogId) {
         const market = state.board.openMarketAgents || [];
         const remaining = market.filter((a) => a.catalogId !== agentCatalogId);
-        const drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
-        const refillCount = Math.min(1, drawPile.length);
-        const refilled = drawPile.slice(0, refillCount).map((catalogId) => ({ catalogId }));
-        const newDrawPile = drawPile.slice(refillCount);
-        return {
-          ...state,
-          board: {
-            ...state.board,
-            openMarketAgents: [...refilled, ...remaining],
-            decks: { ...state.board.decks, agentDrawPile: newDrawPile }
-          }
-        };
+        // [v68.38] reshuffle the Agent discard pile when the deck is empty
+        if (remaining.length >= 5) return { ...state, board: { ...state.board, openMarketAgents: remaining } };
+        const drawn = require_agentRecruitmentReducer().drawOneAgentForMarket(state);
+        const refilled = drawn.catalogId ? [{ catalogId: drawn.catalogId }] : [];
+        return { ...drawn.state, board: { ...drawn.state.board, openMarketAgents: [...refilled, ...remaining] } };
       }
       function handleGrw004(state, context) {
         const { playerId, cardInstanceId, extra } = context;
@@ -5353,23 +5353,40 @@ var BrokerBossEngine = (() => {
         const nextState = fireAgentBySelector(state, targetPlayerId, (roster, cat) => pickRosterExtremeBy(roster, cat, "training", "lowest"), "INF_114");
         return { state: appendLog(nextState, { type: "ACTION_CARD_EFFECT_DISBANDING_AGENCY", playerId, catalogId: "INF_114", targetPlayerId, usedDefaultTarget, message: `${playerId}'s Disbanding Agency fires ${targetPlayerId}'s lowest-skill Agent.` }), effectOutcome: DEFAULT_OUTCOME };
       }
+      // [v68.38] Daren 2026-11-02: "the player needs to be able to pick the agent they
+      // want to recruit ... the player always gets to choose on that card."
+      // Step 1 (no extra.targetAgentInstanceId): open a picker over every rival Agent.
+      // Step 2: poach exactly that Agent (normal poach rules), then the Shift Card.
+      // extra.skip / a null targetAgentInstanceId = take nobody (only the Shift Card).
       function handleInf102(state, context) {
-        const { playerId, extra } = context;
-        const { targetPlayerId, usedDefaultTarget } = resolveTarget(state, playerId, extra);
-        if (!targetPlayerId || !state.players[targetPlayerId]) {
-          return { state: appendLog(state, { type: "ACTION_CARD_EFFECT_HOSTILE_TAKEOVER_SKIPPED", playerId, catalogId: "INF_102", reason: "NO_VALID_TARGET" }), effectOutcome: DEFAULT_OUTCOME };
+        const { playerId, cardInstanceId, extra } = context;
+        const answered = extra && (extra.skip || Object.prototype.hasOwnProperty.call(extra, "targetAgentInstanceId"));
+        if (!answered) {
+          const nextState2 = {
+            ...state,
+            phase: { ...state.phase, pendingInterrupt: { type: "ACTION_CARD_EFFECT_CHOICE", sourcePlayerId: playerId, data: { catalogId: "INF_102", choiceType: "INF102_PICK_AGENT", cardInstanceId } } }
+          };
+          return { state: appendLog(nextState2, { type: "ACTION_CARD_EFFECT_INF102_AWAITING_CHOICE", playerId, catalogId: "INF_102" }), effectOutcome: DEFAULT_OUTCOME };
+        }
+        let nextState = { ...state, phase: { ...state.phase, pendingInterrupt: { type: "NULL", sourcePlayerId: null, data: {} } } };
+        const wantedId = !extra.skip && extra.targetAgentInstanceId || null;
+        let ownerId = null;
+        if (wantedId) ownerId = Object.keys(state.players).find((pid) => pid !== playerId && (state.players[pid].roster || []).some((r) => r.agentInstanceId === wantedId && !r.isVoided)) || null;
+        const targetPlayerId = ownerId || extra.targetPlayerId || getNextOpponentId(state, playerId);
+        let takenCatalogId = null;
+        if (wantedId && ownerId) {
+          const { poachCompetingBrokerAgent: poach } = getAgentRecruitmentHelpers();
+          const entry = state.players[ownerId].roster.find((r) => r.agentInstanceId === wantedId);
+          const result = poach(nextState, playerId, ownerId, wantedId);
+          if (!result.error) { nextState = result.state; takenCatalogId = entry.catalogId; }
         }
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
-        const targetRoster = state.players[targetPlayerId].roster.filter((r) => !r.isVoided);
-        const bestInstanceId = pickRosterExtremeBy(targetRoster, agentCatalog, "totalProfit", "highest");
-        let nextState = state;
-        if (bestInstanceId) {
-          const { poachCompetingBrokerAgent: poach } = getAgentRecruitmentHelpers();
-          const result = poach(nextState, playerId, targetPlayerId, bestInstanceId);
-          if (!result.error) nextState = result.state;
-        }
+        const takenName = takenCatalogId && agentCatalog[takenCatalogId] && agentCatalog[takenCatalogId].name || takenCatalogId;
         const drawResult = forceDrawAndDiscardShiftCard(nextState, { sourcePlayerId: playerId, actionCardId: "INF_102", scope: "all", targetPlayerId });
-        nextState = appendLog(drawResult.state, { type: "ACTION_CARD_EFFECT_HOSTILE_TAKEOVER", playerId, catalogId: "INF_102", targetPlayerId, usedDefaultTarget, drawnCatalogId: drawResult.drawnCatalogId, message: `${playerId}'s Hostile Takeover targets ${targetPlayerId} and draws a Shift Card.` });
+        nextState = appendLog(drawResult.state, {
+          type: "ACTION_CARD_EFFECT_HOSTILE_TAKEOVER", playerId, catalogId: "INF_102", targetPlayerId, takenCatalogId, usedDefaultTarget: !ownerId, drawnCatalogId: drawResult.drawnCatalogId,
+          message: takenCatalogId ? `${playerId}'s Hostile Takeover recruits ${takenName} from ${targetPlayerId} and draws a Shift Card.` : `${playerId}'s Hostile Takeover takes no Agent and draws a Shift Card.`
+        });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
       function handleInf109(state, context) {
@@ -6033,20 +6050,16 @@ var BrokerBossEngine = (() => {
         // [v68.25] Read and write the real Agent deck (board.decks.agentDrawPile);
         // the old board.agentDrawPile pointer was always empty, so the market
         // stayed empty after a crash.
-        let drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
+        // [v68.38] draws reshuffle the Agent discard pile when the deck runs out
         const refilled = [];
-        for (let i = 0; i < discardedCount && drawPile.length > 0; i += 1) {
-          refilled.push({ catalogId: drawPile[0] });
-          drawPile = drawPile.slice(1);
+        let nextState = { ...state, board: { ...state.board, openMarketAgents: [] } };
+        for (let i = 0; i < discardedCount; i += 1) {
+          const d = require_agentRecruitmentReducer().drawOneAgentForMarket(nextState);
+          nextState = d.state;
+          if (!d.catalogId) break;
+          refilled.push({ catalogId: d.catalogId });
         }
-        let nextState = {
-          ...state,
-          board: {
-            ...state.board,
-            openMarketAgents: refilled,
-            decks: { ...state.board.decks, agentDrawPile: drawPile }
-          }
-        };
+        nextState = { ...nextState, board: { ...nextState.board, openMarketAgents: refilled } };
         nextState = appendLog(nextState, {
           type: "SHIFT_EFFECT_MARKET_CRASH",
           catalogId: "SFT_038",
@@ -6269,16 +6282,16 @@ var BrokerBossEngine = (() => {
       function handleSft021(state, context) {
         const market = state.board.openMarketAgents || [];
         const fired = market.slice(0, 3);
-        let drawPile = state.board.decks && state.board.decks.agentDrawPile || [];
+        // [v68.38] draws reshuffle the Agent discard pile when the deck runs out
         const refilled = [];
-        for (let i = 0; i < fired.length && drawPile.length > 0; i += 1) {
-          refilled.push({ catalogId: drawPile[0] });
-          drawPile = drawPile.slice(1);
+        let nextState = state;
+        for (let i = 0; i < fired.length; i += 1) {
+          const d = require_agentRecruitmentReducer().drawOneAgentForMarket(nextState);
+          nextState = d.state;
+          if (!d.catalogId) break;
+          refilled.push({ catalogId: d.catalogId });
         }
-        let nextState = {
-          ...state,
-          board: { ...state.board, openMarketAgents: [...refilled, ...market.slice(3)], decks: { ...state.board.decks, agentDrawPile: drawPile } }
-        };
+        nextState = { ...nextState, board: { ...nextState.board, openMarketAgents: [...refilled, ...market.slice(3)] } };
         const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
         const names = fired.map((a) => agentCatalog[a.catalogId] && agentCatalog[a.catalogId].name || a.catalogId);
         nextState = appendLog(nextState, {
@@ -6918,14 +6931,12 @@ var BrokerBossEngine = (() => {
             ...state.players,
             [targetPlayerId]: { ...target, roster: updatedRoster }
           },
-          board: {
-            ...state.board,
-            openMarketAgents: [
-              ...state.board.openMarketAgents || [],
-              { catalogId: agentEntry.catalogId, agentInstanceId: agentEntry.agentInstanceId }
-            ]
-          }
+          // [v68.37] the Open Market shows 5 Agents: take an empty slot, else the top of the deck
+          board: (state.board.openMarketAgents || []).length < 5
+            ? { ...state.board, openMarketAgents: [...state.board.openMarketAgents || [], { catalogId: agentEntry.catalogId, agentInstanceId: agentEntry.agentInstanceId }] }
+            : { ...state.board, decks: { ...state.board.decks, agentDrawPile: [agentEntry.catalogId, ...(state.board.decks && state.board.decks.agentDrawPile || [])] } }
         };
+        const whistleSlot = (state.board.openMarketAgents || []).length < 5 ? "open_market" : "top_of_agent_deck";
         if (profitCompensation > 0) {
           nextState = adjustWallet(nextState, targetPlayerId, profitCompensation, 0);
         }
@@ -6933,11 +6944,12 @@ var BrokerBossEngine = (() => {
           type: "SPECIALIST_EFFECT_WHISTLEBLOWER",
           playerId,
           catalogId: "SPEC_2",
+          returnedTo: whistleSlot,
           targetPlayerId,
           agentInstanceId,
           agentCatalogId: agentEntry.catalogId,
           profitCompensation,
-          message: `${playerId} forces ${targetPlayerId} to release an Agent to the open market; ${targetPlayerId} is compensated ${profitCompensation} PT (The Whistleblower).`
+          message: `${playerId} forces ${targetPlayerId} to release an Agent ${whistleSlot === "open_market" ? "to the open market" : "to the top of the Agent deck (the open market's 5 slots were full)"}; ${targetPlayerId} is compensated ${profitCompensation} PT (The Whistleblower).`
         });
         return { state: nextState, effectOutcome: DEFAULT_OUTCOME };
       }
@@ -9138,6 +9150,22 @@ var BrokerBossEngine = (() => {
       // effect (STR_081/STR_087 previously had no registered handler at
       // all, so playing them burned the card with zero effect).
       var REACTIVE_ONLY_CATALOG_IDS = /* @__PURE__ */ new Set(["STR_081", "STR_087"]);
+      // [v68.37] an Agent a rival could lose to Hostile Takeover / poaching effects
+      function isTakeableAgent(state, ownerId, entry) {
+        if (!entry || entry.isVoided) return false;
+        if (entry.loyaltyToken && entry.loyaltyToken.active) return false;
+        if (entry.onboardingToken && entry.onboardingToken.active) return false;
+        const cat = state.cardCatalog && state.cardCatalog.agentCards && state.cardCatalog.agentCards[entry.catalogId];
+        const net = cat && cat.network;
+        if (net && net.role === "follower" && net.influencerCatalogId) {
+          const tied = (state.players[ownerId].roster || []).some((r) => !r.isVoided && r.catalogId === net.influencerCatalogId);
+          if (tied) return false;
+        }
+        return true;
+      }
+      function hasOpponentWithTakeableAgent(state, playerId) {
+        return Object.keys(state.players).some((pid) => pid !== playerId && (state.players[pid].roster || []).some((r) => isTakeableAgent(state, pid, r)));
+      }
       function verifyPlayRequirement(state, playerId, catalogId) {
         if (REACTIVE_ONLY_CATALOG_IDS.has(catalogId)) {
           return {
@@ -9177,7 +9205,9 @@ var BrokerBossEngine = (() => {
         if (catalogId === "GRW_063" && requirement && requirement.type === "unparsed") {
           requirement = { type: "track", track: "recognition", level: 4 };
         } else if (catalogId === "INF_102" && requirement && requirement.type === "unparsed") {
-          requirement = null;
+          // [v68.37] "Choose one competing broker": playable when at least one rival
+          // has an Agent that can actually be taken.
+          return hasOpponentWithTakeableAgent(state, playerId) ? { ok: true } : { ok: false, error: "NO_COMPETING_AGENT_TO_TAKE", detail: { catalogId } };
         }
         if (requirement === null || requirement === void 0) {
           return { ok: true };
@@ -9351,6 +9381,13 @@ var BrokerBossEngine = (() => {
           return { state, error: "NO_PENDING_ACTION_CARD_CHOICE", detail: { playerId, pendingInterrupt: interrupt || null } };
         }
         const { catalogId, cardInstanceId } = interrupt.data;
+        // [v68.38] Hostile Takeover: a picked Agent must be legally poachable
+        if (interrupt.data.choiceType === "INF102_PICK_AGENT" && extra && !extra.skip && extra.targetAgentInstanceId) {
+          const owner = Object.keys(state.players).find((pid) => pid !== playerId && (state.players[pid].roster || []).some((r) => r.agentInstanceId === extra.targetAgentInstanceId && !r.isVoided));
+          if (!owner) return { state, error: "AGENT_NOT_FOUND", detail: { targetAgentInstanceId: extra.targetAgentInstanceId } };
+          const trial = require_agentRecruitmentReducer().poachCompetingBrokerAgent(state, playerId, owner, extra.targetAgentInstanceId);
+          if (trial.error) return { state, error: trial.error, detail: trial.detail };
+        }
         let nextState = resolveActionCardEffect(state, playerId, catalogId, cardInstanceId, extra || {});
         if (nextState.phase.pendingInterrupt.type === "NULL") {
           nextState = advanceActivePlayer(nextState);
@@ -9486,6 +9523,29 @@ var BrokerBossEngine = (() => {
           [result[i], result[j]] = [result[j], result[i]];
         }
         return result;
+      }
+      // [v68.38] Daren 2026-11-02: "once there is an empty agent deck, they should all
+      // be shuffled and become the new draw deck for the open agent Market".
+      function reshuffleAgentDiscardIntoDeck(state) {
+        const decks = state.board.decks || {};
+        const draw = decks.agentDrawPile || [];
+        const disc = decks.agentDiscardPile || [];
+        if (draw.length > 0 || disc.length === 0) return state;
+        const fresh = shuffleArray(disc);
+        return appendLog({ ...state, board: { ...state.board, decks: { ...decks, agentDrawPile: fresh, agentDiscardPile: [] } } }, {
+          type: "AGENT_DECK_RESHUFFLED",
+          cardCount: fresh.length,
+          message: `The Agent deck ran out \u2014 reshuffling ${fresh.length} discarded Agent card(s) into a new deck.`
+        });
+      }
+      // [v68.38] draw ONE Agent from the deck for a market slot, reshuffling the discard
+      // pile first if the deck is empty. Returns { state, catalogId|null }.
+      function drawOneAgentForMarket(state) {
+        let st = reshuffleAgentDiscardIntoDeck(state);
+        const draw = st.board.decks && st.board.decks.agentDrawPile || [];
+        if (draw.length === 0) return { state: st, catalogId: null };
+        st = { ...st, board: { ...st.board, decks: { ...st.board.decks, agentDrawPile: draw.slice(1) } } };
+        return { state: st, catalogId: draw[0] };
       }
       function drawAgentCardsWithAutoRecruitCheck(state, drawPile, count, discardPile = []) {
         let nextState = state;
@@ -10302,6 +10362,8 @@ var BrokerBossEngine = (() => {
         addAgentToRoster,
         getAgentStats,
         drawAgentCardsWithAutoRecruitCheck,
+        reshuffleAgentDiscardIntoDeck,
+        drawOneAgentForMarket,
         VALUE_DIMENSIONS,
         MIN_MATCHING_VALUES_TO_RECRUIT,
         MIN_MATCHING_VALUES_TO_POACH
@@ -12525,7 +12587,8 @@ var BrokerBossEngine = (() => {
           "STR079_PROTECT_TARGET",
           "STR080_RIVAL_TARGET",
           "STR084_FREE_ACTION_SPACE",
-          "INF098_BLOCK_DECISION"
+          "INF098_BLOCK_DECISION",
+          "INF102_PICK_AGENT"
         ]);
         if (interrupt.type === "ACTION_CARD_EFFECT_CHOICE" && START_CARD_CHOICE_TYPES.has(interrupt.choiceType)) {
           const PROMPT_TEXT_BY_CHOICE_TYPE2 = {
@@ -12565,6 +12628,7 @@ var BrokerBossEngine = (() => {
             STR079_PROTECT_TARGET: "Tech Support: choose an Agent in your roster to protect from recruitment this turn.",
             STR080_RIVAL_TARGET: "Community Relations: choose a rival \u2014 they pay you 5 Profit Tokens.",
             STR084_FREE_ACTION_SPACE: `Advanced Training: take a free action now \u2014 choose a board space to perform without a Time Meeple (${interrupt.remaining || 1} of ${interrupt.total || 2} left).`,
+            INF102_PICK_AGENT: "Hostile Takeover: choose any rival Agent to recruit (normal poach rules: meet 2 of its 3 values and have an open desk). A Shift Card is then drawn.",
             INF098_BLOCK_DECISION: `Fee Reduction: ${interrupt.attackerDisplayName || "a rival"} is recruiting ${interrupt.targetAgentName || "one of your Agents"}. Block it by losing 1 from ALL 3 Broker Values, or let the Agent go.`
           };
           return {
@@ -13912,6 +13976,21 @@ var BrokerBossEngine = (() => {
           const openMarketAgents = (state.board.openMarketAgents || []).filter((a) => a && a.catalogId);
           const chosen = openMarketAgents[0] || null;
           return { targetCatalogId: chosen ? chosen.catalogId : null };
+        }
+        if (choiceType === "INF102_PICK_AGENT") {
+          const R = require_agentRecruitmentReducer();
+          const agentCatalog = state.cardCatalog && state.cardCatalog.agentCards || {};
+          const cands = [];
+          Object.keys(state.players).forEach((rid) => {
+            if (rid === playerId) return;
+            (state.players[rid].roster || []).forEach((r) => {
+              if (r.isVoided) return;
+              if (R.poachCompetingBrokerAgent(state, playerId, rid, r.agentInstanceId).error) return;
+              cands.push({ rid, id: r.agentInstanceId, profit: agentCatalog[r.catalogId] && agentCatalog[r.catalogId].totalProfit || 0 });
+            });
+          });
+          cands.sort((a, b) => b.profit - a.profit);
+          return cands.length ? { targetPlayerId: cands[0].rid, targetAgentInstanceId: cands[0].id } : { skip: true, targetAgentInstanceId: null };
         }
         if (choiceType === "GRW051_RIVAL_TARGET" || choiceType === "GRW052_RIVAL_TARGET") {
           const turnOrder = state.phase.turnOrder || [];
@@ -15452,10 +15531,25 @@ var BrokerBossEngine = (() => {
         return player.hand.actionCards.filter((c) => allowed.has(c.instanceId)).sort((a, b) => ((ac[a.catalogId] || {}).cost || 0) - ((ac[b.catalogId] || {}).cost || 0)).slice(0, need.count).map((c) => c.instanceId);
       }
       // the single entry point the game loop calls
+      // [v68.38] an empty Agent deck is rebuilt from the discard pile, and a short
+      // Open Market (it could only be short because the deck had run out) is topped up.
+      function agentDeckHousekeeping(state) {
+        const R = require_agentRecruitmentReducer();
+        let st = R.reshuffleAgentDiscardIntoDeck(state);
+        const market = (st.board.openMarketAgents || []).filter(Boolean);
+        const draw = st.board.decks && st.board.decks.agentDrawPile || [];
+        if (market.length >= 5 || draw.length === 0) return st;
+        const disc = st.board.decks && st.board.decks.agentDiscardPile || [];
+        const res = R.drawAgentCardsWithAutoRecruitCheck(st, draw, 5 - market.length, disc);
+        if (res.marketEntries.length === 0 && res.state === st) return st;
+        st = { ...res.state, board: { ...res.state.board, openMarketAgents: [...market, ...res.marketEntries], decks: { ...res.state.board.decks, agentDrawPile: res.remainingDrawPile, agentDiscardPile: res.remainingDiscardPile } } };
+        return appendLog(st, { type: "OPEN_MARKET_AGENT_TOPPED_UP", refilledCount: res.marketEntries.length, message: `The Open Market was short (${market.length}/5) \u2014 ${res.marketEntries.length} Agent(s) drawn to fill it.` });
+      }
       function runBetweenMovesChecks(state) {
         const intr = state.phase.pendingInterrupt;
         if (intr && intr.type !== "NULL") return state;
         if (state.phase.current === "FINAL_SCORING") return state;
+        { const kept = agentDeckHousekeeping(state); if (kept !== state) return kept; }
         const losses = openForcedLossChoice(state);
         if (losses !== state) return losses;
         const paths = require_trackPathCatchUp().catchUpTrackPaths(state);
